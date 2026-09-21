@@ -18,6 +18,7 @@ export interface ServerEnv {
   VITE_ZORIA_API_URL?: string | undefined
   VITE_ZORIA_PROD_KEY_FINGERPRINT?: string | undefined
   VITE_ZORIA_STAND_KEY_FINGERPRINT?: string | undefined
+  VITE_ZORIA_CUSTOM_KEY_FINGERPRINT?: string | undefined
 }
 
 const STORAGE_KEY = 'zoria.server'
@@ -58,7 +59,12 @@ export function buildServers(env: ServerEnv): Record<ServerId, ServerConfig | nu
       keyFingerprint: fingerprintOrNull(env.VITE_ZORIA_STAND_KEY_FINGERPRINT),
     },
     custom: customBase
-      ? { id: 'custom', label: 'Власна адреса', apiBase: customBase, keyFingerprint: null }
+      ? {
+          id: 'custom',
+          label: 'Локальний сервер',
+          apiBase: customBase,
+          keyFingerprint: fingerprintOrNull(env.VITE_ZORIA_CUSTOM_KEY_FINGERPRINT),
+        }
       : null,
   }
 }

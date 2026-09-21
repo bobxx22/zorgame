@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatLocal, parseServerTime, utcOffsetLabel, zoneLabel } from './time'
+import { formatDuration, formatLocal, parseServerTime, utcOffsetLabel, zoneLabel } from './time'
 
 const WINDOW = '2026-09-24T09:00:04.311Z'
 
@@ -20,6 +20,15 @@ describe('utcOffsetLabel', () => {
     expect(utcOffsetLabel(at, 'UTC')).toBe('UTC')
     expect(utcOffsetLabel(at, 'Asia/Kolkata')).toBe('UTC+5:30')
     expect(utcOffsetLabel(at, 'America/New_York')).toBe('UTC-4')
+  })
+})
+
+describe('formatDuration', () => {
+  it('formats hours, days and clamps negatives', () => {
+    expect(formatDuration(21_552_000)).toBe('5:59:12')
+    expect(formatDuration(7_000)).toBe('0:00:07')
+    expect(formatDuration(93_784_000)).toBe('1 д 02:03:04')
+    expect(formatDuration(-5_000)).toBe('0:00:00')
   })
 })
 

@@ -1,6 +1,8 @@
 import { NavLink, Outlet } from 'react-router'
 import type { ServerId } from '../config/servers'
+import { PHASE_LABEL } from '../pages/ether-labels'
 import { Clock } from './Clock'
+import { useEther } from './ether-context'
 import { useServer } from './server-context'
 
 const NAV = [
@@ -15,6 +17,8 @@ const NAV = [
 
 export function Layout() {
   const { server, servers, selectServer } = useServer()
+  const { station, listening } = useEther()
+  const phase = station.phase
 
   return (
     <div className="shell">
@@ -55,6 +59,11 @@ export function Layout() {
       <footer className="statusbar mono">
         <span className={server.id === 'prod' ? 'tag tag-prod' : 'tag'}>{server.id}</span>
         <span className="muted">{server.apiBase}</span>
+        <span className="statusbar-right">
+          ефір:{' '}
+          <span className={`phase-text phase-${phase ?? 'unknown'}`}>{phase ? PHASE_LABEL[phase] : 'невідомо'}</span>
+          {!listening && <span className="muted"> (пауза)</span>}
+        </span>
       </footer>
     </div>
   )
