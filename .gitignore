@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# env and secrets: never commit tokens, passwords, keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# logs
+*.log
+npm-debug.log*
+
+# editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# local tooling
+.playwright-mcp/
