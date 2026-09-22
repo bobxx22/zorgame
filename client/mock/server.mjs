@@ -4,12 +4,14 @@
 //
 //   node mock/server.mjs            cycle of 10 minutes
 //   MOCK_CYCLE_MIN=60 node mock/server.mjs
+//   MOCK_PHASE=harbinger|window|after     start the cycle at that point
 //
 // Cycle, like the stand's hour: 0-50 % static (harbinger from 33 %),
 // 50-83 % window, 83-100 % after.
 
 import { createServer } from 'node:http'
 import { webcrypto as crypto } from 'node:crypto'
+import { eligibleList, participant, roll } from './participant.mjs'
 
 const PORT = Number(process.env.MOCK_PORT ?? 8787)
 const CYCLE_MS = Number(process.env.MOCK_CYCLE_MIN ?? 10) * 60_000
@@ -50,7 +52,8 @@ async function seal(frame) {
 
 // ---------- schedule ----------
 
-const started = Date.now()
+const START_SHARE = { static: 0, harbinger: 1 / 3, window: 0.5, after: 5 / 6 }[process.env.MOCK_PHASE ?? 'static'] ?? 0
+const started = Date.now() - CYCLE_MS * START_SHARE
 
 function schedule(now = Date.now()) {
   const cycleStart = started + Math.floor((now - started) / CYCLE_MS) * CYCLE_MS
@@ -62,8 +65,6 @@ function schedule(now = Date.now()) {
 }
 
 const iso = (ms) => new Date(ms).toISOString()
-
-const roll = [] // filled by registration later
 
 async function realEnvelope(kind, now = Date.now()) {
   const s = schedule(now)
@@ -249,14 +250,71 @@ const server = createServer(async (req, res) => {
     return
   }
 
-  if (phase === 'static' && method !== 'POST') {
+  // Before the window everything but login answers the ether; the body is not read.
+  if (phase === 'static' && !(method === 'POST' && path === '/auth/login')) {
     if (Math.random() < NOISE_SHARE) await noise(res, 503, 'signal')
     else json(res, 503, await realEnvelope('signal'))
     return
   }
 
-  json(res, 404, { error: { code: 'not-found' } })
+  let body
+  if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+    if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) {
+      json(res, 415, { error: { code: 'json-required' } })
+      return
+    }
+    const read = await readBody(req)
+    if (read.tooLarge) {
+      json(res, 413, { error: { code: 'body-too-large' } })
+      return
+    }
+    try {
+      body = JSON.parse(read.text)
+    } catch {
+      json(res, 400, { error: { code: 'invalid-json' } })
+      return
+    }
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      json(res, 400, { error: { code: 'invalid-json' } })
+      return
+    }
+  }
+
+  const result = participant({ req, method, path, body, phase, opensAt: schedule().opensAt })
+  if (!result) {
+    json(res, 404, { error: { code: 'not-found' } })
+    return
+  }
+  if (result.retryAfter) res.setHeader('Retry-After', String(result.retryAfter))
+  if (result.lose) {
+    // The work is done, the answer is lost: the client must find out by logging in.
+    log(method, path, result.status, 'answer lost')
+    res.socket?.destroy()
+    return
+  }
+  log(method, path, result.status, result.body?.error?.code ?? '')
+  if (result.body === null) {
+    res.writeHead(result.status)
+    res.end()
+  } else {
+    json(res, result.status, result.body)
+  }
 })
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    req.on('data', (chunk) => {
+      size += chunk.length
+      if (size <= 96 * 1024) chunks.push(chunk)
+    })
+    req.on('end', () => {
+      resolve({ tooLarge: size > 96 * 1024, text: Buffer.concat(chunks).toString('utf8') })
+    })
+    req.on('error', reject)
+  })
+}
 
 function log(method, path, ...rest) {
   console.log(new Date().toISOString().slice(11, 19), method, path, ...rest)
@@ -267,4 +325,5 @@ server.listen(PORT, () => {
   console.log(`mock stand on http://localhost:${PORT}/api/v1, cycle ${CYCLE_MS / 60_000} min`)
   console.log(`phase ${s.phase}; window ${iso(s.opensAt)} .. ${iso(s.closesAt)}`)
   console.log(`station key fingerprint ${FINGERPRINT} (new on every start)`)
+  console.log(`admission list: ${eligibleList().join(', ')}`)
 })

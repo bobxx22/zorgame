@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router'
 import type { ServerId } from '../config/servers'
 import { PHASE_LABEL } from '../pages/ether-labels'
 import { Clock } from './Clock'
+import { AccountBox, SessionGuard } from './SessionUi'
 import { useEther } from './ether-context'
 import { useServer } from './server-context'
 
@@ -51,9 +52,11 @@ export function Layout() {
             </select>
           </label>
           <Clock />
+          <AccountBox />
         </div>
       </header>
       <main className="content">
+        <SessionGuard />
         <Outlet />
       </main>
       <footer className="statusbar mono">
