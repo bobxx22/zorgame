@@ -12,7 +12,7 @@ import {
   testStation,
   type TestStation,
 } from './fixtures'
-import { parseEnvelope, parseFrame, receive } from './frame'
+import { parseEnvelope, parseFrame, receive, voiceOf } from './frame'
 import { loadStationKey, verifySeal } from './seal'
 
 async function trainingKey(): Promise<CryptoKey> {
@@ -134,6 +134,29 @@ describe('receive', () => {
       kind: 'noise',
       reason: 'malformed-frame',
     })
+  })
+})
+
+describe('harbinger voice', () => {
+  const frame = (text: Record<string, string>) =>
+    parseFrame(JSON.stringify(signalFrame({ harbinger: { opensIn: 600, text } })))
+
+  it('accepts any set of languages: uk and ru, uk and en, one language', () => {
+    expect(frame({ uk: 'несуча', ru: 'несущая' })?.harbinger?.text.uk).toBe('несуча')
+    expect(frame({ uk: 'несуча', en: 'carrier' })?.harbinger?.text.en).toBe('carrier')
+    expect(frame({ en: 'carrier' })?.harbinger?.text.en).toBe('carrier')
+  })
+
+  it('rejects a voice without a single readable line', () => {
+    expect(frame({})).toBeNull()
+    expect(parseFrame(JSON.stringify(signalFrame({ harbinger: { opensIn: 600, text: { uk: 5 } } })))).toBeNull()
+  })
+
+  it('picks the participant language, then any other', () => {
+    expect(voiceOf({ uk: 'несуча', en: 'carrier' })).toBe('несуча')
+    expect(voiceOf({ en: 'carrier', ru: 'несущая' })).toBe('carrier')
+    expect(voiceOf({ de: 'Träger' })).toBe('Träger')
+    expect(voiceOf({})).toBeNull()
   })
 })
 

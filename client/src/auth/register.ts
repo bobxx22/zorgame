@@ -37,6 +37,7 @@ const FIELD_OF: Record<string, FormField> = {
   displayName: 'displayName',
   'password': 'password',
   repositoryUrl: 'repository',
+  invitation: 'invitation',
   lang: 'lang',
 }
 
@@ -90,6 +91,7 @@ export async function registerWithRecovery(form: RegisterForm, deps: RegisterDep
     username,
     displayName: form.displayName,
     password: form.password,
+    invitation: form.invitation.trim(),
     repositoryUrl: repository.ok ? repository.slug : form.repository.trim(),
     lang: form.lang,
   }
@@ -144,9 +146,12 @@ export async function registerWithRecovery(form: RegisterForm, deps: RegisterDep
 }
 
 export const REGISTER_CODE_MESSAGE: Record<string, string> = {
+  'invalid-invitation': 'Код заявки чужий, уже використаний або прострочений. Перевірте код із листа організаторів.',
   'username-unavailable': 'Цей логін зайнятий. Оберіть інший.',
   'repository-already-verified': 'Цей репозиторій уже підтверджено за іншим акаунтом. Перевірте репозиторій і напишіть організаторам.',
-  'repository-not-eligible': 'Цього репозиторію немає в списку заявок. Якщо в заявці помилка - напишіть організаторам.',
+  'repository-not-eligible': 'Сервер не прийняв цей репозиторій. Зверніться до організаторів.',
+  'same-origin-required': 'Запит пішов із cookie з чужого origin. Клієнт має надсилати credentials: omit і токен у заголовку.',
+  'invalid-host': 'Сервер не знає цього імені. Звірте адресу API в налаштуваннях.',
   'repository-not-root': 'Це посилання всередину репозиторію. Вкажіть адресу самого репозиторію.',
   'invalid-repository': 'Це не адреса репозиторію GitHub.',
   'invalid-field': 'Поле не пройшло перевірку сервера.',

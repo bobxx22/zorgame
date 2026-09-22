@@ -2,7 +2,8 @@
 // repository, summary, news, letters, task parts, developer check.
 // In-memory only; restarting the mock forgets everything.
 //
-//   MOCK_REPOS=bobxx22/zorgame    extra repositories in the admission list
+//   MOCK_INVITATION=STAND-2026    application code the stand accepts (like the training one)
+//   MOCK_CODE_ONCE=0              1: a code works only once, like on the live server
 //   MOCK_LOSE=0.15                share of registrations whose answer is lost
 //   MOCK_BUSY=0.1                 share of register/login answered authentication-busy
 //   MOCK_VERIFY_SEC=0             seconds until a repository turns verified (0: stays pending)
@@ -18,13 +19,9 @@ const STAGE2_SEC = Number(process.env.MOCK_STAGE2_SEC ?? 120)
 const ERRATA_SEC = Number(process.env.MOCK_ERRATA_SEC ?? 240)
 const SESSION_MS = 24 * 60 * 60 * 1000
 
-const ELIGIBLE = new Set([
-  ...Array.from({ length: 20 }, (_, i) => `zoria-stand/station-${String(i + 1).padStart(2, '0')}`),
-  ...(process.env.MOCK_REPOS ?? '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean),
-])
+const INVITATION = process.env.MOCK_INVITATION ?? 'STAND-2026'
+const CODE_ONCE = process.env.MOCK_CODE_ONCE === '1'
+const usedCodes = new Set()
 
 const accounts = new Map() // username -> account
 const sessions = new Map() // token -> { username, sessionId, expiresAt }
@@ -229,7 +226,7 @@ function config(phase) {
     title: 'Зоря.нет (локальний стенд)',
     season: 'Зоря 2026',
     registrationOpen: phase === 'window',
-    inviteRequired: false,
+    inviteRequired: true,
     repositoryRequired: true,
     repositoryAccess: {
       githubUsername: 'zoria-net-bot',
@@ -242,10 +239,10 @@ function config(phase) {
 
 function register(body, phase, opensAt) {
   if (phase === 'after') return fail(403, 'registration-closed')
-  if (!exactFields(body, ['username', 'displayName', 'password', 'repositoryUrl'], ['lang'])) {
+  if (!exactFields(body, ['username', 'displayName', 'password', 'invitation', 'repositoryUrl'], ['lang'])) {
     return fail(400, 'invalid-fields')
   }
-  const { username, displayName, password, repositoryUrl, lang = 'uk' } = body
+  const { username, displayName, password, invitation, repositoryUrl, lang = 'uk' } = body
   if (typeof username !== 'string' || !/^[a-z][a-z0-9_-]{2,31}$/.test(username)) {
     return fail(422, 'invalid-field', 'username')
   }
@@ -262,9 +259,11 @@ function register(body, phase, opensAt) {
     return fail(422, 'invalid-field', 'password')
   }
   if (lang !== 'uk' && lang !== 'en') return fail(422, 'invalid-field', 'lang')
+  // Application code: someone else's, used or expired is 422 invalid-invitation (rules of 22.09).
+  const code = typeof invitation === 'string' ? invitation.trim() : ''
+  if (code !== INVITATION || (CODE_ONCE && usedCodes.has(code))) return fail(422, 'invalid-invitation', 'invitation')
   const repo = parseRepo(repositoryUrl)
   if (repo.code) return fail(422, repo.code, 'repositoryUrl')
-  if (!ELIGIBLE.has(repo.slug)) return fail(422, 'repository-not-eligible', 'repositoryUrl')
   if (accounts.has(username)) return fail(409, 'username-unavailable')
 
   const now = Date.now()
@@ -281,6 +280,7 @@ function register(body, phase, opensAt) {
     errata: null,
   }
   accounts.set(username, account)
+  usedCodes.add(code)
   letter(account, {
     title: 'Ви на зв’язку',
     body: `Вас записано в журнал виходу на зв'язок під іменем **${displayName}**. Запросіть \`zoria-net-bot\` і покладіть \`.zoria\`.`,
@@ -361,7 +361,6 @@ export function participant({ req, url, method, path, body, phase, opensAt }) {
     if (!exactFields(body, ['url'])) return fail(400, 'invalid-fields')
     const repo = parseRepo(body.url)
     if (repo.code) return fail(422, repo.code, 'url')
-    if (!ELIGIBLE.has(repo.slug)) return fail(422, 'repository-not-eligible', 'url')
     a.repository = newRepository(repo.slug)
     return { status: 200, body: { repository: { ...a.repository } } }
   }
@@ -421,6 +420,6 @@ export function participant({ req, url, method, path, body, phase, opensAt }) {
   return fail(404, 'not-found')
 }
 
-export function eligibleList() {
-  return [...ELIGIBLE]
+export function invitationCode() {
+  return INVITATION
 }

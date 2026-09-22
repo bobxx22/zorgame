@@ -11,7 +11,7 @@
 
 import { createServer } from 'node:http'
 import { webcrypto as crypto } from 'node:crypto'
-import { eligibleList, participant, roll } from './participant.mjs'
+import { invitationCode, participant, roll } from './participant.mjs'
 
 const PORT = Number(process.env.MOCK_PORT ?? 8787)
 const CYCLE_MS = Number(process.env.MOCK_CYCLE_MIN ?? 10) * 60_000
@@ -325,5 +325,5 @@ server.listen(PORT, () => {
   console.log(`mock stand on http://localhost:${PORT}/api/v1, cycle ${CYCLE_MS / 60_000} min`)
   console.log(`phase ${s.phase}; window ${iso(s.opensAt)} .. ${iso(s.closesAt)}`)
   console.log(`station key fingerprint ${FINGERPRINT} (new on every start)`)
-  console.log(`admission list: ${eligibleList().join(', ')}`)
+  console.log(`invitation code: ${invitationCode()}`)
 })

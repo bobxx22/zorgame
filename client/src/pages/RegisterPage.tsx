@@ -96,7 +96,8 @@ function StatusLine({ status }: { status: RegistrationStatus }) {
     case 'armed':
       return (
         <p className="warn-text">
-          Заявку заготовлено. Її буде надіслано автоматично за першим перевіреним кадром просвіту. Не закривайте вкладку.
+          Заявку заготовлено разом із кодом. Її буде надіслано автоматично за першим перевіреним кадром просвіту. Не
+          закривайте вкладку.
         </p>
       )
     case 'checking':
@@ -166,6 +167,23 @@ function FormPanel() {
         </label>
 
         <label className="field">
+          <span>Код заявки</span>
+          <input
+            autoComplete="off"
+            placeholder="код із листа або телеграму"
+            value={draft.invitation}
+            disabled={armed}
+            onChange={(e) => {
+              setDraft({ invitation: e.target.value })
+            }}
+          />
+          <small className="muted">
+            Одноразовий код, який організатори надсилають кожному, хто подав заявку (поле invitation, зміна від 22.09).
+          </small>
+          {field('invitation')}
+        </label>
+
+        <label className="field">
           <span>Пароль</span>
           <input
             type="password"
@@ -193,6 +211,9 @@ function FormPanel() {
             }}
           />
           {repo.ok && <small className="muted mono">{repo.url}</small>}
+          <small className="warn-text">
+            Репозиторій має бути приватним: у відкритий бот допуску не заходить, і заявка отримає needs-attention.
+          </small>
           {field('repository')}
         </label>
 
@@ -230,7 +251,7 @@ function FormPanel() {
         </div>
         {armed && (
           <p className="muted small">
-            Пароль заготовки зберігається тільки в цій вкладці браузера і зникає, коли її закрито.
+            Пароль і код заявки зберігаються тільки в цій вкладці браузера і зникають, коли її закрито.
           </p>
         )}
       </form>

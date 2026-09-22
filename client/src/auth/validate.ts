@@ -9,6 +9,8 @@ export interface RegisterForm {
   username: string
   displayName: string
   password: string
+  /** One-time code from the application, field `invitation` (rules of 22.09). */
+  invitation: string
   repository: string
   lang: Lang
 }
@@ -54,6 +56,14 @@ export function checkPassword(value: string): string | null {
   const length = charCount(value)
   if (length < 12) return 'Пароль - щонайменше 12 знаків.'
   if (length > 256) return 'Пароль - не більше 256 знаків.'
+  return null
+}
+
+/** The code comes from the organizers by mail or Telegram; the contract allows up to 100 characters. */
+export function checkInvitation(value: string): string | null {
+  const code = value.trim()
+  if (code === '') return 'Вкажіть код заявки з листа організаторів.'
+  if (code.length > 100) return 'Код заявки - не більше 100 знаків.'
   return null
 }
 
@@ -117,10 +127,12 @@ export function checkRepository(raw: string): string | null {
 export function validateRegister(form: RegisterForm): FieldErrors {
   const errors: FieldErrors = {}
   const username = checkUsername(form.username)
+  const invitation = checkInvitation(form.invitation)
   const displayName = checkDisplayName(form.displayName)
   const password = checkPassword(form.password)
   const repository = checkRepository(form.repository)
   if (username) errors.username = username
+  if (invitation) errors.invitation = invitation
   if (displayName) errors.displayName = displayName
   if (password) errors.password = password
   if (repository) errors.repository = repository

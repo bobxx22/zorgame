@@ -8,7 +8,7 @@ import { useEther } from './ether-context'
 import { RegistrationContext, type RegistrationState, type RegistrationStatus } from './registration-context'
 import { useServer } from './server-context'
 
-const EMPTY: RegisterForm = { username: '', displayName: '', password: '', repository: '', lang: 'uk' }
+const EMPTY: RegisterForm = { username: '', displayName: '', password: '', invitation: '', repository: '', lang: 'uk' }
 
 interface Stored {
   draft: RegisterForm
@@ -35,7 +35,8 @@ function storage(serverId: string) {
     },
     save(value: Stored) {
       try {
-        const draft = value.armed ? value.draft : { ...value.draft, password: '' }
+        // The password and the one-time code are stored only while the application is armed.
+      const draft = value.armed ? value.draft : { ...value.draft, password: '', invitation: '' }
         window.sessionStorage.setItem(name, JSON.stringify({ draft, armed: value.armed }))
       } catch {
         // No storage: the draft lives until reload.
@@ -120,7 +121,7 @@ function ServerRegistration({ serverId, children }: { serverId: string; children
         if (outcome.kind === 'registered') {
           setSession(outcome.session)
           setArmed(false)
-          setDraftState((prev) => ({ ...prev, password: '' }))
+          setDraftState((prev) => ({ ...prev, password: '', invitation: '' }))
           setStatus({ state: 'done', via: outcome.via })
           return
         }

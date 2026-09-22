@@ -42,7 +42,13 @@ export function InviteCard({ username, repositoryUrl }: InviteCardProps) {
           <pre className="code mono">{command}</pre>
           <CopyButton text={command} label="Копіювати команду" />
         </li>
-        <li>Бот перевіряє заявку сам: після запрошення, після зміни заявки і раз на 10 хвилин.</li>
+        <li>
+          Тримайте репозиторій <b>приватним</b>: у відкритий бот не заходить, і заявка отримує needs-attention.
+        </li>
+        <li>
+          Бот бачить запрошення лише після реєстрації; запрошення GitHub чинне сім днів. Далі він перевіряє заявку сам:
+          після запрошення, після зміни заявки і раз на 10 хвилин.
+        </li>
       </ol>
       {access?.instructions && <p className="muted small">{access.instructions}</p>}
     </div>

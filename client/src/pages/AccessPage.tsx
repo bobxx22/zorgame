@@ -145,7 +145,10 @@ function ChangeRepository({ onChanged }: { onChanged: (repository: Repository | 
   return (
     <section className="panel span-2">
       <h2>Змінити репозиторій</h2>
-      <p className="muted small">Тільки на репозиторій зі списку заявок. Після зміни статус знову «очікує».</p>
+      <p className="muted small">
+        Будь-який ваш приватний репозиторій на GitHub. Після зміни статус знову «очікує»: запрошення й .zoria потрібні
+        заново.
+      </p>
       <form className="row" onSubmit={onSubmit}>
         <input
           className="grow"

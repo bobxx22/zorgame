@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Zaria Battle.net, part 1
-  version: 1.0.0
-  description: 'HTTP API of the Zaria Battle.net for the part 1 client. All routes are relative to /api/v1; bodies are JSON. Authorization: Bearer <token> from register or login. Errors are {"error":{"code","field?"}}; 5xx also carry requestId. CORS: participant routes accept bearer requests without cookies from any origin and answer Access-Control-Allow-Origin: *. A request that carries a cookie from a foreign origin is refused (403 origin-not-allowed). The organizer desk is not part of this contract and accepts only configured origins. Retry-After and X-Request-Id are exposed to browsers. Ether: until the registration window the hub answers every route here except /auth/login with noise or a sealed Envelope (HTTP 200 on /ether and /ether/roll, 503 elsewhere). Only an Envelope whose Ed25519 seal verifies with the published public key is a signal. GET /ether/key returns that key without noise; check its fingerprint against the task text. 429 is never noise: wait Retry-After seconds and retry the same request. Codes are jammed (the address is jammed for exceeding 20 requests per minute), rate-limited (account or login/registration limit exceeded) and authentication-busy (password check queue is full on /auth/register and /auth/login, Retry-After: 5, not a rate-limit strike). Unknown response fields may appear; ignore them.'
+  version: 1.1.0
+  description: 'HTTP API of the Zaria Battle.net for the part 1 client. All routes are relative to /api/v1; bodies are JSON. Authorization: Bearer <token> from register or login. Errors are {"error":{"code","field?"}}; 5xx also carry requestId. CORS: participant routes accept bearer requests without cookies from any origin and answer Access-Control-Allow-Origin: *. A request that carries a cookie from a foreign origin is refused (403 origin-not-allowed). The organizer desk is not part of this contract and accepts only configured origins. Retry-After and X-Request-Id are exposed to browsers. Ether: until the registration window the hub answers every route here except /auth/login with noise or a sealed Envelope (HTTP 200 on /ether and /ether/roll, 503 elsewhere). Only an Envelope whose Ed25519 seal verifies with the published public key is a signal. GET /ether/key returns that key without noise; check its fingerprint against the task text. 429 is never noise: wait Retry-After seconds and retry the same request. Codes are jammed (the address is jammed for exceeding 20 requests per minute), rate-limited (account or login/registration limit exceeded) and authentication-busy (password check queue is full on /auth/register and /auth/login, Retry-After: 5, not a rate-limit strike). Unknown response fields may appear; ignore them. Revision 1.1.0 of 2026-09-22: registration takes the one-time application code in invitation (422 invalid-invitation), and repositoryUrl is any private repository of the participant.'
 servers:
   - url: https://zoria.net/api/v1
 paths:
@@ -98,7 +98,7 @@ paths:
                   - $ref: "#/components/schemas/Error"
   /auth/register:
     post:
-      summary: Register during the window with a repository from the admission list; optional lang (uk or en, default uk) sets the language of server texts; returns a session
+      summary: Register during the window with the one-time code from your application (invitation) and your own private GitHub repository; optional lang (uk or en, default uk) sets the language of server texts; returns a session
       tags:
         - Participant
       security: []
@@ -205,9 +205,15 @@ paths:
                 displayName:
                   type: string
                   maxLength: 80
+                invitation:
+                  type: string
+                  maxLength: 100
+                  writeOnly: true
+                  description: One-time code sent to the applicant by the organizers; 422 invalid-invitation when it is unknown, used or expired
                 repositoryUrl:
                   type: string
                   maxLength: 256
+                  description: Own repository on GitHub (owner/repo or a github.com address); it must be private - the bot does not join a public repository
                 lang:
                   enum:
                     - uk
@@ -216,6 +222,7 @@ paths:
                 - username
                 - password
                 - displayName
+                - invitation
                 - repositoryUrl
   /auth/login:
     post:
@@ -2229,7 +2236,7 @@ components:
                   required:
                     - uk
                     - en
-                  description: In-world voice of the harbinger in Ukrainian and Russian; no numbers, only opensIn is mechanics
+                  description: In-world voice of the harbinger in Ukrainian and English; no numbers, only opensIn is mechanics
             - type: "null"
         fragment:
           anyOf:

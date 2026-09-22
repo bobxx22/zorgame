@@ -9,6 +9,7 @@ const FORM: RegisterForm = {
   username: 'BobX',
   displayName: 'Північна вахта',
   'password': 'test-only-pass',
+  invitation: 'ZORIA-2026-BOBX',
   repository: 'https://github.com/bobxx22/zorgame.git',
   lang: 'uk',
 }
@@ -51,6 +52,7 @@ describe('registerWithRecovery', () => {
       username: 'bobx',
       displayName: 'Північна вахта',
       'password': 'test-only-pass',
+      invitation: 'ZORIA-2026-BOBX',
       repositoryUrl: 'bobxx22/zorgame',
       lang: 'uk',
     })
@@ -90,6 +92,7 @@ describe('registerWithRecovery', () => {
       [err(422, 'repository-not-eligible', 'repositoryUrl'), 'repository', 'repository-not-eligible'],
       [err(422, 'repository-not-root', 'repositoryUrl'), 'repository', 'repository-not-root'],
       [err(409, 'repository-already-verified'), 'repository', 'repository-already-verified'],
+      [err(422, 'invalid-invitation', 'invitation'), 'invitation', 'invalid-invitation'],
     ]
     for (const [reply, field, code] of cases) {
       const { run } = setup([reply])

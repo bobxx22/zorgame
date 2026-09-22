@@ -35,6 +35,8 @@ export interface Config {
   title: string
   season: string
   registrationOpen: boolean
+  /** Since 22.09 the server asks for the application code in `invitation`. */
+  inviteRequired: boolean
   repositoryAccess: RepositoryAccess | null
 }
 
@@ -82,7 +84,7 @@ export function parseMe(value: unknown): User | null {
 
 export function parseConfig(value: unknown): Config | null {
   if (!isRecord(value)) return null
-  const { apiVersion, title, season, registrationOpen, repositoryAccess } = value
+  const { apiVersion, title, season, registrationOpen, inviteRequired, repositoryAccess } = value
   if (typeof apiVersion !== 'number' || !str(title) || !str(season) || typeof registrationOpen !== 'boolean') {
     return null
   }
@@ -94,7 +96,14 @@ export function parseConfig(value: unknown): Config | null {
   } else if (repositoryAccess !== null) {
     return null
   }
-  return { apiVersion, title, season, registrationOpen, repositoryAccess: access }
+  return {
+    apiVersion,
+    title,
+    season,
+    registrationOpen,
+    inviteRequired: inviteRequired === true,
+    repositoryAccess: access,
+  }
 }
 
 export function parseRepositoryBody(value: unknown): Repository | null {

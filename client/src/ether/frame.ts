@@ -17,7 +17,21 @@ export interface Envelope {
 
 export interface Harbinger {
   opensIn: number
-  text: { uk: string; ru: string }
+  /**
+   * The station voice by language. The task text says Ukrainian and English,
+   * the spec sample shows uk and ru: the client accepts any set of languages
+   * and picks what it can show.
+   */
+  text: Readonly<Record<string, string>>
+}
+
+/** Voice for the participant: preferred language, then any other. */
+export function voiceOf(text: Readonly<Record<string, string>>, prefer: readonly string[] = ['uk', 'en', 'ru']): string | null {
+  for (const lang of prefer) {
+    const value = text[lang]
+    if (value) return value
+  }
+  return Object.values(text).find((value) => value !== '') ?? null
 }
 
 export interface Fragment {
@@ -89,9 +103,12 @@ function readWindow(value: unknown): EtherFrame['window'] | undefined {
 function readHarbinger(value: unknown): Harbinger | null | undefined {
   if (value === null) return null
   if (!isRecord(value) || !isCount(value.opensIn) || !isRecord(value.text)) return undefined
-  const { uk, ru } = value.text
-  if (typeof uk !== 'string' || typeof ru !== 'string') return undefined
-  return { opensIn: value.opensIn, text: { uk, ru } }
+  const text: Record<string, string> = {}
+  for (const [lang, line] of Object.entries(value.text)) {
+    if (typeof line === 'string') text[lang] = line
+  }
+  if (Object.keys(text).length === 0) return undefined
+  return { opensIn: value.opensIn, text }
 }
 
 function readFragment(value: unknown): Fragment | null | undefined {

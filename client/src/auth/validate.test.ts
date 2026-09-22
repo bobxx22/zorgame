@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   checkDisplayName,
+  checkInvitation,
   checkPassword,
   checkUsername,
   hasErrors,
@@ -72,6 +73,13 @@ describe('field checks (spec 5.6)', () => {
     expect(checkDisplayName('a'.repeat(81))).not.toBeNull()
   })
 
+  it('invitation: not empty, up to 100 characters', () => {
+    expect(checkInvitation('ZORIA-2026-BOBX')).toBeNull()
+    expect(checkInvitation('  code  ')).toBeNull()
+    expect(checkInvitation('   ')).not.toBeNull()
+    expect(checkInvitation('x'.repeat(101))).not.toBeNull()
+  })
+
   it('password: 12-256 characters', () => {
     expect(checkPassword('correct-horse')).toBeNull()
     expect(checkPassword('short')).not.toBeNull()
@@ -83,6 +91,7 @@ describe('field checks (spec 5.6)', () => {
       username: 'bobx',
       displayName: ' x',
       password: 'short',
+      invitation: 'ZORIA-2026-BOBX',
       repository: 'https://github.com/bobxx22/zorgame/tree/main',
       lang: 'uk',
     })

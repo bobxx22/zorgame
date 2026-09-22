@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 import { useEther, useEtherListener } from '../app/ether-context'
 import { useServer } from '../app/server-context'
 import { SEASON } from '../config/season'
+import { voiceOf } from '../ether/frame'
 import type { EtherSnapshot } from '../ether/listener'
 import { letter, serverNow } from '../ether/station'
 import { formatDuration, formatLocal, formatLocalTime, zoneLabel } from '../lib/time'
@@ -27,6 +28,7 @@ function PhasePanel({ ether }: { ether: EtherSnapshot }) {
   const { station } = ether
   const srvNow = serverNow(station, now)
   const zone = zoneLabel()
+  const voice = station.harbingerText ? voiceOf(station.harbingerText) : null
 
   return (
     <section className="panel span-2">
@@ -54,7 +56,7 @@ function PhasePanel({ ether }: { ether: EtherSnapshot }) {
           <div>
             о <b className="mono">{formatLocal(station.opensAtMs)}</b> <span className="muted">{zone}</span>
           </div>
-          {station.harbingerText && <blockquote className="voice">{station.harbingerText.uk}</blockquote>}
+          {voice && <blockquote className="voice">{voice}</blockquote>}
           {station.opensAtMs <= srvNow && (
             <p className="warn-text">Час відкриття настав. Чекаємо на кадр просвіту.</p>
           )}

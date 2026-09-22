@@ -150,7 +150,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register during the window with a repository from the admission list; optional lang (uk or en, default uk) sets the language of server texts; returns a session */
+        /** Register during the window with the one-time code from your application (invitation) and your own private GitHub repository; optional lang (uk or en, default uk) sets the language of server texts; returns a session */
         post: {
             parameters: {
                 query?: never;
@@ -164,6 +164,9 @@ export interface paths {
                         username: string;
                         password: string;
                         displayName: string;
+                        /** @description One-time code sent to the applicant by the organizers; 422 invalid-invitation when it is unknown, used or expired */
+                        invitation: string;
+                        /** @description Own repository on GitHub (owner/repo or a github.com address); it must be private - the bot does not join a public repository */
                         repositoryUrl: string;
                         /** @enum {unknown} */
                         lang?: "uk" | "en";
@@ -2872,7 +2875,7 @@ export interface components {
             } | null;
             harbinger: {
                 opensIn: number;
-                /** @description In-world voice of the harbinger in Ukrainian and Russian; no numbers, only opensIn is mechanics */
+                /** @description In-world voice of the harbinger in Ukrainian and English; no numbers, only opensIn is mechanics */
                 text?: {
                     uk: string;
                     en: string;
