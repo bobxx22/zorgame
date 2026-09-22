@@ -3,6 +3,7 @@ import type { ServerId } from '../config/servers'
 import { PHASE_LABEL } from '../pages/ether-labels'
 import { Clock } from './Clock'
 import { AccountBox, SessionGuard } from './SessionUi'
+import { useCabinet } from './cabinet-context'
 import { useEther } from './ether-context'
 import { useServer } from './server-context'
 
@@ -19,7 +20,12 @@ const NAV = [
 export function Layout() {
   const { server, servers, selectServer } = useServer()
   const { station, listening } = useEther()
+  const cabinet = useCabinet()
   const phase = station.phase
+  const badges: Record<string, number> = {
+    '/inbox': cabinet?.summary?.unread ?? 0,
+    '/stages': Math.max(0, (cabinet?.summary?.releasedStages ?? 0) - (cabinet?.summary?.acknowledgedStages ?? 0)),
+  }
 
   return (
     <div className="shell">
@@ -32,6 +38,7 @@ export function Layout() {
           {NAV.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end ?? false}>
               {item.label}
+              {(badges[item.to] ?? 0) > 0 && <span className="count">{badges[item.to]}</span>}
             </NavLink>
           ))}
         </nav>

@@ -6,6 +6,11 @@ export const ACCESS_STATUS: Record<AccessStatus, { label: string; tone: 'ok' | '
   'needs-attention': { label: 'потребує уваги', tone: 'err' },
 }
 
+/** Label for a status the client knows, undefined for a new one (shown as is). */
+export function accessStatusOf(status: string): { label: string; tone: 'ok' | 'warn' | 'err' } | undefined {
+  return (ACCESS_STATUS as Partial<Record<string, { label: string; tone: 'ok' | 'warn' | 'err' }>>)[status]
+}
+
 /** Client texts for machine reasons (CL-24); `organizer` shows the server text as is. */
 export const REASON_TEXT: Record<Exclude<ReasonCode, 'organizer'>, string> = {
   'marker-found': 'Запрошення прийнято, файл .zoria називає ваш акаунт.',

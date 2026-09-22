@@ -1,0 +1,172 @@
+import { describe, expect, it } from 'vitest'
+import { ApiClient } from '../api/client'
+import { FakeClock, json, scriptedFetch } from '../api/testing'
+import { FRAME_A } from '../ether/fixtures'
+import { CabinetStore, SUMMARY_INTERVAL_MS, type AuthCall } from './store'
+
+const BASE = 'https://stand.zoria.net/api/v1'
+const T = '2026-09-24T09:00:00.000Z'
+
+const summary = (patch: Record<string, unknown> = {}) => ({
+  unread: 1,
+  releasedStages: 1,
+  acknowledgedStages: 0,
+  latestNews: T,
+  repositoryAt: T,
+  serverTime: T,
+  ...patch,
+})
+const message = (id: string, readAt: string | null = null) => ({
+  id,
+  messageId: null,
+  stageId: null,
+  kind: 'message',
+  title: `Лист ${id}`,
+  body: '**Вітаємо**',
+  createdAt: T,
+  readAt,
+  notice: { type: 'repository', url: 'https://github.com/a/b', accessStatus: 'pending', reason: null, reasonCode: null },
+})
+const news = (id: string) => ({ id, title: 'Новина', body: 'Текст', createdAt: T, updatedAt: T, publishedAt: T })
+const stageSummary = (id: string, errataAt: string | null = null) => ({
+  id,
+  position: 2,
+  title: 'Частина 2',
+  excerpt: 'Правила гри',
+  publishedAt: T,
+  releasedAt: T,
+  acknowledgedAt: null,
+  errataAt,
+})
+const stage = (id: string, errata: string | null = null, errataAt: string | null = null) => ({
+  ...stageSummary(id, errataAt),
+  body: '# Правила',
+  errata,
+})
+const repository = {
+  url: 'https://github.com/bobxx22/zorgame',
+  accessStatus: 'pending',
+  checkedAt: null,
+  reason: null,
+  reasonCode: null,
+  updatedAt: T,
+  verifiedElsewhere: false,
+}
+
+function setup(replies: Parameters<typeof scriptedFetch>[1]) {
+  const clock = new FakeClock(0)
+  const { fetch, calls } = scriptedFetch(clock, replies)
+  const api = new ApiClient(BASE, { clock, fetch, random: () => 0 })
+  api.limiter.setPhase('window')
+  const call: AuthCall = (options) => api.call({ ...options, token: 'T' })
+  const store = new CabinetStore({ call, clock, random: () => 0 })
+  store.setPhase('window')
+  const paths = () => calls.map((c) => `${c.init.method ?? 'GET'} ${c.url.slice(BASE.length)}`)
+  return { store, paths }
+}
+
+const firstLoad = () => [
+  json(200, summary()),
+  json(200, { items: [message('m1')], nextOffset: null }),
+  json(200, { items: [stageSummary('s2')] }),
+  json(200, { items: [news('n1')], nextOffset: null }),
+  json(200, { repository }),
+]
+
+describe('CabinetStore', () => {
+  it('loads everything on the first summary', async () => {
+    const { store, paths } = setup(firstLoad())
+    expect(await store.tick()).toBe(SUMMARY_INTERVAL_MS)
+    expect(paths()).toEqual([
+      'GET /me/summary',
+      'GET /inbox?limit=100&offset=0',
+      'GET /stages',
+      'GET /news?limit=100&offset=0',
+      'GET /me/repository',
+    ])
+    const s = store.getSnapshot()
+    expect(s.inbox?.map((m) => m.id)).toEqual(['m1'])
+    expect(s.inbox?.[0]?.notice?.type).toBe('repository')
+    expect(s.stages?.map((x) => x.id)).toEqual(['s2'])
+    expect(s.news?.map((n) => n.id)).toEqual(['n1'])
+    expect(s.repository?.accessStatus).toBe('pending')
+  })
+
+  it('rereads only what moved in the summary (CL-27)', async () => {
+    const { store, paths } = setup([
+      ...firstLoad(),
+      json(200, summary()),
+      json(200, summary({ latestNews: '2026-09-24T10:00:00.000Z' })),
+      json(200, { items: [news('n2'), news('n1')], nextOffset: null }),
+      json(200, summary({ latestNews: '2026-09-24T10:00:00.000Z', releasedStages: 2 })),
+      json(200, { items: [stageSummary('s2')] }),
+      json(200, summary({ latestNews: '2026-09-24T10:00:00.000Z', releasedStages: 2, repositoryAt: '2026-09-24T11:00:00.000Z' })),
+      json(200, { repository: { ...repository, accessStatus: 'verified' } }),
+    ])
+    for (let i = 0; i < 5; i += 1) await store.tick()
+    expect(paths().slice(5)).toEqual([
+      'GET /me/summary',
+      'GET /me/summary',
+      'GET /news?limit=100&offset=0',
+      'GET /me/summary',
+      'GET /stages',
+      'GET /me/summary',
+      'GET /me/repository',
+    ])
+    expect(store.getSnapshot().repository?.accessStatus).toBe('verified')
+  })
+
+  it('asks nothing while the station is in static', async () => {
+    const { store, paths } = setup([])
+    store.setPhase('static')
+    await store.tick()
+    expect(paths()).toEqual([])
+    expect(store.getSnapshot().noise).toBe(true)
+  })
+
+  it('treats a sealed envelope instead of the summary as noise', async () => {
+    const { store, paths } = setup([json(503, JSON.parse(FRAME_A))])
+    await store.tick()
+    expect(paths()).toEqual(['GET /me/summary'])
+    expect(store.getSnapshot()).toMatchObject({ noise: true, problem: null })
+  })
+
+  it('marks a letter read only on request (CL-29)', async () => {
+    const { store, paths } = setup([...firstLoad(), json(200, { message: message('m1', T) })])
+    await store.tick()
+    expect(store.getSnapshot().summary?.unread).toBe(1)
+    await store.markRead('m1')
+    expect(paths().at(-1)).toBe('POST /inbox/m1/read')
+    expect(store.getSnapshot().inbox?.[0]?.readAt).toBe(T)
+    expect(store.getSnapshot().summary?.unread).toBe(0)
+  })
+
+  it('acknowledges a part by an explicit call (CL-33)', async () => {
+    const { store } = setup([...firstLoad(), json(200, { stage: { ...stage('s2'), acknowledgedAt: T } })])
+    await store.tick()
+    expect(await store.acknowledge('s2')).toBe(true)
+    expect(store.getSnapshot().stages?.[0]?.acknowledgedAt).toBe(T)
+  })
+
+  it('does not guess parts: 404 is missing (CL-32)', async () => {
+    const { store } = setup([json(404, { error: { code: 'not-found' } })])
+    expect(await store.openStage('s3')).toBe('missing')
+  })
+
+  it('rereads an opened part when its errataAt moves (CL-31)', async () => {
+    const errataAt = '2026-09-25T08:00:00.000Z'
+    const { store, paths } = setup([
+      ...firstLoad(),
+      json(200, { stage: stage('s2') }),
+      json(200, summary({ unread: 2 })),
+      json(200, { items: [message('m2'), message('m1')], nextOffset: null }),
+      json(200, { items: [stageSummary('s2', errataAt)] }),
+      json(200, { stage: stage('s2', 'Уточнення: такт 500 мс', errataAt) }),
+    ])
+    await store.tick()
+    await store.openStage('s2')
+    await store.tick()
+    expect(paths().slice(-2)).toEqual(['GET /stages', 'GET /stages/s2'])
+    expect(store.getSnapshot().stageBodies.s2?.errata).toBe('Уточнення: такт 500 мс')
+  })
+})

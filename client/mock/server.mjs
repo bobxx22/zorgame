@@ -280,7 +280,7 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  const result = participant({ req, method, path, body, phase, opensAt: schedule().opensAt })
+  const result = participant({ req, url, method, path, body, phase, opensAt: schedule().opensAt })
   if (!result) {
     json(res, 404, { error: { code: 'not-found' } })
     return
