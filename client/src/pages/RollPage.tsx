@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useAuth } from '../app/auth-context'
 import { useEther, useEtherListener } from '../app/ether-context'
 import { formatDuration, formatLocal, formatLocalTime, zoneLabel } from '../lib/time'
 
@@ -6,7 +7,10 @@ import { formatDuration, formatLocal, formatLocalTime, zoneLabel } from '../lib/
 export function RollPage() {
   const listener = useEtherListener()
   const { station } = useEther()
-  const [me, setMe] = useState('')
+  const { session } = useAuth()
+  const [typed, setTyped] = useState<string | null>(null)
+  // The participant finds themselves by display name; the session knows it.
+  const me = typed ?? session?.user.displayName ?? ''
 
   useEffect(() => listener.wantRoll(), [listener])
 
@@ -26,7 +30,7 @@ export function RollPage() {
           value={me}
           placeholder="відображуване ім'я"
           onChange={(e) => {
-            setMe(e.target.value)
+            setTyped(e.target.value)
           }}
         />
       </label>
