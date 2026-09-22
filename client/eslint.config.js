@@ -32,7 +32,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['*.js', 'mock/**/*.mjs'],
+    files: ['*.js', 'mock/**/*.mjs', 'scripts/**/*.mjs'],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },
   },

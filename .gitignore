@@ -3,6 +3,7 @@ node_modules/
 
 # builds
 dist/
+dist-single/
 build/
 coverage/
 *.tsbuildinfo

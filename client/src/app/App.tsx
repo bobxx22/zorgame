@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router'
 import { AccessPage } from '../pages/AccessPage'
 import { EtherPage } from '../pages/EtherPage'
 import { InboxPage } from '../pages/InboxPage'
@@ -13,6 +13,12 @@ import { Layout } from './Layout'
 import { RegistrationProvider } from './RegistrationProvider'
 import { ServerProvider } from './ServerProvider'
 
+/**
+ * Opened from disk (file://), the History API is not allowed: the single-file
+ * build routes by hash instead (part 3 requirement P3-03).
+ */
+const Router = typeof window !== 'undefined' && window.location.protocol === 'file:' ? HashRouter : BrowserRouter
+
 export function App() {
   return (
     <ServerProvider>
@@ -20,7 +26,7 @@ export function App() {
         <AuthProvider>
           <RegistrationProvider>
             <CabinetProvider>
-              <BrowserRouter>
+              <Router>
                 <Routes>
                   <Route element={<Layout />}>
                     <Route index element={<EtherPage />} />
@@ -34,7 +40,7 @@ export function App() {
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Route>
                 </Routes>
-              </BrowserRouter>
+              </Router>
             </CabinetProvider>
           </RegistrationProvider>
         </AuthProvider>
