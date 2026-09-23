@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_ZORIA_PROD_KEY_FINGERPRINT?: string
   readonly VITE_ZORIA_STAND_KEY_FINGERPRINT?: string
   readonly VITE_ZORIA_CUSTOM_KEY_FINGERPRINT?: string
+  readonly VITE_ZORIA_INVITATION?: string
 }
 
 interface ImportMeta {

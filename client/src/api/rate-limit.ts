@@ -79,15 +79,34 @@ export function countsTowardEtherLimit(
   return true
 }
 
+/**
+ * Where the jam gate outlives this limiter: a reload, the other server and
+ * back, a second tab (CL-07 forbids any request until Retry-After ends).
+ */
+export interface SharedGate {
+  load(): number
+  save(until: number): void
+}
+
 export class EtherLimiter {
   readonly #clock: Clock
   readonly #bucket: TokenBucket
+  readonly #shared: SharedGate | null
   #gateUntil = 0
   #phase: EtherPhase | null = null
 
-  constructor(clock: Clock, options: BucketOptions = DEFAULT_BUCKET) {
+  constructor(clock: Clock, options: BucketOptions = DEFAULT_BUCKET, shared: SharedGate | null = null) {
     this.#clock = clock
     this.#bucket = new TokenBucket(options, clock.now())
+    this.#shared = shared
+    this.#gateUntil = shared?.load() ?? 0
+  }
+
+  /** The later of our own hold and one set elsewhere (another tab, an earlier load of the page). */
+  #until(): number {
+    const shared = this.#shared?.load() ?? 0
+    if (shared > this.#gateUntil) this.#gateUntil = shared
+    return this.#gateUntil
   }
 
   get phase(): EtherPhase | null {
@@ -101,13 +120,15 @@ export class EtherLimiter {
 
   /** Epoch ms until which nothing may be sent; 0 when open. */
   get gateUntil(): number {
-    return this.#gateUntil > this.#clock.now() ? this.#gateUntil : 0
+    const until = this.#until()
+    return until > this.#clock.now() ? until : 0
   }
 
   /** Holds all requests for Retry-After seconds plus a margin. Never shortens an existing hold. */
   hold(retryAfterSec: number): void {
     const until = this.#clock.now() + Math.max(0, retryAfterSec) * 1000 + GATE_MARGIN_MS
-    this.#gateUntil = Math.max(this.#gateUntil, until)
+    this.#gateUntil = Math.max(this.#until(), until)
+    this.#shared?.save(this.#gateUntil)
   }
 
   /** Waits for the gate and, if the request counts, for a token. Rejects only on abort. */
@@ -115,8 +136,9 @@ export class EtherLimiter {
     for (;;) {
       signal?.throwIfAborted()
       const now = this.#clock.now()
-      if (now < this.#gateUntil) {
-        await this.#clock.sleep(this.#gateUntil - now, signal)
+      const until = this.#until()
+      if (now < until) {
+        await this.#clock.sleep(until - now, signal)
         continue
       }
       if (!counts) return

@@ -28,11 +28,12 @@ const LETTER = [
   'Говоріть тихіше.',
 ]
 
+// The harbinger's voice is {uk, en} since the spec of 23.09.
 const VOICE = [
-  { uk: '...тріск... у шумі несуча... слабка, рівна...', ru: '...треск... в шуме несущая... слабая, ровная...' },
-  { uk: '...несуча тримається... хтось на тому боці...', ru: '...несущая держится... кто-то на той стороне...' },
-  { uk: '...позивні... ще тихо, але вже чути...', ru: '...позывные... ещё тихо, но уже слышно...' },
-  { uk: '...станція на частоті... готуйтеся назвати себе...', ru: '...станция на частоте... готовьтесь назвать себя...' },
+  { uk: '...тріск... у шумі несуча... слабка, рівна...', en: '...crackle... a carrier in the noise... faint, steady...' },
+  { uk: '...несуча тримається... хтось на тому боці...', en: '...the carrier holds... someone on the other side...' },
+  { uk: '...позивні... ще тихо, але вже чути...', en: '...call signs... still quiet, but audible...' },
+  { uk: '...станція на частоті... готуйтеся назвати себе...', en: '...the station is on frequency... get ready to name yourself...' },
 ]
 
 const b64url = (bytes) => Buffer.from(bytes).toString('base64url')
@@ -97,7 +98,7 @@ let lastReal = null
 // ---------- noise ----------
 
 const FOREIGN_STATUSES = [200, 201, 204, 400, 401, 403, 404, 409, 410, 418, 422, 500, 502, 504]
-const API_CODES = ['repository-not-eligible', 'username-unavailable', 'invalid-field', 'not-found', 'internal-error']
+const API_CODES = ['invalid-invitation', 'username-unavailable', 'invalid-field', 'not-found', 'internal-error']
 const pick = (list) => list[Math.floor(Math.random() * list.length)]
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 

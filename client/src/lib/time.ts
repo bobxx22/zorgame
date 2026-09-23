@@ -15,8 +15,15 @@ export function utcOffsetLabel(at: Date, timeZone: string = localTimeZone()): st
   return 'UTC' + offset.replace(/^([+-])0?(\d+):00$/, '$1$2').replace(/^([+-])0?(\d+):(\d\d)$/, '$1$2:$3')
 }
 
+/** IANA renamed Europe/Kiev to Europe/Kyiv in 2022; Chrome on Windows still reports the old name. */
+const RENAMED_ZONES: Readonly<Record<string, string>> = { 'Europe/Kiev': 'Europe/Kyiv' }
+
+export function zoneName(timeZone: string = localTimeZone()): string {
+  return RENAMED_ZONES[timeZone] ?? timeZone
+}
+
 export function zoneLabel(at: Date = new Date(), timeZone: string = localTimeZone()): string {
-  return `${timeZone} (${utcOffsetLabel(at, timeZone)})`
+  return `${zoneName(timeZone)} (${utcOffsetLabel(at, timeZone)})`
 }
 
 /** Parses a server timestamp; null for missing or malformed values. */
@@ -66,4 +73,47 @@ export function formatLocal(
     second: '2-digit',
     hour12: false,
   }).format(date)
+}
+
+/** "24.09, 08:00" in the local zone: a moment where the year is obvious. */
+export function formatDayTime(
+  value: Date | number | string | null | undefined,
+  timeZone: string = localTimeZone(),
+  locale = 'uk-UA',
+): string {
+  const date =
+    typeof value === 'string' ? parseServerTime(value) : typeof value === 'number' ? new Date(value) : (value ?? null)
+  if (!date) return '—'
+  return new Intl.DateTimeFormat(locale, {
+    timeZone,
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+/** "24.09" in the local zone. */
+export function formatDay(
+  value: Date | number | string | null | undefined,
+  timeZone: string = localTimeZone(),
+  locale = 'uk-UA',
+): string {
+  const date =
+    typeof value === 'string' ? parseServerTime(value) : typeof value === 'number' ? new Date(value) : (value ?? null)
+  if (!date) return '—'
+  return new Intl.DateTimeFormat(locale, { timeZone, day: '2-digit', month: '2-digit' }).format(date)
+}
+
+/** "22.09.2026" in the local zone, as the site dates its announcements. */
+export function formatDate(
+  value: Date | number | string | null | undefined,
+  timeZone: string = localTimeZone(),
+  locale = 'uk-UA',
+): string {
+  const date =
+    typeof value === 'string' ? parseServerTime(value) : typeof value === 'number' ? new Date(value) : (value ?? null)
+  if (!date) return '—'
+  return new Intl.DateTimeFormat(locale, { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
 }

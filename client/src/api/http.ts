@@ -64,7 +64,7 @@ export async function rawRequest(
   const timer = globalThis.setTimeout(() => {
     timeout.abort(new DOMException('Timed out', 'TimeoutError'))
   }, request.timeoutMs ?? DEFAULT_TIMEOUT_MS)
-  const signal = request.signal ? AbortSignal.any([request.signal, timeout.signal]) : timeout.signal
+  const signal = request.signal ? anySignal([request.signal, timeout.signal]) : timeout.signal
 
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (request.body !== undefined) headers['Content-Type'] = 'application/json'
@@ -97,4 +97,25 @@ export async function rawRequest(
   } finally {
     globalThis.clearTimeout(timer)
   }
+}
+
+/** AbortSignal.any where it exists (Safari has it from 17.4), a small stand-in elsewhere. */
+function anySignal(signals: AbortSignal[]): AbortSignal {
+  const native = (AbortSignal as { any?: (signals: AbortSignal[]) => AbortSignal }).any
+  if (native) return native.call(AbortSignal, signals)
+  const controller = new AbortController()
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort(signal.reason)
+      break
+    }
+    signal.addEventListener(
+      'abort',
+      () => {
+        controller.abort(signal.reason)
+      },
+      { once: true },
+    )
+  }
+  return controller.signal
 }

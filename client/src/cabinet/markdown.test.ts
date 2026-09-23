@@ -72,3 +72,23 @@ describe('safeHref', () => {
     expect(safeHref('mailto:x@y')).toBeNull()
   })
 })
+
+describe('markdown edge cases', () => {
+  it('keeps parentheses inside a link address', () => {
+    expect(parseInline('див. [вікі](https://uk.wikipedia.org/wiki/Зоря_(значення)).')).toEqual([
+      { t: 'text', v: 'див. ' },
+      { t: 'link', href: 'https://uk.wikipedia.org/wiki/%D0%97%D0%BE%D1%80%D1%8F_(%D0%B7%D0%BD%D0%B0%D1%87%D0%B5%D0%BD%D0%BD%D1%8F)', c: [{ t: 'text', v: 'вікі' }] },
+      { t: 'text', v: '.' },
+    ])
+  })
+  it('stays fast on a long paragraph full of unclosed marks', () => {
+    const body = '[a '.repeat(20_000) + '**b '.repeat(20_000) + '`c '.repeat(20_000)
+    const started = performance.now()
+    parseInline(body)
+    expect(performance.now() - started).toBeLessThan(500)
+  })
+  it('reads a line that starts with a year as a sentence', () => {
+    expect(parseMarkdown('2026. Сезон почався.')).toEqual([{ t: 'p', c: [{ t: 'text', v: '2026. Сезон почався.' }] }])
+    expect(parseMarkdown('1. раз\n2. два')[0]).toMatchObject({ t: 'ol', start: 1 })
+  })
+})

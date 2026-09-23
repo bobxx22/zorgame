@@ -1,43 +1,61 @@
 import { useEffect, useState } from 'react'
 import type { ApiClient } from '../api/client'
 import { parseConfig, type Config } from '../auth/schemas'
+import { useAuth } from './auth-context'
+import { useEther } from './ether-context'
 import { useServer } from './server-context'
 
 /**
- * GET /public/config once per server. It counts in the ether limit, so it is
- * read sparingly: cached for the session, two attempts at most.
+ * GET /public/config per server. Before the window the station answers it
+ * with noise and it costs a token of the ether limit, so it is asked only in
+ * the window and after; again when the phase changes or someone logs in, and
+ * once a minute while it keeps failing. A good answer is kept for the page.
  */
-const cache = new WeakMap<ApiClient, Promise<Config | null>>()
-
-function loadConfig(api: ApiClient): Promise<Config | null> {
-  let pending = cache.get(api)
-  if (!pending) {
-    pending = api
-      .call({ path: '/public/config', parse: parseConfig, retry: { transient: true, busy: true, maxAttempts: 2 } })
-      .then((result) => {
-        if (!result.ok) cache.delete(api)
-        return result.ok ? result.data : null
-      })
-    cache.set(api, pending)
-  }
-  return pending
-}
+const known = new WeakMap<ApiClient, Config>()
+const RETRY_MS = 60_000
 
 export type ConfigState = { status: 'loading' } | { status: 'ready'; config: Config } | { status: 'unavailable' }
 
 export function useConfig(): ConfigState {
   const { api } = useServer()
-  const [state, setState] = useState<{ api: ApiClient; value: ConfigState }>({ api, value: { status: 'loading' } })
+  const { station } = useEther()
+  const { session } = useAuth()
+  const open = station.phase === 'window' || station.phase === 'after'
+  const loggedIn = session !== null
+  const [loaded, setLoaded] = useState<{ api: ApiClient; value: ConfigState } | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
-    let active = true
-    void loadConfig(api).then((config) => {
-      if (active) setState({ api, value: config ? { status: 'ready', config } : { status: 'unavailable' } })
-    })
+    if (!open || known.has(api)) return
+    const controller = new AbortController()
+    let timer: number | null = null
+    void api
+      .call({
+        path: '/public/config',
+        parse: parseConfig,
+        retry: { transient: true, busy: true, maxAttempts: 2 },
+        signal: controller.signal,
+      })
+      .then((result) => {
+        if (controller.signal.aborted) return
+        if (result.ok) {
+          known.set(api, result.data)
+          setLoaded({ api, value: { status: 'ready', config: result.data } })
+          return
+        }
+        setLoaded({ api, value: { status: 'unavailable' } })
+        timer = window.setTimeout(() => {
+          setAttempt((n) => n + 1)
+        }, RETRY_MS)
+      })
     return () => {
-      active = false
+      controller.abort()
+      if (timer !== null) window.clearTimeout(timer)
     }
-  }, [api])
+  }, [api, open, loggedIn, attempt])
 
-  return state.api === api ? state.value : { status: 'loading' }
+  const config = known.get(api)
+  if (config) return { status: 'ready', config }
+  if (!open) return { status: 'unavailable' }
+  return loaded?.api === api ? loaded.value : { status: 'loading' }
 }

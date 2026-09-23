@@ -9,6 +9,8 @@ export type RegistrationStatus =
   | { state: 'sending'; step: RegisterStep }
   | { state: 'done'; via: 'register' | 'login' }
   | { state: 'error'; outcome: Exclude<RegisterOutcome, { kind: 'registered' }> }
+  /** Armed and failed: the client tries again by itself at `atMs` (attempt counts from 1). */
+  | { state: 'retrying'; atMs: number; attempt: number; outcome: Exclude<RegisterOutcome, { kind: 'registered' }> }
 
 export interface RegistrationState {
   draft: RegisterForm
@@ -23,6 +25,21 @@ export interface RegistrationState {
 }
 
 export const RegistrationContext = createContext<RegistrationState | null>(null)
+
+/** sessionStorage key of a server's draft. */
+export function draftKey(serverId: string): string {
+  return `zoria.registerDraft.${serverId}`
+}
+
+/** Whether an application is armed for that server in this tab (read without its provider). */
+export function isArmedOn(serverId: string): boolean {
+  try {
+    const raw = window.sessionStorage.getItem(draftKey(serverId))
+    return raw !== null && (JSON.parse(raw) as { armed?: unknown }).armed === true
+  } catch {
+    return false
+  }
+}
 
 export function useRegistration(): RegistrationState {
   const state = useContext(RegistrationContext)

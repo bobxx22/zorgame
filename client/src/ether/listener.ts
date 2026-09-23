@@ -3,7 +3,7 @@ import { readError, type ApiClient } from '../api/client'
 import { isAbortError, systemClock, type Clock } from '../api/clock'
 import { receive, type NoiseReason } from './frame'
 import { loadStationKey, type KeyProblem, type StationKey } from './seal'
-import { applyFrame, initialStation, type StationState } from './station'
+import { applyFrame, initialStation, restoreLetter, storedLetter, type StationState } from './station'
 
 /**
  * Listens to the ether: GET /ether no more often than every 15 s, the roll
@@ -75,6 +75,8 @@ export interface EtherListenerOptions {
   api: ApiClient
   keyStore: KeyStore
   pinnedFingerprint: string | null
+  /** Where the Keeper's letter is kept between visits; same shape as the key store. */
+  letterStore?: KeyStore
   clock?: Clock
   random?: () => number
 }
@@ -93,6 +95,7 @@ const initialSnapshot: EtherSnapshot = {
 export class EtherListener {
   readonly #api: ApiClient
   readonly #keyStore: KeyStore
+  readonly #letterStore: KeyStore | null
   readonly #pinned: string | null
   readonly #clock: Clock
   readonly #random: () => number
@@ -110,7 +113,11 @@ export class EtherListener {
   constructor(options: EtherListenerOptions) {
     this.#api = options.api
     this.#keyStore = options.keyStore
+    this.#letterStore = options.letterStore ?? null
     this.#pinned = options.pinnedFingerprint
+    if (this.#letterStore) {
+      this.#snapshot = { ...this.#snapshot, station: restoreLetter(initialStation, this.#letterStore.load()) }
+    }
     this.#clock = options.clock ?? systemClock
     this.#random = options.random ?? Math.random
     this.#backoff = new Backoff(this.#random)
@@ -230,11 +237,15 @@ export class EtherListener {
 
     const reception = await receive(result.text, (id) => this.#keyFor(id, signal))
     if (reception.kind === 'signal') {
-      const station = applyFrame(this.#snapshot.station, reception.frame, receivedAtMs)
+      const previous = this.#snapshot.station
+      const station = applyFrame(previous, reception.frame, receivedAtMs)
       const newest = station.latest === reception.frame
       if (newest) this.#api.limiter.setPhase(reception.frame.phase)
+      if (station.fragments !== previous.fragments) this.#letterStore?.save(storedLetter(station))
       this.#update({ station })
-      this.#log(route, newest ? 'signal' : 'echo', result.status, reception.frame.phase)
+      const { phase, damaged } = reception.frame
+      const detail = damaged.length > 0 ? `${phase}, без: ${damaged.join(', ')}` : phase
+      this.#log(route, newest ? 'signal' : 'echo', result.status, detail)
       return true
     }
 

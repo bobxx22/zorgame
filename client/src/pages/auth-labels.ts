@@ -1,4 +1,4 @@
-import type { AccessStatus, ReasonCode } from '../auth/schemas'
+import type { AccessStatus, ReasonCode, Repository } from '../auth/schemas'
 
 export const ACCESS_STATUS: Record<AccessStatus, { label: string; tone: 'ok' | 'warn' | 'err' }> = {
   pending: { label: 'очікує', tone: 'warn' },
@@ -25,4 +25,21 @@ export const LOGIN_CODE_MESSAGE: Record<string, string> = {
   'session-limit': 'Забагато активних сесій цього акаунта.',
   timeout: 'Сервер не відповів вчасно.',
   network: 'Немає зв’язку з сервером.',
+}
+
+/**
+ * Why the application is in its status: the client's text for a known code
+ * with the server's own words beside it (they may name, say, the expected
+ * GitHub account), or the server's text alone.
+ */
+export function reasonText(repository: Repository): string | null {
+  const code = repository.reasonCode as ReasonCode | null
+  const server = repository.reason?.trim() ?? ''
+  if (code && code !== 'organizer' && code in REASON_TEXT) {
+    const own = REASON_TEXT[code]
+    return server && server !== own ? `${own} Сервер: «${server}»` : own
+  }
+  if (server) return server
+  if (repository.accessStatus === 'pending') return 'Запрошення ще не прийнято.'
+  return null
 }

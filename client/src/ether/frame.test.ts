@@ -147,9 +147,16 @@ describe('harbinger voice', () => {
     expect(frame({ en: 'carrier' })?.harbinger?.text.en).toBe('carrier')
   })
 
-  it('rejects a voice without a single readable line', () => {
-    expect(frame({})).toBeNull()
-    expect(parseFrame(JSON.stringify(signalFrame({ harbinger: { opensIn: 600, text: { uk: 5 } } })))).toBeNull()
+  it('keeps the countdown when the voice is missing or unreadable (text is optional in the contract)', () => {
+    expect(frame({})?.harbinger).toEqual({ opensIn: 600, text: {} })
+    expect(parseFrame(JSON.stringify(signalFrame({ harbinger: { opensIn: 600, text: { uk: 5 } } })))?.harbinger).toEqual({
+      opensIn: 600,
+      text: {},
+    })
+    expect(parseFrame(JSON.stringify(signalFrame({ harbinger: { opensIn: 600 } })))?.harbinger).toEqual({
+      opensIn: 600,
+      text: {},
+    })
   })
 
   it('picks the participant language, then any other', () => {
@@ -161,10 +168,29 @@ describe('harbinger voice', () => {
 })
 
 describe('parseFrame', () => {
-  it('rejects a fragment number outside 1..of and a negative opensIn', () => {
+  it('drops only the broken part of a sealed frame and names it', () => {
     const base = signalFrame({})
-    expect(parseFrame(JSON.stringify({ ...base, fragment: { n: 0, of: 12, text: 'x' } }))).toBeNull()
-    expect(parseFrame(JSON.stringify({ ...base, harbinger: { opensIn: -1, text: { uk: '', ru: '' } } }))).toBeNull()
+    const badFragment = parseFrame(JSON.stringify({ ...base, fragment: { n: 0, of: 12, text: 'x' } }))
+    expect(badFragment).toMatchObject({ phase: 'static', fragment: null, damaged: ['fragment'] })
+    const badHarbinger = parseFrame(JSON.stringify({ ...base, harbinger: { opensIn: -1, text: { uk: '' } } }))
+    expect(badHarbinger).toMatchObject({ harbinger: null, damaged: ['harbinger'] })
+    const badWindow = parseFrame(JSON.stringify({ ...base, phase: 'window', window: { opensAt: 'soon' } }))
+    expect(badWindow).toMatchObject({ phase: 'window', window: null, damaged: ['window'] })
+    expect(parseFrame(JSON.stringify({ ...base, onAir: -3 }))).toMatchObject({ onAir: null, damaged: ['onAir'] })
+  })
+  it('keeps the good roll entries and skips a broken one', () => {
+    const roll = [
+      { n: 1, at: '2026-09-24T09:00:04.311Z', sinceOpen: 4, name: 'Північна вахта' },
+      { n: 2, at: 'yesterday', sinceOpen: 9, name: 'Stitch' },
+    ]
+    const parsed = parseFrame(JSON.stringify({ ...signalFrame({}), kind: 'roll', roll }))
+    expect(parsed?.roll).toEqual([roll[0]])
+    expect(parsed?.damaged).toEqual(['roll'])
+  })
+  it('still needs the version, the station, the time and the phase', () => {
+    const base = signalFrame({})
+    expect(parseFrame(JSON.stringify({ ...base, at: 'now' }))).toBeNull()
+    expect(parseFrame(JSON.stringify({ ...base, phase: 'dawn' }))).toBeNull()
   })
   it('treats missing optional parts as null', () => {
     const rest = signalFrame({})

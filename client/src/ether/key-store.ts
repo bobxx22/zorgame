@@ -1,8 +1,8 @@
 import type { KeyStore } from './listener'
 
 /** Station key cached in the browser per server; a broken storage just means re-reading it. */
-export function browserKeyStore(serverId: string): KeyStore {
-  const name = `zoria.stationKey.${serverId}`
+export function browserKeyStore(serverId: string, kind: 'stationKey' | 'letter' = 'stationKey'): KeyStore {
+  const name = `zoria.${kind}.${serverId}`
   return {
     load() {
       try {

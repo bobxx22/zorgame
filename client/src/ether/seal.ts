@@ -22,6 +22,7 @@ export type KeyProblem =
   | 'fingerprint-mismatch'
   | 'pinned-mismatch'
   | 'unsupported'
+  | 'insecure'
 
 export type KeyResult = { ok: true; key: StationKey } | { ok: false; problem: KeyProblem }
 
@@ -35,6 +36,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * fingerprint when one is pinned.
  */
 export async function loadStationKey(body: unknown, pinnedFingerprint: string | null): Promise<KeyResult> {
+  // WebCrypto exists only in a secure context (https, localhost, a file): over plain http from an IP it is gone.
+  if (typeof crypto === 'undefined' || (crypto as Partial<Crypto>).subtle === undefined) {
+    return { ok: false, problem: 'insecure' }
+  }
   if (!isRecord(body)) return { ok: false, problem: 'malformed' }
   const { algorithm, key, publicKey, fingerprint } = body
   if (algorithm !== 'Ed25519') return { ok: false, problem: 'algorithm' }
@@ -56,7 +61,7 @@ export async function loadStationKey(body: unknown, pinnedFingerprint: string | 
     const cryptoKey = await crypto.subtle.importKey('raw', raw, { name: 'Ed25519' }, false, ['verify'])
     return { ok: true, key: { id: computed.slice(0, 16), fingerprint: computed, publicKey, cryptoKey } }
   } catch {
-    // Ed25519 in WebCrypto: Chrome 137+, Firefox 129+, Safari 17+, Node 22+
+    // Ed25519 in WebCrypto: Chrome 137+, Firefox 129+, Safari 17.4+, Node 22+
     return { ok: false, problem: 'unsupported' }
   }
 }

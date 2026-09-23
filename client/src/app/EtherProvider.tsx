@@ -13,6 +13,7 @@ export function EtherProvider({ children }: { children: ReactNode }) {
       new EtherListener({
         api,
         keyStore: browserKeyStore(server.id),
+        letterStore: browserKeyStore(server.id, 'letter'),
         pinnedFingerprint: server.keyFingerprint,
       }),
     [api, server.id, server.keyFingerprint],

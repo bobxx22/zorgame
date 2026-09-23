@@ -1,44 +1,107 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useCabinet, useCabinetStore } from '../app/cabinet-context'
-import { formatLocal } from '../lib/time'
-import { CabinetScreen } from './CabinetState'
+import type { Stage, StageSummary } from '../cabinet/schemas'
+import { PART_PLAN } from '../config/season'
+import { cls } from '../lib/cls'
+import { formatDay, formatDayTime, formatLocal } from '../lib/time'
+import { Icon } from '../ui/Icon'
+import { CabinetDoc } from './CabinetDoc'
 import { Markdown } from './Markdown'
 
-/** Parts of the task released to this account (CL-31). */
+/** Parts of the task released to this account, on the site's indicator bridge (CL-31). */
 export function StagesPage() {
   return (
-    <CabinetScreen title="Частини завдання">
+    <CabinetDoc
+      here="Завдання"
+      title="Частини завдання"
+      wide
+      lead="Частини видаються в кабінеті кожна у свій строк і приходять разом із листом. Відкриття тексту отримання не підтверджує: для цього є кнопка в самій частині."
+      meta={(cabinet) =>
+        cabinet.stages ? (
+          <>
+            <span>
+              <Icon name="parts" />
+              видано: {cabinet.stages.length}
+            </span>
+            <span>
+              <Icon name="check" />
+              не підтверджено: {cabinet.stages.filter((s) => s.acknowledgedAt === null).length}
+            </span>
+          </>
+        ) : null
+      }
+    >
       {(cabinet) =>
         cabinet.stages === null ? (
-          <p className="muted">Читаємо список частин…</p>
-        ) : cabinet.stages.length === 0 ? (
-          <p className="muted">Частин ще не видано. Частина 2 виходить 28.09 і з'явиться тут сама.</p>
+          <p className="note">Читаємо список частин…</p>
         ) : (
-          <div className="list">
-            {cabinet.stages.map((stage) => (
-              <Link key={stage.id} to={`/stages/${encodeURIComponent(stage.id)}`} className="panel stage-item">
-                <div className="screen-head">
-                  <h2>
-                    <span className="muted mono">{stage.position}.</span> {stage.title}
-                  </h2>
-                  <span className="muted small mono">видано {formatLocal(stage.releasedAt)}</span>
-                </div>
-                <p className="muted">{stage.excerpt}</p>
-                <div className="row small">
-                  {stage.acknowledgedAt ? (
-                    <span className="ok-text">отримання підтверджено</span>
-                  ) : (
-                    <span className="warn-text">отримання не підтверджено</span>
-                  )}
-                  {stage.errataAt && <span className="warn-text">є уточнення від {formatLocal(stage.errataAt)}</span>}
-                </div>
-              </Link>
-            ))}
-          </div>
+          <>
+            <Bridge stages={cabinet.stages} />
+            <p className="order">
+              Нова частина з'явиться тут сама: прийде лист і пролунає сигнал станції. Частина 2 - 28.09, частини 3 і 4 -
+              05.10.
+            </p>
+          </>
         )
       }
-    </CabinetScreen>
+    </CabinetDoc>
+  )
+}
+
+function Bridge({ stages }: { stages: readonly StageSummary[] }) {
+  const byPosition = new Map(stages.map((stage) => [stage.position, stage]))
+  const positions = [...new Set([...PART_PLAN.map((p) => p.position), ...stages.map((s) => s.position)])].sort(
+    (a, b) => a - b,
+  )
+
+  return (
+    <ol className="bridge">
+      {positions.map((position) => {
+        const stage = byPosition.get(position)
+        const plan = PART_PLAN.find((p) => p.position === position)
+        if (stage) {
+          const acked = stage.acknowledgedAt !== null
+          return (
+            <li key={position} className={cls('mod', 'out', !acked && 'live')}>
+              <Link to={`/stages/${encodeURIComponent(stage.id)}`}>
+                <div className="w">
+                  <span className="dt num">видано {formatDay(stage.releasedAt)}</span>
+                  <b>{stage.title}</b>
+                  <p>{stage.excerpt}</p>
+                  {stage.errataAt && <span className="er">уточнення від {formatDay(stage.errataAt)}</span>}
+                </div>
+                <div className="pl">
+                  <span className="pnum">{position}</span>
+                  <span className="st">
+                    <i className="lamp" />
+                    {acked ? 'отримано' : 'підтвердіть'}
+                  </span>
+                </div>
+              </Link>
+            </li>
+          )
+        }
+        return (
+          <li key={position} className="mod">
+            <div>
+              <div className="w">
+                <span className="dt num">очікується {plan?.day ?? ''}</span>
+                <b>{plan?.title ?? `Частина ${String(position)}`}</b>
+                <p>Відкриється в кабінеті у свій строк.</p>
+              </div>
+              <div className="pl">
+                <span className="pnum">{position}</span>
+                <span className="st">
+                  <i className="lamp" />
+                  ще не видано
+                </span>
+              </div>
+            </div>
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 
@@ -65,63 +128,92 @@ export function StagePage() {
     }
   }, [store, id, cabinet?.noise])
 
+  const acknowledge = () => {
+    if (!store || !stage) return
+    setAcking(true)
+    void store.acknowledge(stage.id).finally(() => {
+      setAcking(false)
+    })
+  }
+
   return (
-    <CabinetScreen title="Частина завдання">
+    <CabinetDoc
+      crumbs={[
+        { to: '/', label: 'Ефір' },
+        { to: '/stages', label: 'Частини завдання' },
+      ]}
+      here={stage ? `Частина ${String(stage.position)}` : 'Частина'}
+      title={stage?.title ?? 'Частина завдання'}
+      meta={() =>
+        stage ? (
+          <>
+            <span>
+              <Icon name="calendar" />
+              видано {formatDayTime(stage.releasedAt)}
+            </span>
+            <span className={cls('pill', stage.acknowledgedAt ? 'ok' : 'warn')}>
+              <i className="lamp" />
+              {stage.acknowledgedAt ? 'отримання підтверджено' : 'отримання не підтверджено'}
+            </span>
+            {stage.errataAt && (
+              <span className="pill warn">
+                <Icon name="doc" />є уточнення
+              </span>
+            )}
+          </>
+        ) : null
+      }
+      toc={() => (stage ? <StageSide stage={stage} acking={acking} onAck={acknowledge} /> : null)}
+    >
       {() => (
         <>
-          <p>
-            <Link to="/stages">← усі частини</Link>
-          </p>
-          {!stage && load.state === 'loading' && <p className="muted">Читаємо частину…</p>}
-          {load.state === 'missing' && <p className="warn-text">Такої частини немає або її ще не видано.</p>}
-          {!stage && load.state === 'failed' && <p className="err-text">Не вдалося прочитати частину.</p>}
+          {!stage && load.state === 'loading' && <p className="note">Читаємо частину…</p>}
+          {load.state === 'missing' && <p className="callout warn">Такої частини немає або її ще не видано.</p>}
+          {!stage && load.state === 'failed' && <p className="callout err">Не вдалося прочитати частину.</p>}
           {stage && (
-            <div className="stage-layout">
-              <article className="panel stage-text">
-                <div className="screen-head">
-                  <h2>
-                    <span className="muted mono">{stage.position}.</span> {stage.title}
-                  </h2>
-                  <span className="muted small mono">видано {formatLocal(stage.releasedAt)}</span>
-                </div>
-                <Markdown source={stage.body} />
-              </article>
-              <aside className="stage-side">
-                {stage.errata && (
-                  <section className="panel errata">
-                    <h3>Уточнення</h3>
-                    {stage.errataAt && <p className="muted small mono">{formatLocal(stage.errataAt)}</p>}
-                    <Markdown source={stage.errata} />
-                  </section>
-                )}
-                <section className="panel">
-                  {stage.acknowledgedAt ? (
-                    <p className="ok-text small">Отримання підтверджено {formatLocal(stage.acknowledgedAt)}.</p>
-                  ) : (
-                    <>
-                      <p className="small muted">Відкриття тексту отримання не підтверджує.</p>
-                      <button
-                        type="button"
-                        className="primary"
-                        disabled={acking}
-                        onClick={() => {
-                          if (!store) return
-                          setAcking(true)
-                          void store.acknowledge(stage.id).finally(() => {
-                            setAcking(false)
-                          })
-                        }}
-                      >
-                        Підтвердити отримання
-                      </button>
-                    </>
-                  )}
-                </section>
-              </aside>
-            </div>
+            <>
+              <div className="side-inline">
+                <StageSide stage={stage} acking={acking} onAck={acknowledge} />
+              </div>
+              <Markdown source={stage.body} />
+            </>
           )}
         </>
       )}
-    </CabinetScreen>
+    </CabinetDoc>
+  )
+}
+
+/** Receipt and errata: in the right rail on wide screens, above the text on narrow ones. */
+function StageSide({ stage, acking, onAck }: { stage: Stage; acking: boolean; onAck: () => void }) {
+  return (
+    <>
+      <div className="sidebox">
+        <p className="rh">Отримання</p>
+        {stage.acknowledgedAt ? (
+          <p className="side-ok">
+            <Icon name="check" />
+            Підтверджено {formatLocal(stage.acknowledgedAt)}.
+          </p>
+        ) : (
+          <>
+            <p>Відкриття тексту отримання не підтверджує.</p>
+            <button type="button" className="btn pri sm" disabled={acking} onClick={onAck}>
+              <Icon name="check" />
+              Підтвердити отримання
+            </button>
+          </>
+        )}
+      </div>
+      {stage.errata && (
+        <div className="sidebox errata">
+          <p className="rh">
+            Уточнення
+            {stage.errataAt && <span className="num"> · {formatDayTime(stage.errataAt)}</span>}
+          </p>
+          <Markdown source={stage.errata} />
+        </div>
+      )}
+    </>
   )
 }

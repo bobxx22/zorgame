@@ -3,6 +3,7 @@ import { useAuth } from '../app/auth-context'
 import { useServer } from '../app/server-context'
 import { parseSession } from '../auth/schemas'
 import { normalizeUsername } from '../auth/validate'
+import { Icon } from '../ui/Icon'
 import { LOGIN_CODE_MESSAGE } from './auth-labels'
 
 /** Login by name and password. Errors stay next to the form; input is kept (CL-37). */
@@ -47,30 +48,33 @@ export function LoginForm({ onDone }: { onDone?: () => void }) {
 
   return (
     <form className="form" onSubmit={onSubmit}>
-      <label className="field">
-        <span>Логін</span>
-        <input
-          autoComplete="username"
-          value={username}
-          onChange={(e) => {
-            setUsername(e.target.value)
-          }}
-        />
-      </label>
-      <label className="field">
-        <span>Пароль</span>
-        <input
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => {
-            setPassword(e.target.value)
-          }}
-        />
-      </label>
-      {error && <p className="err-text small">{error}</p>}
-      <div className="row">
-        <button type="submit" className="primary" disabled={busy || !username || !password}>
+      <div className="fgrid">
+        <label className="fld">
+          <span className="fl">Логін у мережі</span>
+          <input
+            autoComplete="username"
+            value={username}
+            onChange={(e) => {
+              setUsername(e.target.value)
+            }}
+          />
+        </label>
+        <label className="fld">
+          <span className="fl">Пароль</span>
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value)
+            }}
+          />
+        </label>
+      </div>
+      {error && <p className="note err">{error}</p>}
+      <div className="acts">
+        <button type="submit" className="btn pri" disabled={busy || !username || !password}>
+          <Icon name="user" />
           {busy ? 'Входимо…' : 'Увійти'}
         </button>
       </div>

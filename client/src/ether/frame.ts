@@ -58,8 +58,11 @@ export interface EtherFrame {
   window: { opensAt: string; closesAt: string } | null
   harbinger: Harbinger | null
   fragment: Fragment | null
-  onAir: number
+  /** null when the station sent something that is not a count. */
+  onAir: number | null
   roll: RollEntry[] | null
+  /** Parts that did not parse and were dropped (the rest of the frame still counts). */
+  damaged: readonly string[]
 }
 
 export type NoiseReason = 'broken' | 'unknown-key' | 'forged' | 'malformed-frame'
@@ -94,78 +97,106 @@ export function parseEnvelope(text: string): Envelope | null {
   return { frame, seal, key }
 }
 
-function readWindow(value: unknown): EtherFrame['window'] | undefined {
-  if (value === null) return null
-  if (!isRecord(value) || timeMs(value.opensAt) === null || timeMs(value.closesAt) === null) return undefined
+/** A part that does not parse is dropped on its own; the frame is already proven by the seal. */
+const BAD = Symbol('bad')
+
+function readWindow(value: unknown): EtherFrame['window'] | typeof BAD {
+  if (value === null || value === undefined) return null
+  if (!isRecord(value) || timeMs(value.opensAt) === null || timeMs(value.closesAt) === null) return BAD
   return { opensAt: value.opensAt as string, closesAt: value.closesAt as string }
 }
 
-function readHarbinger(value: unknown): Harbinger | null | undefined {
-  if (value === null) return null
-  if (!isRecord(value) || !isCount(value.opensIn) || !isRecord(value.text)) return undefined
+/** Only opensIn is mechanics; the voice is optional and may be empty (contract 1.1.0). */
+function readHarbinger(value: unknown): Harbinger | null | typeof BAD {
+  if (value === null || value === undefined) return null
+  if (!isRecord(value) || !isCount(value.opensIn)) return BAD
   const text: Record<string, string> = {}
-  for (const [lang, line] of Object.entries(value.text)) {
-    if (typeof line === 'string') text[lang] = line
+  if (isRecord(value.text)) {
+    for (const [lang, line] of Object.entries(value.text)) {
+      if (typeof line === 'string') text[lang] = line
+    }
   }
-  if (Object.keys(text).length === 0) return undefined
   return { opensIn: value.opensIn, text }
 }
 
-function readFragment(value: unknown): Fragment | null | undefined {
-  if (value === null) return null
-  if (!isRecord(value) || !isCount(value.n) || !isCount(value.of) || typeof value.text !== 'string') return undefined
-  if (value.n < 1 || value.n > value.of) return undefined
+function readFragment(value: unknown): Fragment | null | typeof BAD {
+  if (value === null || value === undefined) return null
+  if (!isRecord(value) || !isCount(value.n) || !isCount(value.of) || typeof value.text !== 'string') return BAD
+  if (value.n < 1 || value.n > value.of) return BAD
   return { n: value.n, of: value.of, text: value.text }
 }
 
-function readRoll(value: unknown): RollEntry[] | undefined {
-  if (!Array.isArray(value)) return undefined
+/** Entries that do not parse are skipped one by one. */
+function readRoll(value: unknown): { entries: RollEntry[]; skipped: boolean } | typeof BAD {
+  if (!Array.isArray(value)) return BAD
   const entries: RollEntry[] = []
+  let skipped = false
   for (const item of value) {
-    if (!isRecord(item) || !isCount(item.n) || !isCount(item.sinceOpen) || typeof item.name !== 'string') {
-      return undefined
+    if (
+      !isRecord(item) ||
+      !isCount(item.n) ||
+      !isCount(item.sinceOpen) ||
+      typeof item.name !== 'string' ||
+      timeMs(item.at) === null
+    ) {
+      skipped = true
+      continue
     }
-    if (timeMs(item.at) === null) return undefined
     entries.push({ n: item.n, at: item.at as string, sinceOpen: item.sinceOpen, name: item.name })
   }
-  return entries
+  return { entries, skipped }
 }
 
-/** Frame JSON after the seal is verified; unknown fields are ignored (CL-06). */
+/**
+ * Frame JSON after the seal is verified. Only v, station, at and phase are
+ * required: without them the frame says nothing. Every other part is read on
+ * its own, and a part that does not parse is dropped and named in `damaged`
+ * instead of losing the phase and the countdown with it. Unknown fields are
+ * ignored (CL-06).
+ */
 export function parseFrame(frame: string): EtherFrame | null {
   const json = parseJson(frame)
   if (!json || !isRecord(json.value)) return null
   const f = json.value
   if (f.v !== 1 || f.station !== 'zoria') return null
-  if (f.kind !== 'signal' && f.kind !== 'roll') return null
   if (f.phase !== 'static' && f.phase !== 'window' && f.phase !== 'after') return null
   const atMs = timeMs(f.at)
-  if (atMs === null || !isCount(f.onAir)) return null
+  if (atMs === null) return null
 
+  const damaged: string[] = []
   const window = readWindow(f.window)
-  const harbinger = readHarbinger(f.harbinger ?? null)
-  const fragment = readFragment(f.fragment ?? null)
-  if (window === undefined || harbinger === undefined || fragment === undefined) return null
+  if (window === BAD) damaged.push('window')
+  const harbinger = readHarbinger(f.harbinger)
+  if (harbinger === BAD) damaged.push('harbinger')
+  const fragment = readFragment(f.fragment)
+  if (fragment === BAD) damaged.push('fragment')
+  const onAir = isCount(f.onAir) ? f.onAir : null
+  if (onAir === null) damaged.push('onAir')
 
+  const kind = f.kind === 'roll' ? 'roll' : 'signal'
   let roll: RollEntry[] | null = null
-  if (f.kind === 'roll') {
-    const entries = readRoll(f.roll)
-    if (!entries) return null
-    roll = entries
+  if (kind === 'roll') {
+    const read = readRoll(f.roll)
+    if (read === BAD) damaged.push('roll')
+    else {
+      roll = read.entries
+      if (read.skipped) damaged.push('roll')
+    }
   }
 
   return {
     v: 1,
-    kind: f.kind,
+    kind,
     station: 'zoria',
     at: f.at as string,
     atMs,
     phase: f.phase,
-    window,
-    harbinger,
-    fragment,
-    onAir: f.onAir,
+    window: window === BAD ? null : window,
+    harbinger: harbinger === BAD ? null : harbinger,
+    fragment: fragment === BAD ? null : fragment,
+    onAir,
     roll,
+    damaged,
   }
 }
 

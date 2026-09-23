@@ -87,13 +87,38 @@ export function applyFrame(state: StationState, frame: EtherFrame, receivedAtMs:
     window: frame.window
       ? { opensAtMs: Date.parse(frame.window.opensAt), closesAtMs: Date.parse(frame.window.closesAt) }
       : null,
-    onAir: frame.onAir,
+    onAir: frame.onAir ?? state.onAir,
   }
 }
 
 /** Server-clock now, from the local clock and the estimated offset. */
 export function serverNow(state: StationState, localNowMs: number): number {
   return localNowMs + (state.clockOffsetMs ?? 0)
+}
+
+/** What is kept of the letter between visits: fragments come rarely and only before the window. */
+export interface StoredLetter {
+  of: number
+  fragments: Record<number, string>
+}
+
+export function storedLetter(state: StationState): StoredLetter | null {
+  return state.fragmentsOf === null ? null : { of: state.fragmentsOf, fragments: { ...state.fragments } }
+}
+
+/** Puts back a letter kept earlier; anything that does not look like one is ignored. */
+export function restoreLetter(state: StationState, stored: unknown): StationState {
+  if (typeof stored !== 'object' || stored === null) return state
+  const { of, fragments } = stored as { of?: unknown; fragments?: unknown }
+  if (typeof of !== 'number' || !Number.isInteger(of) || of < 1 || typeof fragments !== 'object' || fragments === null) {
+    return state
+  }
+  const kept: Record<number, string> = {}
+  for (const [n, text] of Object.entries(fragments)) {
+    const index = Number(n)
+    if (Number.isInteger(index) && index >= 1 && index <= of && typeof text === 'string') kept[index] = text
+  }
+  return { ...state, fragmentsOf: of, fragments: kept }
 }
 
 /** Assembled letter: fragments in order, null for the gaps. */

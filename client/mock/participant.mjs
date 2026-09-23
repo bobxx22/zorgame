@@ -3,7 +3,8 @@
 // In-memory only; restarting the mock forgets everything.
 //
 //   MOCK_INVITATION=STAND-2026    application code the stand accepts (like the training one)
-//   MOCK_CODE_ONCE=0              1: a code works only once, like on the live server
+//   MOCK_CODE_ONCE=1              a code works only once, like on the live server (0: reusable)
+//   MOCK_CABINET_FAIL=0           share of cabinet reads (GET) that fail with 502, to test rereads
 //   MOCK_LOSE=0.15                share of registrations whose answer is lost
 //   MOCK_BUSY=0.1                 share of register/login answered authentication-busy
 //   MOCK_VERIFY_SEC=0             seconds until a repository turns verified (0: stays pending)
@@ -20,7 +21,8 @@ const ERRATA_SEC = Number(process.env.MOCK_ERRATA_SEC ?? 240)
 const SESSION_MS = 24 * 60 * 60 * 1000
 
 const INVITATION = process.env.MOCK_INVITATION ?? 'STAND-2026'
-const CODE_ONCE = process.env.MOCK_CODE_ONCE === '1'
+const CODE_ONCE = process.env.MOCK_CODE_ONCE !== '0'
+const CABINET_FAIL = Number(process.env.MOCK_CABINET_FAIL ?? 0)
 const usedCodes = new Set()
 
 const accounts = new Map() // username -> account
@@ -344,6 +346,7 @@ export function participant({ req, url, method, path, body, phase, opensAt }) {
   const a = authorized(req)
   if (!a) return fail(401, 'authentication-required')
   advance(a)
+  if (method === 'GET' && path !== '/me' && Math.random() < CABINET_FAIL) return fail(502, 'internal-error')
 
   if (method === 'POST' && path === '/auth/logout') {
     sessions.delete(req.headers.authorization.slice(7))

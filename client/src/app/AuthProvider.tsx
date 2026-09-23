@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ApiResult } from '../api/client'
-import type { Session } from '../auth/schemas'
+import { parseMe, type Session } from '../auth/schemas'
 import { browserSessionStore, isExpired } from '../auth/session-store'
 import { AuthContext, type AuthCallOptions, type AuthState } from './auth-context'
 import { useServer } from './server-context'
+
+const ME_CHECK_RETRY = { transient: true, busy: true, maxAttempts: 2 }
+
+/** A 401 of the API itself: an error body with a code, not an ether envelope or foreign noise. */
+function isRealUnauthorized<T>(result: ApiResult<T>): boolean {
+  return (
+    !result.ok &&
+    result.error.kind === 'http' &&
+    result.error.status === 401 &&
+    !result.error.envelope &&
+    result.error.code !== null
+  )
+}
 
 /** Session per server: switching servers mounts a fresh one. */
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -71,8 +84,13 @@ function ServerSession({ serverId, children }: { serverId: string; children: Rea
     async <T,>(options: AuthCallOptions<T>): Promise<ApiResult<T>> => {
       const current = sessionRef.current
       const result = await api.call<T>({ ...options, token: current?.token ?? null })
-      if (!result.ok && result.error.kind === 'http' && result.error.status === 401 && current) {
-        if (sessionRef.current === current) drop(true)
+      if (current && isRealUnauthorized(result)) {
+        // The station also answers with stray 401s while it is noisy (the stand's hour, spec 6):
+        // the session ends only when /me itself says so.
+        const confirmed =
+          options.path === '/me' ||
+          isRealUnauthorized(await api.call({ path: '/me', parse: parseMe, token: current.token, retry: ME_CHECK_RETRY }))
+        if (confirmed && sessionRef.current === current) drop(true)
       }
       return result
     },

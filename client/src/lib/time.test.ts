@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, formatLocal, parseServerTime, utcOffsetLabel, zoneLabel } from './time'
+import {
+  formatDate,
+  formatDay,
+  formatDayTime,
+  formatDuration,
+  formatLocal,
+  parseServerTime,
+  utcOffsetLabel,
+  zoneLabel,
+  zoneName,
+} from './time'
 
 const WINDOW = '2026-09-24T09:00:04.311Z'
 
@@ -41,5 +51,22 @@ describe('formatLocal', () => {
   })
   it('labels the zone', () => {
     expect(zoneLabel(new Date(WINDOW), 'Europe/Kyiv')).toBe('Europe/Kyiv (UTC+3)')
+  })
+})
+
+describe('formatDayTime and formatDay', () => {
+  it('print day, month and time in the given zone', () => {
+    expect(formatDayTime('2026-09-24T05:00:00.000Z', 'Europe/Kyiv')).toBe('24.09, 08:00')
+    expect(formatDay('2026-10-05T21:00:00.000Z', 'Europe/Kyiv')).toBe('06.10')
+    expect(formatDay(null)).toBe('—')
+    expect(formatDate('2026-09-22T21:30:00.000Z', 'Europe/Kyiv')).toBe('23.09.2026')
+  })
+})
+
+describe('zoneName', () => {
+  it('shows the current IANA name of Kyiv', () => {
+    expect(zoneName('Europe/Kiev')).toBe('Europe/Kyiv')
+    expect(zoneLabel(new Date(WINDOW), 'Europe/Kiev')).toBe('Europe/Kyiv (UTC+3)')
+    expect(zoneName('Asia/Tokyo')).toBe('Asia/Tokyo')
   })
 })

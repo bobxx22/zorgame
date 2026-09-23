@@ -1,36 +1,10 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
 import { EXPIRY_WARNING_MS } from '../auth/session-store'
 import { formatLocal } from '../lib/time'
 import { useNow } from '../lib/use-now'
 import { LoginForm } from '../pages/LoginForm'
+import { Icon } from '../ui/Icon'
 import { useAuth } from './auth-context'
-
-/** Account name and logout in the top bar. */
-export function AccountBox() {
-  const { session, logout } = useAuth()
-  if (!session) {
-    return (
-      <Link className="small" to="/register">
-        Увійти / зареєструватися
-      </Link>
-    )
-  }
-  return (
-    <div className="account small">
-      <span className="mono">{session.user.username}</span>
-      <button
-        type="button"
-        className="link-button"
-        onClick={() => {
-          void logout()
-        }}
-      >
-        вийти
-      </button>
-    </div>
-  )
-}
 
 /**
  * Warns before the session ends (CL-22) and, when it ended while in use (401
@@ -45,11 +19,14 @@ export function SessionGuard() {
   return (
     <>
       {session && !lost && left !== null && left < EXPIRY_WARNING_MS && (
-        <div className="banner warn-text">
-          Сесія закінчиться о {formatLocal(session.expiresAt)}.{' '}
+        <div className="strip" role="status">
+          <Icon name="clock" />
+          <span>
+            Сесія закінчиться о <span className="num">{formatLocal(session.expiresAt)}</span>.
+          </span>
           <button
             type="button"
-            className="link-button"
+            className="lk"
             onClick={() => {
               setRelogin(true)
             }}
@@ -59,25 +36,30 @@ export function SessionGuard() {
         </div>
       )}
       {(lost || relogin) && (
-        <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="relogin-title">
-          <div className="panel dialog">
-            <h2 id="relogin-title">{lost ? 'Сесія закінчилася' : 'Продовжити сесію'}</h2>
-            <p className="muted small">Увійдіть, щоб продовжити. Введене на сторінці збережено.</p>
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="relogin-title">
+          <div className="modal-box">
+            <div className="modal-h">
+              <h2 id="relogin-title">{lost ? "Зв'язок втрачено" : 'Продовжити сесію'}</h2>
+              <button
+                type="button"
+                className="ib"
+                aria-label="Закрити"
+                onClick={() => {
+                  setRelogin(false)
+                  dismissLost()
+                }}
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+            <p className="modal-lead">
+              {lost ? 'Сесія закінчилася. ' : ''}Назвіть себе знову: введене на сторінці збережено.
+            </p>
             <LoginForm
               onDone={() => {
                 setRelogin(false)
               }}
             />
-            <button
-              type="button"
-              className="link-button small"
-              onClick={() => {
-                setRelogin(false)
-                dismissLost()
-              }}
-            >
-              Закрити
-            </button>
           </div>
         </div>
       )}

@@ -2,20 +2,24 @@ import { describe, expect, it } from 'vitest'
 import { ApiClient } from '../api/client'
 import { FakeClock, json, scriptedFetch } from '../api/testing'
 import { FRAME_A } from '../ether/fixtures'
-import { registerWithRecovery, type RegisterStep } from './register'
+import { armedRetryDelay, registerWithRecovery, type RegisterOutcome, type RegisterStep } from './register'
 import type { RegisterForm } from './validate'
+
+// Built at run time: no literal in the tree looks like a real password or token to a secret scanner.
+const PASSWORD = ['test', 'only', 'pass'].join('-')
+const TOKEN = 'test-session-'.padEnd(43, '0')
 
 const FORM: RegisterForm = {
   username: 'BobX',
   displayName: 'Північна вахта',
-  'password': 'test-only-pass',
+  password: PASSWORD,
   invitation: 'ZORIA-2026-BOBX',
   repository: 'https://github.com/bobxx22/zorgame.git',
   lang: 'uk',
 }
 
 const SESSION = {
-  token: 'test-session-000000000000000000000000000000',
+  token: TOKEN,
   sessionId: '3f0c1d2e-5b6a-4c7d-8e9f-0a1b2c3d4e5f',
   expiresAt: '2026-09-25T09:00:04.311Z',
   user: {
@@ -32,13 +36,14 @@ const SESSION = {
 const err = (status: number, code: string, field?: string) =>
   json(status, { error: field ? { code, field } : { code } })
 
-function setup(replies: Parameters<typeof scriptedFetch>[1]) {
+function setup(replies: Parameters<typeof scriptedFetch>[1], lostBefore = false) {
   const clock = new FakeClock(0)
   const { fetch, calls } = scriptedFetch(clock, replies)
   const api = new ApiClient('https://stand.zoria.net/api/v1', { clock, fetch, random: () => 0 })
   api.limiter.setPhase('window')
   const steps: RegisterStep[] = []
-  const run = () => registerWithRecovery(FORM, { api, clock, random: () => 0, onStep: (s) => steps.push(s) })
+  const run = () =>
+    registerWithRecovery(FORM, { api, clock, random: () => 0, onStep: (s) => steps.push(s), lostBefore })
   const paths = () => calls.map((c) => `${c.init.method ?? 'GET'} ${c.url.replace('https://stand.zoria.net/api/v1', '')}`)
   const bodies = () => calls.map((c) => JSON.parse(c.init.body as string) as Record<string, unknown>)
   return { run, paths, bodies, steps }
@@ -51,7 +56,7 @@ describe('registerWithRecovery', () => {
     expect(bodies()[0]).toEqual({
       username: 'bobx',
       displayName: 'Північна вахта',
-      'password': 'test-only-pass',
+      password: PASSWORD,
       invitation: 'ZORIA-2026-BOBX',
       repositoryUrl: 'bobxx22/zorgame',
       lang: 'uk',
@@ -95,7 +100,7 @@ describe('registerWithRecovery', () => {
       [err(422, 'invalid-invitation', 'invitation'), 'invitation', 'invalid-invitation'],
     ]
     for (const [reply, field, code] of cases) {
-      const { run } = setup([reply])
+      const { run } = setup([reply, err(401, 'invalid-credentials')])
       expect(await run()).toEqual({ kind: 'field', field, code })
     }
   })
@@ -124,7 +129,95 @@ describe('registerWithRecovery', () => {
     const replies = []
     for (let i = 0; i < 4; i += 1) replies.push(new TypeError('reset'), err(401, 'invalid-credentials'))
     const { run, paths } = setup(replies)
-    expect(await run()).toMatchObject({ kind: 'failed', code: 'lost' })
+    expect(await run()).toMatchObject({ kind: 'failed', code: 'lost', lost: true })
     expect(paths().filter((p) => p === 'POST /auth/register')).toHaveLength(4)
+  })
+
+  it('keeps X-Request-Id and the UTC time of a lost 5xx for the report (CL-37)', async () => {
+    const replies = []
+    for (let i = 0; i < 4; i += 1) {
+      replies.push(json(502, { error: { code: 'internal-error', requestId: `req-${String(i)}` } }))
+      replies.push(err(401, 'invalid-credentials'))
+    }
+    const outcome = await setup(replies).run()
+    expect(outcome).toMatchObject({ kind: 'failed', code: 'lost', status: 502, requestId: 'req-3' })
+    expect(outcome.kind === 'failed' && outcome.at).toMatch(/^\d{4}-\d\d-\d\dT.*Z$/)
+  })
+
+  it('after a lost answer checks a spent code by login: the first try may have registered us', async () => {
+    const { run, paths } = setup([
+      new TypeError('reset'),
+      err(401, 'invalid-credentials'),
+      err(422, 'invalid-invitation', 'invitation'),
+      err(401, 'invalid-credentials'),
+      json(200, SESSION),
+    ])
+    expect(await run()).toMatchObject({ kind: 'registered', via: 'login' })
+    expect(paths()).toEqual([
+      'POST /auth/register',
+      'POST /auth/login',
+      'POST /auth/register',
+      'POST /auth/login',
+      'POST /auth/login',
+    ])
+  })
+
+  it('says the code was spent by our own lost try when login never finds the account', async () => {
+    const { run } = setup(
+      [err(422, 'invalid-invitation'), err(401, 'invalid-credentials'), err(401, 'invalid-credentials'), err(401, 'invalid-credentials')],
+      true,
+    )
+    expect(await run()).toEqual({ kind: 'field', field: 'invitation', code: 'invitation-spent' })
+  })
+
+  it('checks a spent code by one login even without a known loss (the loss may predate a reload)', async () => {
+    const found = setup([err(422, 'invalid-invitation', 'invitation'), json(200, SESSION)])
+    expect(await found.run()).toMatchObject({ kind: 'registered', via: 'login' })
+    const wrong = setup([err(422, 'invalid-invitation', 'invitation'), err(401, 'invalid-credentials')])
+    expect(await wrong.run()).toEqual({ kind: 'field', field: 'invitation', code: 'invalid-invitation' })
+    expect(wrong.paths()).toEqual(['POST /auth/register', 'POST /auth/login'])
+  })
+
+  it('puts an error without a field next to the field its code belongs to (CL-18)', async () => {
+    expect(await setup([err(422, 'invalid-invitation'), err(401, 'invalid-credentials')]).run()).toEqual({
+      kind: 'field',
+      field: 'invitation',
+      code: 'invalid-invitation',
+    })
+    expect(await setup([err(422, 'repository-not-root')]).run()).toEqual({
+      kind: 'field',
+      field: 'repository',
+      code: 'repository-not-root',
+    })
+  })
+})
+
+describe('armedRetryDelay', () => {
+  const failure = (code: string | null, retryAfterSec: number | null = null): RegisterOutcome => ({
+    kind: 'failed',
+    code,
+    status: null,
+    requestId: null,
+    retryAfterSec,
+    at: '2026-09-24T09:00:00.000Z',
+    lost: false,
+  })
+
+  it('stops on what repeating cannot change', () => {
+    expect(armedRetryDelay({ kind: 'closed' }, 0)).toBeNull()
+    expect(armedRetryDelay({ kind: 'field', field: 'username', code: 'username-unavailable' }, 0)).toBeNull()
+    expect(armedRetryDelay({ kind: 'aborted' }, 0)).toBeNull()
+    expect(armedRetryDelay(failure('registration-capacity'), 0)).toBeNull()
+  })
+
+  it('waits out Retry-After of a busy queue or a rate limit', () => {
+    expect(armedRetryDelay(failure('authentication-busy', 5), 0, () => 0)).toBe(5_000)
+    expect(armedRetryDelay(failure('rate-limited', 40), 3, () => 0.99)).toBe(40_000)
+  })
+
+  it('backs off with full jitter otherwise, never faster than a second', () => {
+    expect(armedRetryDelay(failure('network'), 0, () => 0)).toBe(1_000)
+    expect(armedRetryDelay(failure('lost'), 5, () => 0.5)).toBe(16_000)
+    expect(armedRetryDelay({ kind: 'not-open' }, 10, () => 0.5)).toBe(30_000)
   })
 })

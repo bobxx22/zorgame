@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseFrame, type EtherFrame } from './frame'
 import { signalFrame } from './fixtures'
-import { applyFrame, initialStation, letter, serverNow } from './station'
+import { applyFrame, initialStation, letter, restoreLetter, serverNow, storedLetter } from './station'
 
 function frame(patch: Record<string, unknown>): EtherFrame {
   const parsed = parseFrame(JSON.stringify(signalFrame(patch)))
@@ -76,5 +76,17 @@ describe('applyFrame', () => {
     let s = applyFrame(initialStation, roll('2026-09-24T09:05:00.000Z', ['a', 'b']), T0)
     s = applyFrame(s, roll('2026-09-24T09:04:00.000Z', ['a']), T0)
     expect(s.roll?.entries.map((e) => e.name)).toEqual(['a', 'b'])
+  })
+})
+
+describe('letter kept between visits', () => {
+  it('restores a kept letter and ignores junk', () => {
+    const kept = restoreLetter(initialStation, { of: 32, fragments: { 3: 'уривок', 40: 'поза листом', x: 'ні' } })
+    expect(kept.fragmentsOf).toBe(32)
+    expect(kept.fragments).toEqual({ 3: 'уривок' })
+    expect(storedLetter(kept)).toEqual({ of: 32, fragments: { 3: 'уривок' } })
+    expect(restoreLetter(initialStation, 'broken')).toBe(initialStation)
+    expect(restoreLetter(initialStation, { of: 0, fragments: {} })).toBe(initialStation)
+    expect(storedLetter(initialStation)).toBeNull()
   })
 })

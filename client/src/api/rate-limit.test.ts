@@ -80,3 +80,31 @@ describe('EtherLimiter', () => {
     await expect(limiter.acquire(true, controller.signal)).rejects.toBeDefined()
   })
 })
+
+describe('EtherLimiter shared gate', () => {
+  function memoryGate() {
+    let until = 0
+    return {
+      load: () => until,
+      save: (value: number) => {
+        until = value
+      },
+    }
+  }
+
+  it('starts closed when an earlier page or another tab was jammed (CL-07)', () => {
+    const shared = memoryGate()
+    const first = new EtherLimiter(new FakeClock(0), undefined, shared)
+    first.hold(30)
+    const second = new EtherLimiter(new FakeClock(5_000), undefined, shared)
+    expect(second.gateUntil).toBe(31_000)
+  })
+
+  it('picks up a hold set elsewhere while it lives', () => {
+    const shared = memoryGate()
+    const limiter = new EtherLimiter(new FakeClock(0), undefined, shared)
+    expect(limiter.gateUntil).toBe(0)
+    shared.save(60_000)
+    expect(limiter.gateUntil).toBe(60_000)
+  })
+})

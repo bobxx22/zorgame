@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { availableServers, normalizeApiBase, resolveServer } from './servers'
+import { availableServers, normalizeApiBase, PROD_KEY_FINGERPRINT, resolveServer, STAND_KEY_FINGERPRINT } from './servers'
 
 const FP = 'f3a436df65614f08635f18fe0f64f145285203f1faa2905ecb25ffb90969a7de'
 
@@ -35,9 +35,16 @@ describe('resolveServer', () => {
     const s = resolveServer({ VITE_ZORIA_API_URL: 'http://localhost:8080/api/v1/' }, 'custom')
     expect(s).toMatchObject({ id: 'custom', apiBase: 'http://localhost:8080/api/v1' })
   })
-  it('accepts only a well-formed fingerprint', () => {
+  it('pins the published keys and lets env override them with a well-formed fingerprint', () => {
+    expect(resolveServer({}, null).keyFingerprint).toBe(PROD_KEY_FINGERPRINT)
+    expect(resolveServer({}, 'stand').keyFingerprint).toBe(STAND_KEY_FINGERPRINT)
     expect(resolveServer({ VITE_ZORIA_PROD_KEY_FINGERPRINT: FP.toUpperCase() }, null).keyFingerprint).toBe(FP)
-    expect(resolveServer({ VITE_ZORIA_PROD_KEY_FINGERPRINT: 'abc' }, null).keyFingerprint).toBeNull()
+    expect(resolveServer({ VITE_ZORIA_PROD_KEY_FINGERPRINT: 'abc' }, null).keyFingerprint).toBe(PROD_KEY_FINGERPRINT)
+  })
+  it('leaves a custom server unpinned unless env names its key', () => {
+    const env = { VITE_ZORIA_API_URL: 'http://localhost:1/api/v1' }
+    expect(resolveServer(env, 'custom').keyFingerprint).toBeNull()
+    expect(resolveServer({ ...env, VITE_ZORIA_CUSTOM_KEY_FINGERPRINT: FP }, 'custom').keyFingerprint).toBe(FP)
   })
 })
 

@@ -116,6 +116,46 @@ describe('CabinetStore', () => {
     expect(store.getSnapshot().repository?.accessStatus).toBe('verified')
   })
 
+  it('rereads a list whose reread failed on the next poll, not only when the summary moves again', async () => {
+    const { store, paths } = setup([
+      ...firstLoad(),
+      json(200, summary({ releasedStages: 2 })),
+      json(502, { error: { code: 'internal-error' } }),
+      json(502, { error: { code: 'internal-error' } }),
+      json(200, summary({ releasedStages: 2 })),
+      json(200, { items: [stageSummary('s2'), { ...stageSummary('s3'), position: 3 }] }),
+      json(200, summary({ releasedStages: 2 })),
+    ])
+    for (let i = 0; i < 4; i += 1) await store.tick()
+    expect(paths().slice(5)).toEqual([
+      'GET /me/summary',
+      'GET /stages',
+      'GET /stages',
+      'GET /me/summary',
+      'GET /stages',
+      'GET /me/summary',
+    ])
+    expect(store.getSnapshot().stages?.map((s) => s.id)).toEqual(['s2', 's3'])
+  })
+
+  it('keeps asking for a list that never loaded the first time', async () => {
+    const { store } = setup([
+      json(200, summary()),
+      new TypeError('reset'),
+      new TypeError('reset'),
+      json(200, { items: [stageSummary('s2')] }),
+      json(200, { items: [news('n1')], nextOffset: null }),
+      json(200, { repository }),
+      json(200, summary()),
+      json(200, { items: [message('m1')], nextOffset: null }),
+      json(200, { items: [stageSummary('s2')] }),
+    ])
+    await store.tick()
+    expect(store.getSnapshot().inbox).toBeNull()
+    await store.tick()
+    expect(store.getSnapshot().inbox?.map((m) => m.id)).toEqual(['m1'])
+  })
+
   it('asks nothing while the station is in static', async () => {
     const { store, paths } = setup([])
     store.setPhase('static')

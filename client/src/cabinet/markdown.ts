@@ -37,38 +37,69 @@ function pushText(out: Inline[], v: string): void {
   else out.push({ t: 'text', v })
 }
 
+const LINK_TEXT_MAX = 300
+const LINK_URL_MAX = 2_000
+
+/**
+ * `[text](url)` starting at `i`. The url may hold balanced parentheses; both
+ * parts are searched within a bound, so a long body full of `[` stays linear.
+ */
+function readLink(source: string, i: number): { text: string; url: string; end: number } | null {
+  const close = source.slice(i + 1, i + 2 + LINK_TEXT_MAX).indexOf(']')
+  if (close <= 0) return null
+  const textEnd = i + 1 + close
+  const text = source.slice(i + 1, textEnd)
+  if (text.includes('\n') || source.charAt(textEnd + 1) !== '(') return null
+  let depth = 0
+  for (let j = textEnd + 2; j < source.length && j - textEnd - 2 <= LINK_URL_MAX; j += 1) {
+    const c = source.charAt(j)
+    if (/\s/.test(c)) return null
+    if (c === '(') depth += 1
+    else if (c === ')') {
+      if (depth === 0) {
+        const url = source.slice(textEnd + 2, j)
+        return url ? { text, url, end: j + 1 } : null
+      }
+      depth -= 1
+    }
+  }
+  return null
+}
+
 export function parseInline(source: string, allowLinks = true): Inline[] {
   const out: Inline[] = []
+  // Once a closing mark was not found after some point, it is not searched for again: linear on any input.
+  let noTickAfter = Infinity
+  let noStarsAfter = Infinity
   let i = 0
   while (i < source.length) {
-    const rest = source.slice(i)
-
-    if (rest.startsWith('`')) {
+    if (source.startsWith('`', i) && i < noTickAfter) {
       const end = source.indexOf('`', i + 1)
-      if (end > i + 1) {
+      if (end < 0) noTickAfter = i
+      else if (end > i + 1) {
         out.push({ t: 'code', v: source.slice(i + 1, end) })
         i = end + 1
         continue
       }
     }
 
-    if (rest.startsWith('**')) {
+    if (source.startsWith('**', i) && i < noStarsAfter) {
       const end = source.indexOf('**', i + 2)
-      if (end > i + 2) {
+      if (end < 0) noStarsAfter = i
+      else if (end > i + 2) {
         out.push({ t: 'strong', c: parseInline(source.slice(i + 2, end), allowLinks) })
         i = end + 2
         continue
       }
     }
 
-    if (allowLinks && rest.startsWith('[')) {
-      const link = /^\[([^\]\n]+)\]\(([^)\s]+)\)/.exec(rest)
+    if (allowLinks && source.startsWith('[', i)) {
+      const link = readLink(source, i)
       if (link) {
-        const [whole, text = '', url = ''] = link
-        const href = safeHref(url)
-        if (href) out.push({ t: 'link', href, c: parseInline(text, false) })
-        else pushText(out, whole)
-        i += whole.length
+        const href = safeHref(link.url)
+        if (href) out.push({ t: 'link', href, c: parseInline(link.text, false) })
+        else pushText(out, source.slice(i, link.end))
+        i = link.end
         continue
       }
     }
@@ -81,7 +112,8 @@ export function parseInline(source: string, allowLinks = true): Inline[] {
 
 const HEADING = /^(#{1,4})\s+(.*)$/
 const BULLET = /^\s*[-*]\s+(.*)$/
-const ORDERED = /^\s*(\d{1,9})\.\s+(.*)$/
+// Up to three digits: a line that starts with a year ("2026. Сезон...") is a sentence, not item 2026.
+const ORDERED = /^\s*(\d{1,3})\.\s+(.*)$/
 const FENCE = /^\s*```/
 
 export function parseMarkdown(source: string): Block[] {
