@@ -15,9 +15,9 @@ import voiceNewStage from '../assets/sound/voice-new-stage.mp3'
 import voiceRegistered from '../assets/sound/voice-registered.mp3'
 import voiceVerified from '../assets/sound/voice-verified.mp3'
 import voiceWindowOpen from '../assets/sound/voice-window-open.mp3'
-import { isRecord } from '../lib/guards'
 import { readJson, writeJson } from '../lib/storage'
 import type { Cue, SfxName, VoiceName } from './cues'
+import { clampLevel, readSettings, type Channel, type RadioSettings } from './settings'
 
 /**
  * The station's sound, built like the site's intro: a short crackle of
@@ -55,15 +55,11 @@ const VOICE_PAUSE_MS: Partial<Record<VoiceName, number>> = {
   lost: 60_000,
 }
 
-const MASTER_GAIN = 0.6
-/** The intro's crackle level. */
+/** The intro's crackle level, before the signals channel of the mixer. */
 const CRACKLE_GAIN = 0.1
 const STORAGE_KEY = 'zoria.sound'
-
-export interface RadioSettings {
-  signals: boolean
-  voice: boolean
-}
+/** A level change glides this fast instead of clicking. */
+const LEVEL_GLIDE_S = 0.03
 
 export interface RadioSnapshot extends RadioSettings {
   /** The browser lets the page play: there was a click or a key press. */
@@ -72,13 +68,18 @@ export interface RadioSnapshot extends RadioSettings {
 
 /** Both on unless switched off before; without storage the choice lasts until reload. */
 function loadSettings(): RadioSettings {
-  const stored = readJson(STORAGE_KEY)
-  if (!isRecord(stored)) return { signals: true, voice: true }
-  return { signals: stored.signals !== false, voice: stored.voice !== false }
+  return readSettings(readJson(STORAGE_KEY))
 }
 
 function saveSettings(settings: RadioSettings): void {
   writeJson(STORAGE_KEY, settings)
+}
+
+/** master <- signals (the event sounds and the crackle), master <- voice. */
+interface Mixer {
+  master: GainNode
+  signals: GainNode
+  voice: GainNode
 }
 
 export class Radio {
@@ -87,11 +88,11 @@ export class Radio {
   readonly #lastVoice = new Map<VoiceName, number>()
   #snapshot: RadioSnapshot
   #ctx: AudioContext | null = null
-  #master: GainNode | null = null
+  #mixer: Mixer | null = null
   #noise: AudioBuffer | null = null
   #voiceFreeAt = 0
   /** Settings before M silenced everything, to bring them back. */
-  #beforeMute: RadioSettings | null = null
+  #beforeMute: Pick<RadioSettings, 'signals' | 'voice'> | null = null
 
   constructor() {
     this.#snapshot = { ...loadSettings(), unlocked: false }
@@ -111,14 +112,21 @@ export class Radio {
     if (typeof AudioContext === 'undefined') return
     if (!this.#ctx) {
       const ctx = new AudioContext()
+      const { levels } = this.#snapshot
       const master = ctx.createGain()
-      master.gain.value = MASTER_GAIN
+      master.gain.value = levels.master
       master.connect(ctx.destination)
+      const signals = ctx.createGain()
+      signals.gain.value = levels.signals
+      signals.connect(master)
+      const voice = ctx.createGain()
+      voice.gain.value = levels.voice
+      voice.connect(master)
       ctx.addEventListener('statechange', () => {
         this.#update({ unlocked: ctx.state === 'running' })
       })
       this.#ctx = ctx
-      this.#master = master
+      this.#mixer = { master, signals, voice }
     }
     if (this.#ctx.state === 'suspended') {
       this.#ctx.resume().catch(() => undefined)
@@ -129,12 +137,26 @@ export class Radio {
 
   setSignals(on: boolean): void {
     this.#beforeMute = null
-    this.#save({ signals: on, voice: this.#snapshot.voice })
+    this.#save({ signals: on })
   }
 
   setVoice(on: boolean): void {
     this.#beforeMute = null
-    this.#save({ signals: this.#snapshot.signals, voice: on })
+    this.#save({ voice: on })
+  }
+
+  /** One fader of the mixer, 0..1; it glides so a drag never clicks. */
+  setLevel(channel: Channel, value: number): void {
+    const level = clampLevel(value, this.#snapshot.levels[channel])
+    const node = this.#mixer?.[channel]
+    if (node && this.#ctx) node.gain.setTargetAtTime(level, this.#ctx.currentTime, LEVEL_GLIDE_S)
+    this.#save({ levels: { ...this.#snapshot.levels, [channel]: level } })
+  }
+
+  /** A short sample of a channel, to set its level by ear. */
+  preview(channel: Channel): void {
+    if (channel === 'voice') this.play({ voice: 'letter' }, { force: true })
+    else this.play({ sfx: 'confirm' }, { force: true })
   }
 
   /** Key M: silence everything, or bring back what was on. */
@@ -152,7 +174,7 @@ export class Radio {
   /** The crackle of a changing frame. */
   crackle(duration = 0.14): void {
     const ctx = this.#running()
-    if (!ctx || !this.#master || !this.#snapshot.signals) return
+    if (!ctx || !this.#mixer || !this.#snapshot.signals) return
     this.#noise ??= whiteNoise(ctx)
     const source = ctx.createBufferSource()
     source.buffer = this.#noise
@@ -165,7 +187,7 @@ export class Radio {
     gain.gain.setValueAtTime(0, t)
     gain.gain.linearRampToValueAtTime(CRACKLE_GAIN, t + 0.01)
     gain.gain.exponentialRampToValueAtTime(0.001, t + duration)
-    source.connect(band).connect(gain).connect(this.#master)
+    source.connect(band).connect(gain).connect(this.#mixer.signals)
     source.start(t, Math.random() * 0.5, duration + 0.05)
   }
 
@@ -183,20 +205,20 @@ export class Radio {
       voice ? this.#load(ctx, VOICE[voice]) : null,
     ])
     const now = ctx.currentTime
-    if (signal) this.#start(ctx, signal, now)
+    if (signal) this.#start(ctx, signal, now, 'signals')
     if (line) {
       // The voice comes in over the tail of the signal and never over another line.
       const at = Math.max(now + (signal ? signal.duration * 0.7 : 0), this.#voiceFreeAt)
       this.#voiceFreeAt = at + line.duration + 0.25
-      this.#start(ctx, line, at)
+      this.#start(ctx, line, at, 'voice')
     }
   }
 
-  #start(ctx: AudioContext, buffer: AudioBuffer, at: number): void {
-    if (!this.#master) return
+  #start(ctx: AudioContext, buffer: AudioBuffer, at: number, channel: 'signals' | 'voice'): void {
+    if (!this.#mixer) return
     const source = ctx.createBufferSource()
     source.buffer = buffer
-    source.connect(this.#master)
+    source.connect(this.#mixer[channel])
     source.start(at)
   }
 
@@ -222,9 +244,10 @@ export class Radio {
     return this.#ctx?.state === 'running' ? this.#ctx : null
   }
 
-  #save(settings: RadioSettings): void {
-    saveSettings(settings)
-    this.#update(settings)
+  #save(patch: Partial<RadioSettings>): void {
+    const { signals, voice, levels } = { ...this.#snapshot, ...patch }
+    saveSettings({ signals, voice, levels })
+    this.#update(patch)
   }
 
   #update(patch: Partial<RadioSnapshot>): void {

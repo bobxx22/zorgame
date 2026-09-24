@@ -6,6 +6,7 @@ import { formatDuration } from '../lib/time'
 import { useNow } from '../lib/use-now'
 import { LOOK_LABEL, lookCountdown, lookOf } from '../pages/ether-labels'
 import { useRadio, useRadioState } from '../sound/radio-context'
+import type { Channel } from '../sound/settings'
 import { Icon } from '../ui/Icon'
 import { Mark } from '../ui/Mark'
 import { NAV_TOP, useNavCounts } from '../ui/nav'
@@ -104,6 +105,13 @@ export function Bar() {
   )
 }
 
+/** The faders of the sound popover: everything, the event signals with the crackle, the voice. */
+const MIX: readonly { channel: Channel; label: string }[] = [
+  { channel: 'master', label: 'Загальна' },
+  { channel: 'signals', label: 'Сигнали' },
+  { channel: 'voice', label: 'Голос' },
+]
+
 /** The station's phase with its count, always in sight. */
 function OnAir() {
   const { station, listening } = useEther()
@@ -192,6 +200,35 @@ function SoundButton() {
               }}
             />
           </div>
+          <p className="pop-sub">Гучність</p>
+          {MIX.map(({ channel, label }) => {
+            const percent = Math.round(sound.levels[channel] * 100)
+            const off = channel === 'master' ? !sound.signals : !sound.signals || (channel === 'voice' && !sound.voice)
+            return (
+              <label key={channel} className="mix-row">
+                <span>{label}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={percent}
+                  disabled={off}
+                  aria-label={`Гучність: ${label}`}
+                  onChange={(e) => {
+                    radio.setLevel(channel, Number(e.target.value) / 100)
+                  }}
+                  onPointerUp={() => {
+                    radio.preview(channel)
+                  }}
+                  onKeyUp={(e) => {
+                    if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') radio.preview(channel)
+                  }}
+                />
+                <span className="num">{percent}%</span>
+              </label>
+            )
+          })}
           {blocked && <p className="pop-note warn">Браузер ще не дозволив звук: клацніть будь-де на сторінці.</p>}
           <p className="pop-note">
             Звучать лише події: провісник, просвіт, реєстрація, лист, нова частина, збої. Клавіша <kbd>M</kbd> вимикає
