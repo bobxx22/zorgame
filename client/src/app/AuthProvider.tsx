@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ApiResult } from '../api/client'
-import { parseMe, type Session } from '../auth/schemas'
+import { isProvisional, parseMe, type Session } from '../auth/schemas'
 import { browserSessionStore, isExpired } from '../auth/session-store'
 import { AuthContext, type AuthCallOptions, type AuthState } from './auth-context'
 import { useServer } from './server-context'
@@ -75,6 +75,26 @@ function ServerSession({ serverId, children }: { serverId: string; children: Rea
       }),
     [store],
   )
+
+  // A session whose user part did not parse (filled from the form) gets the real user from /me.
+  const provisionalToken = session && isProvisional(session.user) ? session.token : null
+  useEffect(() => {
+    if (!provisionalToken) return
+    const controller = new AbortController()
+    void api
+      .call({ path: '/me', parse: parseMe, token: provisionalToken, retry: ME_CHECK_RETRY, signal: controller.signal })
+      .then((result) => {
+        const current = sessionRef.current
+        if (!result.ok || current?.token !== provisionalToken) return
+        const next = { ...current, user: result.data }
+        sessionRef.current = next
+        store.save(next)
+        setSessionState(next)
+      })
+    return () => {
+      controller.abort()
+    }
+  }, [api, store, provisionalToken])
 
   const setSession = useCallback(
     (next: Session) => {

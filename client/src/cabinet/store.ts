@@ -247,13 +247,14 @@ export class CabinetStore {
       this.#fail(result)
       return false
     }
-    const stages = [...result.data].sort((a, b) => a.position - b.position)
-    this.#update({ stages })
+    const stages = [...result.data.items].sort((a, b) => a.position - b.position)
+    this.#update({ stages, ...skippedNote(result.data.skipped, 'частин завдання') })
     for (const stage of stages) {
       const cached = this.#snapshot.stageBodies[stage.id]
       if (cached && cached.errataAt !== stage.errataAt) await this.openStage(stage.id, true)
     }
-    return true
+    // A part that did not parse keeps the list due: the next poll reads it again.
+    return result.data.skipped === 0
   }
 
   async refreshRepository(signal = this.#run?.signal): Promise<boolean> {

@@ -1,7 +1,7 @@
 import { Backoff, fullJitter } from '../api/backoff'
 import type { ApiClient, ApiFailure, RetryPolicy } from '../api/client'
 import type { Clock } from '../api/clock'
-import { parseSession, type Session } from './schemas'
+import { parseIssuedSession, type Applicant, type Session } from './schemas'
 import { normalizeUsername, parseRepository, type FormField, type RegisterForm } from './validate'
 
 /**
@@ -42,9 +42,13 @@ const LOGIN_RETRY: RetryPolicy = { transient: true, busy: true, maxAttempts: 4 }
 /** How many times registration is attempted after recovery said "no account". */
 export const MAX_REGISTER_ATTEMPTS = 4
 const REGISTER_TIMEOUT_MS = 20_000
-/** After a lost answer the account may show up a little later: login is asked this many times. */
-export const LOGIN_CHECKS_AFTER_LOSS = 3
-const LOGIN_CHECK_PAUSE_MS = 3_000
+/**
+ * After a lost answer the account may show up minutes later: the password
+ * queue is busiest right when the window opens. Login is asked along this
+ * schedule (about three minutes) before "no account" is believed.
+ */
+export const LOGIN_CHECK_PAUSES_MS: readonly number[] = [5_000, 10_000, 15_000, 30_000, 30_000, 30_000, 30_000, 30_000]
+export const LOGIN_CHECKS_AFTER_LOSS = LOGIN_CHECK_PAUSES_MS.length + 1
 
 const FIELD_OF: Record<string, FormField> = {
   username: 'username',
@@ -115,13 +119,18 @@ export interface RegisterDeps {
 
 type LoginCheck = { kind: 'exists'; session: Session } | { kind: 'absent' } | { kind: 'unknown'; error: ApiFailure }
 
-async function checkByLogin(deps: RegisterDeps, username: string, password: string, tries: number): Promise<LoginCheck> {
+async function checkByLogin(
+  deps: RegisterDeps,
+  applicant: Applicant,
+  password: string,
+  tries: number,
+): Promise<LoginCheck> {
   for (let i = 1; ; i += 1) {
     const result = await deps.api.call({
       method: 'POST',
       path: '/auth/login',
-      body: { username, password },
-      parse: parseSession,
+      body: { username: applicant.username, password },
+      parse: parseIssuedSession(applicant, () => deps.clock.now()),
       retry: LOGIN_RETRY,
       ...(deps.signal ? { signal: deps.signal } : {}),
     })
@@ -129,7 +138,7 @@ async function checkByLogin(deps: RegisterDeps, username: string, password: stri
     const { error } = result
     if (!(error.kind === 'http' && error.status === 401)) return { kind: 'unknown', error }
     if (i >= tries) return { kind: 'absent' }
-    await deps.clock.sleep(LOGIN_CHECK_PAUSE_MS * i, deps.signal)
+    await deps.clock.sleep(LOGIN_CHECK_PAUSES_MS[i - 1] ?? 30_000, deps.signal)
   }
 }
 
@@ -144,6 +153,7 @@ export async function registerWithRecovery(form: RegisterForm, deps: RegisterDep
     repositoryUrl: repository.ok ? repository.slug : form.repository.trim(),
     lang: form.lang,
   }
+  const applicant: Applicant = { username, displayName: form.displayName, lang: form.lang }
   const backoff = new Backoff(deps.random)
   const trace: Trace = { lost: deps.lostBefore ?? false, requestId: null, status: null, at: null }
   let repeated = false
@@ -155,7 +165,7 @@ export async function registerWithRecovery(form: RegisterForm, deps: RegisterDep
         method: 'POST',
         path: '/auth/register',
         body,
-        parse: parseSession,
+        parse: parseIssuedSession(applicant, () => deps.clock.now()),
         retry: REGISTER_RETRY,
         timeoutMs: REGISTER_TIMEOUT_MS,
         ...(deps.signal ? { signal: deps.signal } : {}),
@@ -184,7 +194,7 @@ export async function registerWithRecovery(form: RegisterForm, deps: RegisterDep
 
       if (lost || taken || doubtful) {
         deps.onStep?.('recovering')
-        const check = await checkByLogin(deps, username, form.password, doubtful && trace.lost ? LOGIN_CHECKS_AFTER_LOSS : 1)
+        const check = await checkByLogin(deps, applicant, form.password, doubtful && trace.lost ? LOGIN_CHECKS_AFTER_LOSS : 1)
         if (check.kind === 'exists') return { kind: 'registered', session: check.session, via: 'login' }
         if (check.kind === 'unknown') return failed(check.error, trace, deps.clock)
         if (lost) {
@@ -225,6 +235,9 @@ export async function registerWithRecovery(form: RegisterForm, deps: RegisterDep
 /** Answers that will not change by asking again: the armed loop stops and shows them. */
 const ARMED_FINAL_CODES = new Set(['registration-capacity', 'same-origin-required', 'invalid-host', 'invalid-field'])
 const ARMED_MIN_PAUSE_MS = 1_000
+/** After "code spent by our own try": one more round every 30 s for about ten minutes. */
+const SPENT_CODE_PAUSE_MS = 30_000
+const SPENT_CODE_CHECKS = 20
 
 /**
  * After a failed armed try: the pause before the next one, or null when asking
@@ -232,6 +245,11 @@ const ARMED_MIN_PAUSE_MS = 1_000
  */
 export function armedRetryDelay(outcome: RegisterOutcome, streak: number, random: () => number = Math.random): number | null {
   if (outcome.kind === 'not-open') return Math.max(ARMED_MIN_PAUSE_MS, fullJitter(streak, random))
+  // The code went to our own lost try: the account is most likely there and just slow to show.
+  // Keep checking by login for a while instead of dropping the application.
+  if (outcome.kind === 'field' && outcome.code === 'invitation-spent') {
+    return streak < SPENT_CODE_CHECKS ? SPENT_CODE_PAUSE_MS : null
+  }
   if (outcome.kind !== 'failed') return null
   if (outcome.code && ARMED_FINAL_CODES.has(outcome.code)) return null
   const told = outcome.retryAfterSec !== null ? outcome.retryAfterSec * 1000 : 0

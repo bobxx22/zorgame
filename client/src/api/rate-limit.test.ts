@@ -108,3 +108,12 @@ describe('EtherLimiter shared gate', () => {
     expect(limiter.gateUntil).toBe(60_000)
   })
 })
+
+describe('EtherLimiter bounds', () => {
+  it('never holds longer than the longest jam, whatever storage says', () => {
+    const clock = new FakeClock(0)
+    const shared = { load: () => 10 * 24 * 3_600_000, save: () => undefined }
+    const limiter = new EtherLimiter(clock, undefined, shared)
+    expect(limiter.gateUntil).toBe(1_800_000 + GATE_MARGIN_MS)
+  })
+})

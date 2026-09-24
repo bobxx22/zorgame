@@ -6,8 +6,8 @@ import { sha256Hex } from './bytes'
  * no private key material ever lands in the repository.
  */
 
-export const TRAINING_PUBLIC_KEY = 'GQgsc8G1w5aXEnExpTBE597_7acc0vGKMAT5wUW4L5g'
-export const TRAINING_FINGERPRINT = 'f3a436df65614f08635f18fe0f64f145285203f1faa2905ecb25ffb90969a7de'
+export const TRAINING_PUBLIC_KEY = 'GQgsc8G1w5aXEnExpTBE597_7acc0vGKMAT5wUW4L5g' // gitleaks:allow public test key of the spec
+export const TRAINING_FINGERPRINT = 'f3a436df65614f08635f18fe0f64f145285203f1faa2905ecb25ffb90969a7de' // gitleaks:allow public
 export const TRAINING_KEY_ID = 'f3a436df65614f08'
 
 export const TRAINING_KEY_BODY = {

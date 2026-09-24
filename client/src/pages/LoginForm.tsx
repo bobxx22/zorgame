@@ -1,7 +1,7 @@
 import { useState, type SubmitEvent } from 'react'
 import { useAuth } from '../app/auth-context'
 import { useServer } from '../app/server-context'
-import { parseSession } from '../auth/schemas'
+import { parseIssuedSession } from '../auth/schemas'
 import { normalizeUsername } from '../auth/validate'
 import { Icon } from '../ui/Icon'
 import { useUnmountSignal } from '../lib/use-unmount-signal'
@@ -25,7 +25,7 @@ export function LoginForm({ onDone }: { onDone?: () => void }) {
       method: 'POST',
       path: '/auth/login',
       body: { username: normalizeUsername(username), password },
-      parse: parseSession,
+      parse: parseIssuedSession({ username: normalizeUsername(username), displayName: '', lang: 'uk' }),
       retry: { transient: true, busy: true, maxAttempts: 3 },
       signal,
     })

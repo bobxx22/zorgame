@@ -12,6 +12,9 @@ import { useEther, useEtherListener } from './ether-context'
 import { draftKey, RegistrationContext, type RegistrationState, type RegistrationStatus } from './registration-context'
 import { useServer } from './server-context'
 
+/** How often an armed application without a trusted key asks /public/config whether the window is open. */
+const KEYLESS_PROBE_MS = 120_000
+
 const EMPTY: RegisterForm = { username: '', displayName: '', password: '', invitation: '', repository: '', lang: 'uk' }
 
 interface Stored {
@@ -55,7 +58,8 @@ export function RegistrationProvider({ children }: { children: ReactNode }) {
 function ServerRegistration({ serverId, children }: { serverId: string; children: ReactNode }) {
   const { api } = useServer()
   const { setSession } = useAuth()
-  const { station } = useEther()
+  const ether = useEther()
+  const { station } = ether
   const listener = useEtherListener()
   const store = useMemo(() => storage(serverId), [serverId])
   const [initial] = useState(() => store.load())
@@ -80,8 +84,10 @@ function ServerRegistration({ serverId, children }: { serverId: string; children
     retryTimer.current = null
   }, [])
 
+  // While a request is on its way the application counts as "answer lost": if the page dies now
+  // (reload, crash), the next try already knows the account may exist.
   useEffect(() => {
-    store.save({ draft, armed, lost: lostBefore.current })
+    store.save({ draft, armed, lost: lostBefore.current || running.current !== null })
   }, [store, draft, armed, status.state])
 
   useEffect(() => {
@@ -147,10 +153,17 @@ function ServerRegistration({ serverId, children }: { serverId: string; children
           setStatus({ state: 'done', via: outcome.via })
           return
         }
+        if (outcome.kind === 'aborted') {
+          // Cut off by us (a remount, a reload of the code): the answer may never come, so it counts as lost,
+          // and an armed application goes back to waiting instead of hanging in "sending".
+          lostBefore.current = true
+          setStatus(armedRef.current ? { state: 'armed' } : { state: 'idle' })
+          return
+        }
         if (outcome.kind === 'failed' && outcome.lost) lostBefore.current = true
         // Armed means "get it through": a busy queue, a limit or a lost answer is waited out, not reported.
         const delay = armedRef.current ? armedRetryDelay(outcome, streak.current) : null
-        if (delay !== null && outcome.kind !== 'aborted') {
+        if (delay !== null) {
           streak.current += 1
           setStatus({ state: 'retrying', atMs: Date.now() + delay, attempt: streak.current, outcome })
           clearRetry()
@@ -160,7 +173,6 @@ function ServerRegistration({ serverId, children }: { serverId: string; children
           }, delay)
           return
         }
-        if (outcome.kind === 'aborted') return
         if (outcome.kind === 'field') {
           setServerErrors({ [outcome.field]: REGISTER_CODE_MESSAGE[outcome.code] ?? outcome.code })
         }
@@ -204,6 +216,23 @@ function ServerRegistration({ serverId, children }: { serverId: string; children
     setArmed(false)
     setStatus({ state: 'error', outcome: { kind: 'closed' } })
   }, [armed, station.phase, status.state, clearRetry])
+
+  // Without a trusted station key no frame is believed, so the window would never be seen: ask
+  // /public/config now and then instead (it answers without the seal; spec 3).
+  const { key, keyProblem } = ether
+  useEffect(() => {
+    if (!armed || status.state !== 'armed' || key !== null || keyProblem === null) return
+    const timer = window.setInterval(() => {
+      void api
+        .call({ path: '/public/config', parse: parseConfig, retry: { transient: true, busy: true, maxAttempts: 2 } })
+        .then((config) => {
+          if (config.ok && config.data.registrationOpen && armedRef.current) void send(draft, false)
+        })
+    }, KEYLESS_PROBE_MS)
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [armed, status.state, key, keyProblem, api, send, draft])
 
   // The armed application goes out on the first sealed window frame.
   useEffect(() => {

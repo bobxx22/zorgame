@@ -203,7 +203,10 @@ export class EtherListener {
   /** One polling cycle; returns the pause before the next one. */
   async tick(signal?: AbortSignal): Promise<number> {
     const healthy = await this.#poll('/ether', signal)
-    const rollDue = Math.max(this.#nextRollAtMs, this.#marks.last('/ether/roll') + ROLL_INTERVAL_MS)
+    const rollDue = Math.min(
+      this.#clock.now() + ROLL_INTERVAL_MS,
+      Math.max(this.#nextRollAtMs, this.#marks.last('/ether/roll') + ROLL_INTERVAL_MS),
+    )
     if (this.#rollWanted > 0 && this.#clock.now() >= rollDue) {
       this.#nextRollAtMs = this.#clock.now() + ROLL_INTERVAL_MS + this.#jitter()
       await this.#poll('/ether/roll', signal)
@@ -227,7 +230,8 @@ export class EtherListener {
       await this.prepareKey(signal)
       while (!signal.aborted) {
         // Another tab, a reload or a pause may have asked the ether moments ago: wait out the rest of 15 s.
-        const early = this.#marks.last('/ether') + ETHER_INTERVAL_MS - this.#clock.now()
+        // Never more than one interval: a mark from the future (the clock was set back) counts as "just now".
+        const early = Math.min(ETHER_INTERVAL_MS, this.#marks.last('/ether') + ETHER_INTERVAL_MS - this.#clock.now())
         if (early > 0) {
           this.#update({ nextPollAtMs: this.#clock.now() + early })
           await this.#clock.sleep(early, signal)

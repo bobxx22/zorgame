@@ -242,4 +242,18 @@ describe('lists that hold an odd record', () => {
     expect(s.stages?.map((x) => x.id)).toEqual(['s2'])
     expect(s.problem).toMatch(/оголошень \(1\)/)
   })
+
+  it('names a part it could not read and reads the list again on the next poll', async () => {
+    const { store, paths } = setup([
+      ...firstLoad().slice(0, 2),
+      json(200, { items: [stageSummary('s2'), { id: 's3', position: 'third' }] }),
+      ...firstLoad().slice(3),
+      json(200, summary()),
+      json(200, { items: [stageSummary('s2')] }),
+    ])
+    await store.tick()
+    expect(store.getSnapshot().problem).toMatch(/частин завдання \(1\)/)
+    await store.tick()
+    expect(paths().filter((p) => p === 'GET /stages')).toHaveLength(2)
+  })
 })

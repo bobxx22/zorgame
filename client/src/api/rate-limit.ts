@@ -20,6 +20,8 @@ export const DEFAULT_BUCKET: BucketOptions = { capacity: 15, refillMs: 3_300 }
 
 /** Extra wait after Retry-After: a request in the last second of a jam is still refused. */
 export const GATE_MARGIN_MS = 1_000
+/** A jam doubles up to this many seconds (spec 5.6); no hold is ever longer. */
+export const MAX_JAM_SEC = 1_800
 
 export class TokenBucket {
   readonly #capacity: number
@@ -104,8 +106,11 @@ export class EtherLimiter {
 
   /** The later of our own hold and one set elsewhere (another tab, an earlier load of the page). */
   #until(): number {
-    const shared = this.#shared?.load() ?? 0
+    // A mark from far ahead (the clock was set back, a broken value) never holds longer than the longest jam.
+    const limit = this.#clock.now() + MAX_JAM_SEC * 1000 + GATE_MARGIN_MS
+    const shared = Math.min(this.#shared?.load() ?? 0, limit)
     if (shared > this.#gateUntil) this.#gateUntil = shared
+    this.#gateUntil = Math.min(this.#gateUntil, limit)
     return this.#gateUntil
   }
 

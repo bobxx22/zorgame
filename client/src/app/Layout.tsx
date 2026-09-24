@@ -1,13 +1,15 @@
 import { useRef } from 'react'
-import { Outlet } from 'react-router'
+import { Outlet, useLocation } from 'react-router'
 import { StationSounds } from '../sound/StationSounds'
 import { ArmedGuard } from './ArmedGuard'
 import { Bar } from './Bar'
+import { ErrorBoundary } from './ErrorBoundary'
 import { Foot } from './Foot'
 import { SessionGuard } from './SessionUi'
 
 export function Layout() {
   const main = useRef<HTMLElement>(null)
+  const { pathname } = useLocation()
   return (
     <>
       <button
@@ -23,7 +25,9 @@ export function Layout() {
       <SessionGuard />
       <ArmedGuard />
       <main id="main" ref={main} tabIndex={-1}>
-        <Outlet />
+        <ErrorBoundary key={pathname} scope="screen">
+          <Outlet />
+        </ErrorBoundary>
       </main>
       <Foot />
       <StationSounds />

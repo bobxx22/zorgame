@@ -14,10 +14,12 @@ import { useServer } from './server-context'
 export function ArmedGuard() {
   const { server, servers, selectServer } = useServer()
   const listener = useEtherListener()
-  const { listening } = useEther()
+  const { listening, key, keyProblem } = useEther()
   const { status } = useRegistration()
   const armedHere = status.state === 'armed' || status.state === 'retrying'
   const armedOnProd = server.id !== 'prod' && isArmedOn('prod')
+  // Without a trusted key no frame is believed and the window would pass unseen (a changed key, an old browser).
+  const keyRefused = armedHere && key === null && keyProblem !== null && keyProblem !== 'unavailable'
   const prod = servers.find((s) => s.id === 'prod')
 
   useWakeLock(armedHere && listening)
@@ -38,6 +40,15 @@ export function ArmedGuard() {
           >
             Слухати
           </button>
+        </div>
+      )}
+      {keyRefused && (
+        <div className="strip warn" role="alert">
+          <Icon name="key" />
+          <span>
+            Ключ печатки не прийнято: кадрам не віримо, і відкриття просвіту клієнт може не помітити. Раз на 2 хвилини він
+            питає сервер напряму; перевірте новини про новий ключ, а в просвіт можна натиснути «Надіслати зараз».
+          </span>
         </div>
       )}
       {armedOnProd && prod && (

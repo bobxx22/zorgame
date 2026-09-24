@@ -1,10 +1,11 @@
 import { useState, type ReactNode, type SubmitEvent } from 'react'
 import { useEther } from '../app/ether-context'
 import { useRegistration, type RegistrationStatus } from '../app/registration-context'
+import { rememberPassword } from '../app/credentials'
 import { askNotifications } from '../app/notifications'
 import { useServer } from '../app/server-context'
 import { REGISTER_CODE_MESSAGE, type RegisterOutcome } from '../auth/register'
-import { parseRepository, type FormField, type Lang } from '../auth/validate'
+import { normalizeUsername, parseRepository, type FormField, type Lang } from '../auth/validate'
 import { envInvitation } from '../config/invitation'
 import { serverNow } from '../ether/station'
 import { formatDayTime, formatDuration, formatLocalTime, formatUtc, zoneLabel } from '../lib/time'
@@ -65,6 +66,7 @@ const STEP_TEXT = {
 
 function failureText(outcome: Exclude<RegisterOutcome, { kind: 'registered' }>): string {
   if (outcome.kind === 'not-open') return 'Сервер ще відповідає ефіром.'
+  if (outcome.kind === 'field') return REGISTER_CODE_MESSAGE[outcome.code] ?? outcome.code
   if (outcome.kind !== 'failed') return ''
   return (outcome.code && REGISTER_CODE_MESSAGE[outcome.code]) ?? `Помилка ${String(outcome.status ?? '')}.`
 }
@@ -139,10 +141,24 @@ export function RegisterForm() {
   const fromEnv = draft.invitation !== '' && draft.invitation === envInvitation(server.id)
   // The code is one-time: hidden like a password, so it does not end up in a screen recording.
   const [showCode, setShowCode] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [repeat, setRepeat] = useState('')
+  const [repeatError, setRepeatError] = useState<string | null>(null)
+
+  /** The password is typed twice and offered to the password manager: it cannot be recovered. */
+  function passwordReady(): boolean {
+    if (repeat !== draft.password) {
+      setRepeatError('Паролі не збігаються. Введіть той самий пароль ще раз.')
+      return false
+    }
+    setRepeatError(null)
+    rememberPassword(normalizeUsername(draft.username), draft.password, draft.displayName)
+    return true
+  }
 
   function onSubmit(event: SubmitEvent) {
     event.preventDefault()
-    if (!busy) submit()
+    if (!busy && passwordReady()) submit()
   }
 
   const error = (name: FormField) => (errors[name] ? <span className="ferr">{errors[name]}</span> : null)
@@ -193,7 +209,7 @@ export function RegisterForm() {
               <span className="hint warn">Це ім'я бачать усі в публічному журналі виходу на зв'язок.</span>
               {error('displayName')}
             </label>
-            <label className="fld">
+            <label className="fld wide">
               <span className="fl">Код заявки</span>
               <span className="with-btn">
                 <input
@@ -227,17 +243,44 @@ export function RegisterForm() {
             </label>
             <label className="fld">
               <span className="fl">Пароль</span>
-              <input
-                type="password"
-                autoComplete="new-password"
-                aria-invalid={bad('password')}
-                value={draft.password}
-                onChange={(e) => {
-                  setDraft({ password: e.target.value })
-                }}
-              />
+              <span className="with-btn">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  aria-invalid={bad('password')}
+                  value={draft.password}
+                  onChange={(e) => {
+                    setDraft({ password: e.target.value })
+                  }}
+                />
+                <button
+                  type="button"
+                  className="reveal"
+                  aria-pressed={showPassword}
+                  onClick={() => {
+                    setShowPassword(!showPassword)
+                  }}
+                >
+                  {showPassword ? 'сховати' : 'показати'}
+                </button>
+              </span>
               <span className="hint">12-256 знаків. Зміни і відновлення пароля в мережі немає: збережіть його.</span>
               {error('password')}
+            </label>
+            <label className="fld">
+              <span className="fl">Повторіть пароль</span>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                aria-invalid={repeatError ? true : undefined}
+                value={armed ? draft.password : repeat}
+                onChange={(e) => {
+                  setRepeat(e.target.value)
+                  setRepeatError(null)
+                }}
+              />
+              <span className="hint">Щоб помилка в одній літері не закрила вам вхід назавжди.</span>
+              {repeatError && <span className="ferr">{repeatError}</span>}
             </label>
             <label className="fld wide">
               <span className="fl">Репозиторій</span>
@@ -293,6 +336,7 @@ export function RegisterForm() {
                 className="btn"
                 disabled={busy}
                 onClick={() => {
+                  if (!passwordReady()) return
                   askNotifications()
                   arm()
                 }}

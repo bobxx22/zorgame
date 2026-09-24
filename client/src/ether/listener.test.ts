@@ -292,4 +292,24 @@ describe('EtherListener start/stop', () => {
     expect(listener.getSnapshot().nextPollAtMs).toBe(clock.now() + 10_000)
     listener.stop()
   })
+
+  it('waits at most one interval when the last mark is from the future (clock set back)', async () => {
+    const clock = new ParkedClock()
+    const { fetch } = scriptedFetch(clock, [json(200, JSON.parse(FRAME_A))])
+    const api = new ApiClient(BASE, { clock, fetch, random: () => 0 })
+    const marks = memoryMarks()
+    marks.mark('/ether', clock.now() + 3_600_000)
+    const listener = new EtherListener({
+      api,
+      keyStore: memoryStore(TRAINING_KEY_BODY),
+      pinnedFingerprint: TRAINING_FINGERPRINT,
+      marks,
+      clock,
+      random: () => 0,
+    })
+    listener.start()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(listener.getSnapshot().nextPollAtMs).toBe(clock.now() + ETHER_INTERVAL_MS)
+    listener.stop()
+  })
 })

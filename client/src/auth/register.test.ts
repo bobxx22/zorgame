@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { ApiClient } from '../api/client'
 import { FakeClock, json, scriptedFetch } from '../api/testing'
 import { FRAME_A } from '../ether/fixtures'
-import { armedRetryDelay, registerWithRecovery, type RegisterOutcome, type RegisterStep } from './register'
+import {
+  armedRetryDelay,
+  LOGIN_CHECKS_AFTER_LOSS,
+  registerWithRecovery,
+  type RegisterOutcome,
+  type RegisterStep,
+} from './register'
 import type { RegisterForm } from './validate'
 
 // Built at run time: no literal in the tree looks like a real password or token to a secret scanner.
@@ -174,11 +180,21 @@ describe('registerWithRecovery', () => {
   })
 
   it('says the code was spent by our own lost try when login never finds the account', async () => {
-    const { run } = setup(
-      [err(422, 'invalid-invitation'), err(401, 'invalid-credentials'), err(401, 'invalid-credentials'), err(401, 'invalid-credentials')],
-      true,
-    )
+    const noAccount = Array.from({ length: LOGIN_CHECKS_AFTER_LOSS }, () => err(401, 'invalid-credentials'))
+    const { run, paths } = setup([err(422, 'invalid-invitation'), ...noAccount], true)
     expect(await run()).toEqual({ kind: 'field', field: 'invitation', code: 'invitation-spent' })
+    // about three minutes of login checks before giving that answer
+    expect(paths().filter((p) => p === 'POST /auth/login')).toHaveLength(LOGIN_CHECKS_AFTER_LOSS)
+  })
+
+  it('takes a created account even when the user part of the answer does not parse', async () => {
+    const odd = { token: 'opaque.token-of-another-form', user: { id: 7 } }
+    const outcome = await setup([json(201, odd)]).run()
+    expect(outcome).toMatchObject({
+      kind: 'registered',
+      via: 'register',
+      session: { token: 'opaque.token-of-another-form', user: { id: '', username: 'bobx', displayName: 'Північна вахта' } },
+    })
   })
 
   it('checks a spent code by one login even without a known loss (the loss may predate a reload)', async () => {
@@ -212,6 +228,12 @@ describe('armedRetryDelay', () => {
     retryAfterSec,
     at: '2026-09-24T09:00:00.000Z',
     lost: false,
+  })
+
+  it('keeps checking for a while after the code went to our own lost try', () => {
+    const spent: RegisterOutcome = { kind: 'field', field: 'invitation', code: 'invitation-spent' }
+    expect(armedRetryDelay(spent, 0)).toBe(30_000)
+    expect(armedRetryDelay(spent, 25)).toBeNull()
   })
 
   it('stops on what repeating cannot change', () => {

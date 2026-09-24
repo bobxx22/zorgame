@@ -251,14 +251,62 @@ function SoundButton() {
   )
 }
 
-/** The network has no password change or recovery: a stray click must not leave a participant outside. */
-function confirmLogout(): boolean {
-  return window.confirm('Вийти з акаунта?\n\nЗміни й відновлення пароля в мережі немає: переконайтеся, що пароль збережено.')
+/**
+ * The network has no password change or recovery: a stray click must not leave
+ * a participant outside. The first press only asks, the second (within a few
+ * seconds) logs out - no blocking confirm() that would freeze the ether.
+ */
+function LogoutButton({ compact, onDone }: { compact: boolean; onDone?: () => void }) {
+  const { logout } = useAuth()
+  const [asking, setAsking] = useState(false)
+
+  useEffect(() => {
+    if (!asking) return
+    const timer = window.setTimeout(() => {
+      setAsking(false)
+    }, 5_000)
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [asking])
+
+  const press = () => {
+    if (!asking) {
+      setAsking(true)
+      return
+    }
+    onDone?.()
+    void logout()
+  }
+
+  if (asking) {
+    return (
+      <button
+        type="button"
+        className="btn sm warn"
+        title="Зміни й відновлення пароля в мережі немає: переконайтеся, що пароль збережено"
+        onClick={press}
+      >
+        <Icon name="out" />
+        Точно вийти?
+      </button>
+    )
+  }
+  return compact ? (
+    <button className="ib" type="button" title="Вийти" aria-label="Вийти" onClick={press}>
+      <Icon name="out" />
+    </button>
+  ) : (
+    <button type="button" className="btn sm" onClick={press}>
+      <Icon name="out" />
+      Вийти
+    </button>
+  )
 }
 
 /** On a phone the account lives in the sheet: the bar has no room for it. */
 function SheetAccount({ onNavigate }: { onNavigate: () => void }) {
-  const { session, logout } = useAuth()
+  const { session } = useAuth()
   return (
     <div className="rgroup">
       <p className="rh">Акаунт</p>
@@ -268,18 +316,7 @@ function SheetAccount({ onNavigate }: { onNavigate: () => void }) {
             <Icon name="user" />
             {session.user.username}
           </span>
-          <button
-            type="button"
-            className="btn sm"
-            onClick={() => {
-              if (!confirmLogout()) return
-              onNavigate()
-              void logout()
-            }}
-          >
-            <Icon name="out" />
-            Вийти
-          </button>
+          <LogoutButton compact={false} onDone={onNavigate} />
         </div>
       ) : (
         <Link className="btn sm" to="/contact" state={{ mode: 'login' }} onClick={onNavigate}>
@@ -292,7 +329,7 @@ function SheetAccount({ onNavigate }: { onNavigate: () => void }) {
 }
 
 function AccountBox() {
-  const { session, logout } = useAuth()
+  const { session } = useAuth()
   if (!session) {
     return (
       <Link className="btn sm acc-in" to="/contact" state={{ mode: 'login' }}>
@@ -307,18 +344,7 @@ function AccountBox() {
         <Icon name="user" />
         <span>{session.user.username}</span>
       </Link>
-      <button
-        className="ib"
-        type="button"
-        title="Вийти"
-        aria-label="Вийти"
-        onClick={() => {
-          if (!confirmLogout()) return
-          void logout()
-        }}
-      >
-        <Icon name="out" />
-      </button>
+      <LogoutButton compact />
     </div>
   )
 }

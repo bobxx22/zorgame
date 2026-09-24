@@ -8,6 +8,7 @@ import { StagePage, StagesPage } from '../pages/StagesPage'
 import { RadioProvider } from '../sound/RadioProvider'
 import { AuthProvider } from './AuthProvider'
 import { CabinetProvider } from './CabinetProvider'
+import { ErrorBoundary } from './ErrorBoundary'
 import { EtherProvider } from './EtherProvider'
 import { Layout } from './Layout'
 import { RegistrationProvider } from './RegistrationProvider'
@@ -27,23 +28,25 @@ export function App() {
           <AuthProvider>
             <RegistrationProvider>
               <CabinetProvider>
-                <Router>
-                  <Routes>
-                    <Route element={<Layout />}>
-                      <Route index element={<EtherPage />} />
-                      <Route path="contact" element={<ContactPage />} />
-                      {/* Registration and access became the steps of one page. */}
-                      <Route path="register" element={<Navigate to="/contact" replace />} />
-                      <Route path="access" element={<Navigate to="/contact" replace />} />
-                      <Route path="inbox" element={<InboxPage />} />
-                      <Route path="news" element={<NewsPage />} />
-                      <Route path="stages" element={<StagesPage />} />
-                      <Route path="stages/:id" element={<StagePage />} />
-                      <Route path="roll" element={<RollPage />} />
-                      <Route path="*" element={<Navigate to="/" replace />} />
-                    </Route>
-                  </Routes>
-                </Router>
+                <ErrorBoundary scope="shell">
+                  <Router>
+                    <Routes>
+                      <Route element={<Layout />}>
+                        <Route index element={<EtherPage />} />
+                        <Route path="contact" element={<ContactPage />} />
+                        {/* Registration and access became the steps of one page. */}
+                        <Route path="register" element={<Navigate to="/contact" replace />} />
+                        <Route path="access" element={<Navigate to="/contact" replace />} />
+                        <Route path="inbox" element={<InboxPage />} />
+                        <Route path="news" element={<NewsPage />} />
+                        <Route path="stages" element={<StagesPage />} />
+                        <Route path="stages/:id" element={<StagePage />} />
+                        <Route path="roll" element={<RollPage />} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                      </Route>
+                    </Routes>
+                  </Router>
+                </ErrorBoundary>
               </CabinetProvider>
             </RegistrationProvider>
           </AuthProvider>

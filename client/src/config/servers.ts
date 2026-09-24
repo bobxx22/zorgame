@@ -26,9 +26,9 @@ export interface ServerEnv {
 const STORAGE_KEY = 'zoria.server'
 
 /** Published in the part 1 task text, section 3 (23.09); SHA-256 of the raw key (CL-04). */
-export const PROD_KEY_FINGERPRINT = 'dcb3155eb8f2538d466a294315e984fa9f67f703556c5e276d5b3afc88895696'
+export const PROD_KEY_FINGERPRINT = 'dcb3155eb8f2538d466a294315e984fa9f67f703556c5e276d5b3afc88895696' // gitleaks:allow public, from the task text
 /** The stand's key is constant (client spec, section 6); its GET /ether/key gives this one. */
-export const STAND_KEY_FINGERPRINT = 'd8860c95b821dc56c0f44a2f0b22f3e157af83bfaed9e55206ac5109d4230a1a'
+export const STAND_KEY_FINGERPRINT = 'd8860c95b821dc56c0f44a2f0b22f3e157af83bfaed9e55206ac5109d4230a1a' // gitleaks:allow public
 
 const FINGERPRINT = /^[0-9a-f]{64}$/
 

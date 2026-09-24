@@ -56,7 +56,8 @@ export interface Repository {
 const str = (v: unknown): v is string => typeof v === 'string'
 const strOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string'
 const isTime = (v: unknown): v is string => typeof v === 'string' && !Number.isNaN(Date.parse(v))
-const TOKEN = /^[A-Za-z0-9_-]{43}$/
+/** A token is opaque: any non-empty header-safe string is taken, its exact form is the server's business. */
+const TOKEN = /^[\x21-\x7e]{1,4096}$/
 
 export function parseUser(value: unknown): User | null {
   if (!isRecord(value)) return null
@@ -73,6 +74,51 @@ export function parseSession(value: unknown): Session | null {
   if (!str(token) || !TOKEN.test(token) || !str(sessionId) || !isTime(expiresAt) || !user) return null
   return { token, sessionId, expiresAt, user }
 }
+
+/** Who registered or logged in, as the form knows it: stands in for a user part the client cannot read. */
+export interface Applicant {
+  username: string
+  displayName: string
+  lang: 'uk' | 'en'
+}
+
+/**
+ * A 2xx of register or login means the session exists (for register: the
+ * account too). Only the token is needed to go on; a user part or a time that
+ * does not parse is filled from the form and the day the spec gives a session,
+ * and /me reads the real user afterwards. A strict guard here would turn a
+ * created account into endless "unexpected answer" retries.
+ */
+export function parseIssuedSession(applicant: Applicant, nowMs: () => number = Date.now) {
+  return (value: unknown): Session | null => {
+    if (!isRecord(value)) return null
+    const { token, sessionId, expiresAt } = value
+    if (!str(token) || !TOKEN.test(token)) return null
+    const now = nowMs()
+    const user = parseUser(value.user) ?? {
+      id: '',
+      username: applicant.username,
+      displayName: applicant.displayName,
+      role: 'participant',
+      disabled: false,
+      createdAt: new Date(now).toISOString(),
+      lang: applicant.lang,
+    }
+    return {
+      token,
+      sessionId: str(sessionId) ? sessionId : '',
+      expiresAt: isTime(expiresAt) ? expiresAt : new Date(now + SESSION_DAY_MS).toISOString(),
+      user,
+    }
+  }
+}
+
+/** A user filled from the form, waiting for /me. */
+export function isProvisional(user: User): boolean {
+  return user.id === ''
+}
+
+const SESSION_DAY_MS = 24 * 60 * 60 * 1000
 
 export function parseMe(value: unknown): User | null {
   return isRecord(value) ? parseUser(value.user) : null

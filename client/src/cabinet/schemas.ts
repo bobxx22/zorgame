@@ -166,14 +166,16 @@ export function wrapped<T>(key: string, item: (v: unknown) => T | null) {
 }
 
 /** The released parts; a part that does not parse is left out rather than hiding the others. */
-export function parseStageList(v: unknown): StageSummary[] | null {
+export function parseStageList(v: unknown): { items: StageSummary[]; skipped: number } | null {
   if (!isRecord(v) || !Array.isArray(v.items)) return null
   const items: StageSummary[] = []
+  let skipped = 0
   for (const raw of v.items) {
     const parsed = parseStageSummary(raw)
     if (parsed) items.push(parsed)
+    else skipped += 1
   }
-  return items
+  return { items, skipped }
 }
 
 export function parseDeveloperCheck(v: unknown): DeveloperCheck | null {
