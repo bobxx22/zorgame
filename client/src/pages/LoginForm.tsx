@@ -4,6 +4,7 @@ import { useServer } from '../app/server-context'
 import { parseSession } from '../auth/schemas'
 import { normalizeUsername } from '../auth/validate'
 import { Icon } from '../ui/Icon'
+import { useUnmountSignal } from '../lib/use-unmount-signal'
 import { LOGIN_CODE_MESSAGE } from './auth-labels'
 
 /** Login by name and password. Errors stay next to the form; input is kept (CL-37). */
@@ -13,18 +14,22 @@ export function LoginForm({ onDone }: { onDone?: () => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  const unmountSignal = useUnmountSignal()
   const [error, setError] = useState<string | null>(null)
 
   async function login() {
     setBusy(true)
     setError(null)
+    const signal = unmountSignal()
     const result = await api.call({
       method: 'POST',
       path: '/auth/login',
       body: { username: normalizeUsername(username), password },
       parse: parseSession,
       retry: { transient: true, busy: true, maxAttempts: 3 },
+      signal,
     })
+    if (signal.aborted) return
     setBusy(false)
     if (result.ok) {
       setPassword('')

@@ -110,6 +110,17 @@ describe('registerWithRecovery', () => {
     expect(await setup([json(503, JSON.parse(FRAME_A))]).run()).toEqual({ kind: 'not-open' })
   })
 
+  it('believes "not open" only from an envelope under a valid seal (CL-02)', async () => {
+    const clock = new FakeClock(0)
+    const { fetch } = scriptedFetch(clock, [json(503, JSON.parse(FRAME_A)), json(503, JSON.parse(FRAME_A))])
+    const api = new ApiClient('https://stand.zoria.net/api/v1', { clock, fetch, random: () => 0 })
+    api.limiter.setPhase('window')
+    const run = (sealed: boolean) =>
+      registerWithRecovery(FORM, { api, clock, random: () => 0, hear: () => Promise.resolve(sealed) })
+    expect(await run(true)).toEqual({ kind: 'not-open' })
+    expect(await run(false)).toMatchObject({ kind: 'failed', status: 503 })
+  })
+
   it('waits out authentication-busy and repeats the same request', async () => {
     const { run, paths } = setup([
       json(429, { error: { code: 'authentication-busy' } }, { 'Retry-After': '5' }),

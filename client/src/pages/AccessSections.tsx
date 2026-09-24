@@ -7,11 +7,12 @@ import { checkRepository, parseRepository, type Lang } from '../auth/validate'
 import { parseDeveloperCheck, type DeveloperCheck } from '../cabinet/schemas'
 import { describeFailure } from '../cabinet/store'
 import { SEASON } from '../config/season'
-import { formatDayTime, formatLocal, zoneLabel } from '../lib/time'
+import { formatDayTime, formatLocal, formatUtc, zoneLabel } from '../lib/time'
+import { useUnmountSignal } from '../lib/use-unmount-signal'
 import { useRadio, useRadioState } from '../sound/radio-context'
 import { Icon } from '../ui/Icon'
 import { OnOff, Seg } from '../ui/Seg'
-import { accessStatusOf, reasonText } from './auth-labels'
+import { accessStatusOf, LANG_OPTIONS, reasonText } from './auth-labels'
 
 /** Shown in place of a step that needs a session. */
 export function Shut({ children }: { children: string }) {
@@ -110,6 +111,7 @@ export function ChangeRepository() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const unmountSignal = useUnmountSignal()
 
   if (!session) return <Shut>Змінити репозиторій можна після входу.</Shut>
   const current = cabinet?.repository ?? null
@@ -141,13 +143,16 @@ export function ChangeRepository() {
     const parsed = parseRepository(value)
     setBusy(true)
     setError(null)
+    const signal = unmountSignal()
     const result = await call({
       method: 'PUT',
       path: '/me/repository',
       body: { url: parsed.ok ? parsed.slug : value.trim() },
       parse: parseRepositoryEnvelope,
       retry: { transient: false, busy: true, maxAttempts: 3 },
+      signal,
     })
+    if (signal.aborted) return
     setBusy(false)
     setConfirming(false)
     if (result.ok) {
@@ -159,7 +164,10 @@ export function ChangeRepository() {
     if (failure.kind === 'http' && failure.status === 401) return
     const code = failure.kind === 'http' ? failure.code : failure.kind === 'network' ? failure.reason : null
     if (code === 'session-required') setError('Зміна можлива тільки із сесії входу. Увійдіть логіном і паролем.')
-    else setError((code && REGISTER_CODE_MESSAGE[code]) ?? 'Не вдалося змінити репозиторій.')
+    else if (failure.kind === 'http' && failure.status >= 500) {
+      // An outage: what the organizers need to look into it (CL-37).
+      setError(`${describeFailure(result) ?? 'Збій сервера.'} Час: ${formatUtc(Date.now())}.`)
+    } else setError((code && REGISTER_CODE_MESSAGE[code]) ?? describeFailure(result) ?? 'Не вдалося змінити репозиторій.')
   }
 
   function onSubmit(event: SubmitEvent) {
@@ -221,11 +229,6 @@ export function ChangeRepository() {
   )
 }
 
-const LANGS = [
-  { value: 'uk', label: 'Українська' },
-  { value: 'en', label: 'English' },
-] as const
-
 /** Sound of the station, language of server texts (CL-42), an exchange check (POST /developer/check). */
 export function Settings() {
   const { session, call, setSession } = useAuth()
@@ -233,11 +236,14 @@ export function Settings() {
   const sound = useRadioState()
   const [langNote, setLangNote] = useState<string | null>(null)
   const [check, setCheck] = useState<DeveloperCheck | string | null>(null)
+  const unmountSignal = useUnmountSignal()
 
   async function changeLang(lang: Lang) {
     if (!session) return
     setLangNote(null)
-    const result = await call({ method: 'PATCH', path: '/me', body: { lang }, parse: parseMe })
+    const signal = unmountSignal()
+    const result = await call({ method: 'PATCH', path: '/me', body: { lang }, parse: parseMe, signal })
+    if (signal.aborted) return
     if (result.ok) {
       setSession({ ...session, user: result.data })
       setLangNote('Збережено. Новою мовою прийдуть сповіщення і причини рішень щодо репозиторію.')
@@ -248,7 +254,9 @@ export function Settings() {
 
   async function runCheck() {
     const echo = 'Зоря ✓ перевірка обміну'
-    const result = await call({ method: 'POST', path: '/developer/check', body: { echo }, parse: parseDeveloperCheck })
+    const signal = unmountSignal()
+    const result = await call({ method: 'POST', path: '/developer/check', body: { echo }, parse: parseDeveloperCheck, signal })
+    if (signal.aborted) return
     if (!result.ok) {
       setCheck(describeFailure(result) ?? 'Перевірка не вдалася.')
       return
@@ -292,7 +300,7 @@ export function Settings() {
             <>
               <Seg
                 label="Мова листів сервера"
-                options={LANGS}
+                options={LANG_OPTIONS}
                 value={session.user.lang}
                 onChange={(lang: Lang) => {
                   void changeLang(lang)

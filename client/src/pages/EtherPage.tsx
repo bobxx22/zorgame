@@ -7,10 +7,10 @@ import { useRegistration } from '../app/registration-context'
 import { useServer } from '../app/server-context'
 import { SEASON } from '../config/season'
 import { voiceOf } from '../ether/frame'
-import type { EtherSnapshot } from '../ether/listener'
+import type { EtherSnapshot, LogEntry } from '../ether/listener'
 import { letter, serverNow } from '../ether/station'
 import { cls } from '../lib/cls'
-import { formatDay, formatDayTime, formatDuration, formatLocalTime, zoneLabel } from '../lib/time'
+import { formatDay, formatDayTime, formatDuration, formatLocalTime, formatUtc, zoneLabel } from '../lib/time'
 import { useNow } from '../lib/use-now'
 import { CopyButton } from '../ui/CopyButton'
 import { Icon, type IconName } from '../ui/Icon'
@@ -471,6 +471,11 @@ function CabinetCards({ ether }: { ether: EtherSnapshot }) {
 
 const LOG_FOLDED = 8
 
+/** A failure on the server's side or on the way to it: worth a report when the window is at stake. */
+function outage(entry: LogEntry): boolean {
+  return (entry.status !== null && entry.status >= 500) || entry.outcome === 'network' || entry.outcome === 'timeout'
+}
+
 function ReceptionLog({ ether }: { ether: EtherSnapshot }) {
   const [all, setAll] = useState(false)
   const rows = all ? ether.log : ether.log.slice(0, LOG_FOLDED)
@@ -500,7 +505,7 @@ function ReceptionLog({ ether }: { ether: EtherSnapshot }) {
                 const outcome = OUTCOME[entry.outcome]
                 return (
                   <tr key={entry.id}>
-                    <td data-label="Час" className="num">
+                    <td data-label="Час" className="num" title={formatUtc(entry.atMs)}>
                       {formatLocalTime(entry.atMs)}
                     </td>
                     <td data-label="Маршрут">
@@ -515,7 +520,21 @@ function ReceptionLog({ ether }: { ether: EtherSnapshot }) {
                     <td data-label="Код" className="num">
                       {entry.status ?? ''}
                     </td>
-                    <td data-label="Подробиці">{entry.detail ?? ''}</td>
+                    <td data-label="Подробиці">
+                      {entry.detail ?? ''}
+                      {entry.requestId && (
+                        <>
+                          {entry.detail ? ' · ' : ''}
+                          <code>{entry.requestId}</code>
+                        </>
+                      )}
+                      {outage(entry) && (
+                        <CopyButton
+                          text={`${formatUtc(entry.atMs)}, GET ${entry.route}, ${entry.status === null ? entry.outcome : String(entry.status)}${entry.requestId ? `, X-Request-Id: ${entry.requestId}` : ''}`}
+                          title="Скопіювати для організаторів: час у UTC і X-Request-Id"
+                        />
+                      )}
+                    </td>
                   </tr>
                 )
               })}

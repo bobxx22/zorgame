@@ -2,6 +2,7 @@ import { Backoff } from './backoff'
 import { systemClock, type Clock } from './clock'
 import { rawRequest, type FailureReason, type FetchLike, type Method, type RawResult } from './http'
 import { countsTowardEtherLimit, EtherLimiter } from './rate-limit'
+import { isRecord } from '../lib/guards'
 
 /**
  * Typed calls to /api/v1 on top of rawRequest: every request passes the ether
@@ -75,9 +76,6 @@ export interface ApiClientDeps {
   limiter?: EtherLimiter
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 export function readError(json: { value: unknown } | null): ErrorBody | null {
   if (!json || !isRecord(json.value)) return null
@@ -90,8 +88,9 @@ export function readError(json: { value: unknown } | null): ErrorBody | null {
   }
 }
 
-const SEAL = /^[A-Za-z0-9_-]{86}$/
-const KEY_ID = /^[0-9a-f]{16}$/
+/** Seal: Ed25519 signature in base64url without padding; key id: the first 16 hex of the key's SHA-256. */
+export const SEAL_PATTERN = /^[A-Za-z0-9_-]{86}$/
+export const KEY_ID_PATTERN = /^[0-9a-f]{16}$/
 
 /** Form check only; the seal itself is verified by the ether module. */
 export function looksLikeEnvelope(value: unknown): boolean {
@@ -99,9 +98,9 @@ export function looksLikeEnvelope(value: unknown): boolean {
     isRecord(value) &&
     typeof value.frame === 'string' &&
     typeof value.seal === 'string' &&
-    SEAL.test(value.seal) &&
+    SEAL_PATTERN.test(value.seal) &&
     typeof value.key === 'string' &&
-    KEY_ID.test(value.key)
+    KEY_ID_PATTERN.test(value.key)
   )
 }
 

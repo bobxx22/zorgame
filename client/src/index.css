@@ -388,6 +388,10 @@ input:hover:not(:disabled){border-color:rgba(245,235,220,.26)}
 input:focus{outline:none;border-color:rgba(var(--acc),.7);box-shadow:0 0 0 3px rgba(var(--acc),.12)}
 input[aria-invalid=true]{border-color:rgba(221,139,120,.7)}
 input:disabled{opacity:.55}
+.with-btn{position:relative;display:block}
+.with-btn input{padding-right:88px}
+.reveal{position:absolute;right:6px;top:6px;height:32px;padding:0 10px;border-radius:4px;color:var(--t2);font:600 12px/1 var(--fb)}
+.reveal:hover{color:var(--t1);background:rgba(var(--acc),.08)}
 .hint{font:400 13px/1.45 var(--fb);color:var(--t3)}
 .hint.warn{color:var(--dawn)}
 .hint code{font-size:12px}

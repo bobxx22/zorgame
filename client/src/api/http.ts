@@ -1,5 +1,3 @@
-import { isAbortError } from './clock'
-
 /**
  * One HTTP exchange that never throws (CL-01): any status, empty or non-JSON
  * body, HTML, a dropped connection or a slow answer comes back as a value.
@@ -90,10 +88,12 @@ export async function rawRequest(
       retryAfterSec: parseRetryAfter(response.headers.get('Retry-After'), nowMs()),
       requestId: response.headers.get('X-Request-Id'),
     }
-  } catch (error) {
+  } catch {
     if (request.signal?.aborted) return { kind: 'failure', reason: 'aborted' }
     if (timeout.signal.aborted) return { kind: 'failure', reason: 'timeout' }
-    return { kind: 'failure', reason: isAbortError(error) ? 'aborted' : 'network' }
+    // Neither our signal nor our timeout: the browser or the network cut it off - an ordinary failure
+    // that the callers retry, not a cancellation they would silently accept.
+    return { kind: 'failure', reason: 'network' }
   } finally {
     globalThis.clearTimeout(timer)
   }

@@ -214,6 +214,11 @@ function SoundButton() {
   )
 }
 
+/** The network has no password change or recovery: a stray click must not leave a participant outside. */
+function confirmLogout(): boolean {
+  return window.confirm('Вийти з акаунта?\n\nЗміни й відновлення пароля в мережі немає: переконайтеся, що пароль збережено.')
+}
+
 /** On a phone the account lives in the sheet: the bar has no room for it. */
 function SheetAccount({ onNavigate }: { onNavigate: () => void }) {
   const { session, logout } = useAuth()
@@ -230,6 +235,7 @@ function SheetAccount({ onNavigate }: { onNavigate: () => void }) {
             type="button"
             className="btn sm"
             onClick={() => {
+              if (!confirmLogout()) return
               onNavigate()
               void logout()
             }}
@@ -270,6 +276,7 @@ function AccountBox() {
         title="Вийти"
         aria-label="Вийти"
         onClick={() => {
+          if (!confirmLogout()) return
           void logout()
         }}
       >

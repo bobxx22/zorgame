@@ -1,4 +1,7 @@
+import { KEY_ID_PATTERN, SEAL_PATTERN } from '../api/client'
 import { parseJson } from '../api/http'
+import type { EtherPhase } from '../api/rate-limit'
+import { isRecord } from '../lib/guards'
 import { verifySeal } from './seal'
 
 /**
@@ -7,7 +10,7 @@ import { verifySeal } from './seal'
  * the frame. The frame string is never re-serialized before the check.
  */
 
-export type EtherPhase = 'static' | 'window' | 'after'
+export type { EtherPhase }
 
 export interface Envelope {
   frame: string
@@ -71,12 +74,6 @@ export type Reception =
   | { kind: 'signal'; frame: EtherFrame; keyId: string }
   | { kind: 'noise'; reason: NoiseReason }
 
-const SEAL = /^[A-Za-z0-9_-]{86}$/
-const KEY_ID = /^[0-9a-f]{16}$/
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0
@@ -93,7 +90,7 @@ export function parseEnvelope(text: string): Envelope | null {
   if (!json || !isRecord(json.value)) return null
   const { frame, seal, key } = json.value
   if (typeof frame !== 'string' || typeof seal !== 'string' || typeof key !== 'string') return null
-  if (!SEAL.test(seal) || !KEY_ID.test(key)) return null
+  if (!SEAL_PATTERN.test(seal) || !KEY_ID_PATTERN.test(key)) return null
   return { frame, seal, key }
 }
 

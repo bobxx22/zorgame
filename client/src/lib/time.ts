@@ -34,6 +34,13 @@ export function parseServerTime(iso: string | null | undefined): Date | null {
 }
 
 /** "5:59:12", "1 д 02:03:04", "0:00:07"; negative spans clamp to zero. */
+/** Any moment the formatters take: a server timestamp, epoch ms or a Date; null when there is none. */
+function toDate(value: Date | number | string | null | undefined): Date | null {
+  if (typeof value === 'string') return parseServerTime(value)
+  if (typeof value === 'number') return new Date(value)
+  return value ?? null
+}
+
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
   const days = Math.floor(total / 86_400)
@@ -60,8 +67,7 @@ export function formatLocal(
   timeZone: string = localTimeZone(),
   locale = 'uk-UA',
 ): string {
-  const date =
-    typeof value === 'string' ? parseServerTime(value) : typeof value === 'number' ? new Date(value) : (value ?? null)
+  const date = toDate(value)
   if (!date) return '—'
   return new Intl.DateTimeFormat(locale, {
     timeZone,
@@ -81,8 +87,7 @@ export function formatDayTime(
   timeZone: string = localTimeZone(),
   locale = 'uk-UA',
 ): string {
-  const date =
-    typeof value === 'string' ? parseServerTime(value) : typeof value === 'number' ? new Date(value) : (value ?? null)
+  const date = toDate(value)
   if (!date) return '—'
   return new Intl.DateTimeFormat(locale, {
     timeZone,
@@ -100,10 +105,15 @@ export function formatDay(
   timeZone: string = localTimeZone(),
   locale = 'uk-UA',
 ): string {
-  const date =
-    typeof value === 'string' ? parseServerTime(value) : typeof value === 'number' ? new Date(value) : (value ?? null)
+  const date = toDate(value)
   if (!date) return '—'
   return new Intl.DateTimeFormat(locale, { timeZone, day: '2-digit', month: '2-digit' }).format(date)
+}
+
+/** "2026-09-24 09:00:04 UTC": the form the organizers ask for when reporting an outage (spec 6). */
+export function formatUtc(value: Date | number | string): string {
+  const iso = new Date(value).toISOString()
+  return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`
 }
 
 /** "22.09.2026" in the local zone, as the site dates its announcements. */
@@ -112,8 +122,7 @@ export function formatDate(
   timeZone: string = localTimeZone(),
   locale = 'uk-UA',
 ): string {
-  const date =
-    typeof value === 'string' ? parseServerTime(value) : typeof value === 'number' ? new Date(value) : (value ?? null)
+  const date = toDate(value)
   if (!date) return '—'
   return new Intl.DateTimeFormat(locale, { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
 }

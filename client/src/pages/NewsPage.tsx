@@ -28,7 +28,7 @@ export function NewsPage() {
           <Toc
             items={cabinet.news.map((item) => ({
               id: entryId(item),
-              n: formatDate(item.publishedAt),
+              n: formatDate(item.publishedAt ?? item.createdAt),
               stacked: true,
               label: item.title,
               dim: item.archivedAt !== null,
@@ -46,7 +46,7 @@ export function NewsPage() {
           cabinet.news.map((item) => (
             <section key={item.id} className={cls('entry', item.archivedAt && 'archived')}>
               <h2 id={entryId(item)}>
-                <span className="hn num">{formatDate(item.publishedAt)}</span>
+                <span className="hn num">{formatDate(item.publishedAt ?? item.createdAt)}</span>
                 {item.title}
               </h2>
               {(item.updatedAt !== item.createdAt || item.archivedAt) && (

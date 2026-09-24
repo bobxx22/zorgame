@@ -22,7 +22,7 @@ describe('readAllPages (CL-28)', () => {
       offsets.push(offset)
       return Promise.resolve(pages[offset] ?? ok([], null))
     })
-    expect(result).toEqual({ ok: true, items: [{ id: 'c' }, { id: 'b' }, { id: 'a' }] })
+    expect(result).toEqual({ ok: true, items: [{ id: 'c' }, { id: 'b' }, { id: 'a' }], skipped: 0 })
     expect(offsets).toEqual([0, 2])
   })
 
@@ -35,7 +35,7 @@ describe('readAllPages (CL-28)', () => {
       return Promise.resolve(replies.shift() ?? ok([], null))
     })
     expect(offsets).toEqual([0, 2, 0, 2])
-    expect(result).toEqual({ ok: true, items: ['d', 'c', 'b', 'a'].map((id) => ({ id })) })
+    expect(result).toEqual({ ok: true, items: ['d', 'c', 'b', 'a'].map((id) => ({ id })), skipped: 0 })
   })
 
   it('passes a failure through', async () => {

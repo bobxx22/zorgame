@@ -32,6 +32,11 @@ export const SUMMARY_INTERVAL_MS = 15_000
 export const SUMMARY_JITTER_MS = 2_000
 /** When the phase is unknown the cabinet asks rarely: the answers may be noise. */
 export const UNKNOWN_PHASE_INTERVAL_MS = 60_000
+/**
+ * Letters are reread by the unread counter (CL-27), and also this often: a
+ * letter read in another tab while a new one came leaves the counter where it was.
+ */
+export const INBOX_REFRESH_MS = 5 * 60_000
 
 export type AuthCall = <T>(options: Omit<CallOptions<T>, 'token'>) => Promise<ApiResult<T>>
 
@@ -52,6 +57,8 @@ export interface CabinetSnapshot {
 
 export interface CabinetOptions {
   call: AuthCall
+  /** Verifies an ether envelope that came instead of an answer (CL-02); without it the form is believed. */
+  hear?: (text: string) => Promise<boolean>
   clock?: Clock
   random?: () => number
 }
@@ -103,12 +110,18 @@ function isAuthLost<T>(result: ApiResult<T>): boolean {
   return !result.ok && result.error.kind === 'http' && result.error.status === 401
 }
 
+/** Says that some records did not parse and were left out; the rest is shown. */
+function skippedNote(skipped: number, what: string): Partial<CabinetSnapshot> {
+  return skipped > 0 ? { problem: `Частину ${what} (${String(skipped)}) клієнт не зміг прочитати і не показує; решту показано.` } : {}
+}
+
 function isAborted<T>(result: ApiResult<T>): boolean {
   return !result.ok && result.error.kind === 'network' && result.error.reason === 'aborted'
 }
 
 export class CabinetStore {
   readonly #call: AuthCall
+  readonly #hear: ((text: string) => Promise<boolean>) | null
   readonly #clock: Clock
   readonly #random: () => number
   readonly #backoff: Backoff
@@ -117,9 +130,11 @@ export class CabinetStore {
   #run: AbortController | null = null
   #phase: EtherPhase | null = null
   #synced: Synced = {}
+  #inboxReadAtMs = Number.NEGATIVE_INFINITY
 
   constructor(options: CabinetOptions) {
     this.#call = options.call
+    this.#hear = options.hear ?? null
     this.#clock = options.clock ?? systemClock
     this.#random = options.random ?? Math.random
     this.#backoff = new Backoff(this.#random)
@@ -162,7 +177,7 @@ export class CabinetStore {
 
     const result = await this.#call({ path: '/me/summary', parse: parseSummary, retry: READ, ...withSignal(signal) })
     if (!result.ok) {
-      if (isNoise(result)) {
+      if (await this.#sealedNoise(result)) {
         this.#update({ noise: true })
         return base
       }
@@ -178,7 +193,7 @@ export class CabinetStore {
     // Compared with what each list was last read for, not with the previous summary:
     // a reread that failed stays due until it succeeds.
     const synced = this.#synced
-    const inboxDue = synced.inbox !== next.unread
+    const inboxDue = synced.inbox !== next.unread || this.#clock.now() - this.#inboxReadAtMs >= INBOX_REFRESH_MS
     if (inboxDue && (await this.refreshInbox(signal))) synced.inbox = next.unread
     // A new part comes with a letter, so a moved inbox rereads the parts too.
     if ((inboxDue || synced.stages !== next.releasedStages) && (await this.refreshStages(signal))) {
@@ -202,7 +217,10 @@ export class CabinetStore {
         ...withSignal(signal),
       }),
     )
-    if (pages.ok) this.#update({ inbox: pages.items })
+    if (pages.ok) {
+      this.#inboxReadAtMs = this.#clock.now()
+      this.#update({ inbox: pages.items, ...skippedNote(pages.skipped, 'листів') })
+    }
     else this.#fail(pages.result)
     return pages.ok
   }
@@ -217,7 +235,7 @@ export class CabinetStore {
         ...withSignal(signal),
       }),
     )
-    if (pages.ok) this.#update({ news: pages.items })
+    if (pages.ok) this.#update({ news: pages.items, ...skippedNote(pages.skipped, 'оголошень') })
     else this.#fail(pages.result)
     return pages.ok
   }
@@ -341,6 +359,12 @@ export class CabinetStore {
     } catch (error) {
       if (!isAbortError(error)) this.#update({ problem: 'Опитування кабінету зупинилося.', polling: false })
     }
+  }
+
+  /** An envelope instead of an answer is the station in static only when its seal checks out. */
+  async #sealedNoise<T>(result: ApiResult<T>): Promise<boolean> {
+    if (result.ok || result.error.kind !== 'http' || !isNoise(result)) return false
+    return this.#hear ? this.#hear(result.error.text) : true
   }
 
   #fail<T>(result: ApiResult<T>): void {

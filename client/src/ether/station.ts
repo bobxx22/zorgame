@@ -91,6 +91,21 @@ export function applyFrame(state: StationState, frame: EtherFrame, receivedAtMs:
   }
 }
 
+/** How far the local clock may be behind before a window frame counts as an old echo. */
+export const STALE_WINDOW_SLACK_MS = 5 * 60_000
+
+/**
+ * The window is open for real: the newest frame says so and its closing time
+ * has not passed. A freshly opened tab may first hear an echo of an old
+ * window frame (the stand opens a window every hour); its closesAt, read by
+ * the local clock, gives it away. Only frames that name no closing time are
+ * taken at their word.
+ */
+export function windowIsLive(state: StationState, localNowMs: number): boolean {
+  if (state.phase !== 'window') return false
+  return state.window === null || state.window.closesAtMs > localNowMs - STALE_WINDOW_SLACK_MS
+}
+
 /** Server-clock now, from the local clock and the estimated offset. */
 export function serverNow(state: StationState, localNowMs: number): number {
   return localNowMs + (state.clockOffsetMs ?? 0)

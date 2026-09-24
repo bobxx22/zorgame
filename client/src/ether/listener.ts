@@ -1,7 +1,7 @@
 import { Backoff } from '../api/backoff'
 import { readError, type ApiClient } from '../api/client'
 import { isAbortError, systemClock, type Clock } from '../api/clock'
-import { receive, type NoiseReason } from './frame'
+import { receive, type EtherFrame, type NoiseReason } from './frame'
 import { loadStationKey, type KeyProblem, type StationKey } from './seal'
 import { applyFrame, initialStation, restoreLetter, storedLetter, type StationState } from './station'
 
@@ -43,6 +43,27 @@ export interface LogEntry {
   outcome: Outcome
   status: number | null
   detail: string | null
+  /** X-Request-Id of the answer: with the UTC time, what the organizers ask for about an outage (spec 6, CL-37). */
+  requestId: string | null
+}
+
+/**
+ * When each ether route was last asked, kept where every tab of this server
+ * and every reload of the page see it: the intervals of CL-08 hold across them.
+ */
+export interface PollMarks {
+  last(route: Route): number
+  mark(route: Route, atMs: number): void
+}
+
+export function memoryMarks(): PollMarks {
+  const marks = new Map<Route, number>()
+  return {
+    last: (route) => marks.get(route) ?? Number.NEGATIVE_INFINITY,
+    mark: (route, atMs) => {
+      marks.set(route, atMs)
+    },
+  }
 }
 
 export interface KeyInfo {
@@ -77,6 +98,8 @@ export interface EtherListenerOptions {
   pinnedFingerprint: string | null
   /** Where the Keeper's letter is kept between visits; same shape as the key store. */
   letterStore?: KeyStore
+  /** Shared times of the last requests; in memory when not given. */
+  marks?: PollMarks
   clock?: Clock
   random?: () => number
 }
@@ -96,6 +119,7 @@ export class EtherListener {
   readonly #api: ApiClient
   readonly #keyStore: KeyStore
   readonly #letterStore: KeyStore | null
+  readonly #marks: PollMarks
   readonly #pinned: string | null
   readonly #clock: Clock
   readonly #random: () => number
@@ -109,11 +133,14 @@ export class EtherListener {
   #rollWanted = 0
   #nextRollAtMs = 0
   #logId = 0
+  /** Retry-After of the last outage answer, honoured by the next pause. */
+  #holdMs = 0
 
   constructor(options: EtherListenerOptions) {
     this.#api = options.api
     this.#keyStore = options.keyStore
     this.#letterStore = options.letterStore ?? null
+    this.#marks = options.marks ?? memoryMarks()
     this.#pinned = options.pinnedFingerprint
     if (this.#letterStore) {
       this.#snapshot = { ...this.#snapshot, station: restoreLetter(initialStation, this.#letterStore.load()) }
@@ -149,7 +176,8 @@ export class EtherListener {
   /** Asks for the roll while the caller needs it; returns the release. */
   wantRoll(): () => void {
     this.#rollWanted += 1
-    if (this.#rollWanted === 1) this.#nextRollAtMs = 0
+    // Coming back to the roll does not reset its minute: it is read as soon as the minute allows.
+    if (this.#rollWanted === 1) this.#nextRollAtMs = this.#marks.last('/ether/roll') + ROLL_INTERVAL_MS
     let released = false
     return () => {
       if (released) return
@@ -175,7 +203,8 @@ export class EtherListener {
   /** One polling cycle; returns the pause before the next one. */
   async tick(signal?: AbortSignal): Promise<number> {
     const healthy = await this.#poll('/ether', signal)
-    if (this.#rollWanted > 0 && this.#clock.now() >= this.#nextRollAtMs) {
+    const rollDue = Math.max(this.#nextRollAtMs, this.#marks.last('/ether/roll') + ROLL_INTERVAL_MS)
+    if (this.#rollWanted > 0 && this.#clock.now() >= rollDue) {
       this.#nextRollAtMs = this.#clock.now() + ROLL_INTERVAL_MS + this.#jitter()
       await this.#poll('/ether/roll', signal)
     }
@@ -183,7 +212,9 @@ export class EtherListener {
     if (healthy) {
       this.#backoff.reset()
     } else {
-      const pause = Math.max(base, this.#backoff.next())
+      // The server's own Retry-After (503 stopping) wins over our backoff when it is longer.
+      const pause = Math.max(base, this.#backoff.next(), this.#holdMs)
+      this.#holdMs = 0
       this.#update({ failureStreak: this.#backoff.streak })
       return pause
     }
@@ -195,6 +226,13 @@ export class EtherListener {
     try {
       await this.prepareKey(signal)
       while (!signal.aborted) {
+        // Another tab, a reload or a pause may have asked the ether moments ago: wait out the rest of 15 s.
+        const early = this.#marks.last('/ether') + ETHER_INTERVAL_MS - this.#clock.now()
+        if (early > 0) {
+          this.#update({ nextPollAtMs: this.#clock.now() + early })
+          await this.#clock.sleep(early, signal)
+          continue
+        }
         let delay: number
         try {
           delay = await this.tick(signal)
@@ -220,6 +258,7 @@ export class EtherListener {
 
   /** Polls one ether route; false means a failure that should back off. */
   async #poll(route: '/ether' | '/ether/roll', signal?: AbortSignal): Promise<boolean> {
+    this.#marks.mark(route, this.#clock.now())
     const result = await this.#api.send({ path: route, ...(signal ? { signal } : {}) })
     const receivedAtMs = this.#clock.now()
 
@@ -229,31 +268,51 @@ export class EtherListener {
       return false
     }
 
+    const requestId = result.requestId
     if (result.status === 429) {
       const code = readError(result.json)?.code ?? null
-      this.#log(route, code === 'jammed' ? 'jammed' : 'rate-limited', 429, code)
+      this.#log(route, code === 'jammed' ? 'jammed' : 'rate-limited', 429, code, requestId)
       return true
     }
 
     const reception = await receive(result.text, (id) => this.#keyFor(id, signal))
     if (reception.kind === 'signal') {
-      const previous = this.#snapshot.station
-      const station = applyFrame(previous, reception.frame, receivedAtMs)
-      const newest = station.latest === reception.frame
-      if (newest) this.#api.limiter.setPhase(reception.frame.phase)
-      if (station.fragments !== previous.fragments) this.#letterStore?.save(storedLetter(station))
-      this.#update({ station })
+      const newest = this.#accept(reception.frame, receivedAtMs)
       const { phase, damaged } = reception.frame
       const detail = damaged.length > 0 ? `${phase}, без: ${damaged.join(', ')}` : phase
-      this.#log(route, newest ? 'signal' : 'echo', result.status, detail)
+      this.#log(route, newest ? 'signal' : 'echo', result.status, detail, requestId)
       return true
     }
 
     const outcome: Outcome =
       reception.reason === 'broken' ? (result.json === null ? 'broken' : 'no-envelope') : reception.reason
-    this.#log(route, outcome, result.status, readError(result.json)?.code ?? null)
+    this.#log(route, outcome, result.status, readError(result.json)?.code ?? null, requestId)
     // 5xx without an envelope is an outage, not the station talking (CL-09)
-    return !(result.status >= 500 && reception.reason === 'broken')
+    const outage = result.status >= 500 && reception.reason === 'broken'
+    if (outage) this.#holdMs = Math.max(this.#holdMs, (result.retryAfterSec ?? 0) * 1000)
+    return !outage
+  }
+
+  /** Applies a verified frame to the station; true when it is the newest one heard. */
+  #accept(frame: EtherFrame, receivedAtMs: number): boolean {
+    const previous = this.#snapshot.station
+    const station = applyFrame(previous, frame, receivedAtMs)
+    const newest = station.latest === frame
+    if (newest) this.#api.limiter.setPhase(frame.phase)
+    if (station.fragments !== previous.fragments) this.#letterStore?.save(storedLetter(station))
+    this.#update({ station })
+    return newest
+  }
+
+  /**
+   * Checks an envelope that came instead of an API answer (CL-02): true only
+   * for a frame under a valid seal, which then also updates the station.
+   */
+  hear = async (text: string): Promise<boolean> => {
+    const reception = await receive(text, (id) => this.#keyFor(id))
+    if (reception.kind !== 'signal') return false
+    this.#accept(reception.frame, this.#clock.now())
+    return true
   }
 
   async #keyFor(id: string, signal?: AbortSignal): Promise<CryptoKey | null> {
@@ -273,7 +332,7 @@ export class EtherListener {
       return
     }
     if (result.status !== 200 || !result.json) {
-      this.#log('/ether/key', 'key-failed', result.status, readError(result.json)?.code ?? null)
+      this.#log('/ether/key', 'key-failed', result.status, readError(result.json)?.code ?? null, result.requestId)
       if (!this.#key) this.#update({ keyProblem: 'unavailable' })
       return
     }
@@ -304,9 +363,9 @@ export class EtherListener {
     })
   }
 
-  #log(route: Route, outcome: Outcome, status: number | null, detail: string | null): void {
+  #log(route: Route, outcome: Outcome, status: number | null, detail: string | null, requestId: string | null = null): void {
     this.#logId += 1
-    const entry: LogEntry = { id: this.#logId, atMs: this.#clock.now(), route, outcome, status, detail }
+    const entry: LogEntry = { id: this.#logId, atMs: this.#clock.now(), route, outcome, status, detail, requestId }
     const counts = { ...this.#snapshot.counts, [outcome]: (this.#snapshot.counts[outcome] ?? 0) + 1 }
     this.#update({ log: [entry, ...this.#snapshot.log].slice(0, LOG_SIZE), counts })
   }

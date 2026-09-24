@@ -4,8 +4,11 @@ import { armedRetryDelay, REGISTER_CODE_MESSAGE, registerWithRecovery } from '..
 import { parseConfig } from '../auth/schemas'
 import { hasErrors, validateRegister, type FieldErrors, type RegisterForm } from '../auth/validate'
 import { envInvitation } from '../config/invitation'
+import { windowIsLive } from '../ether/station'
+import { isRecord } from '../lib/guards'
+import { readJson, writeJson } from '../lib/storage'
 import { useAuth } from './auth-context'
-import { useEther } from './ether-context'
+import { useEther, useEtherListener } from './ether-context'
 import { draftKey, RegistrationContext, type RegistrationState, type RegistrationStatus } from './registration-context'
 import { useServer } from './server-context'
 
@@ -27,23 +30,15 @@ function storage(serverId: string) {
   const name = draftKey(serverId)
   return {
     load(): Stored {
-      try {
-        const raw = window.sessionStorage.getItem(name)
-        if (!raw) return { draft: EMPTY, armed: false, lost: false }
-        const parsed = JSON.parse(raw) as Partial<Stored>
-        return { draft: { ...EMPTY, ...parsed.draft }, armed: parsed.armed === true, lost: parsed.lost === true }
-      } catch {
-        return { draft: EMPTY, armed: false, lost: false }
-      }
+      const stored = readJson(name, 'session')
+      if (!isRecord(stored)) return { draft: EMPTY, armed: false, lost: false }
+      const draft = isRecord(stored.draft) ? (stored.draft as Partial<RegisterForm>) : {}
+      return { draft: { ...EMPTY, ...draft }, armed: stored.armed === true, lost: stored.lost === true }
     },
     save(value: Stored) {
-      try {
-        // The password and the one-time code are stored only while the application is armed.
-        const draft = value.armed ? value.draft : { ...value.draft, password: '', invitation: '' }
-        window.sessionStorage.setItem(name, JSON.stringify({ draft, armed: value.armed, lost: value.lost }))
-      } catch {
-        // No storage: the draft lives until reload.
-      }
+      // The password and the one-time code are stored only while the application is armed.
+      const draft = value.armed ? value.draft : { ...value.draft, password: '', invitation: '' }
+      writeJson(name, { draft, armed: value.armed, lost: value.lost }, 'session')
     },
   }
 }
@@ -61,6 +56,7 @@ function ServerRegistration({ serverId, children }: { serverId: string; children
   const { api } = useServer()
   const { setSession } = useAuth()
   const { station } = useEther()
+  const listener = useEtherListener()
   const store = useMemo(() => storage(serverId), [serverId])
   const [initial] = useState(() => store.load())
   // The code is kept only while armed; otherwise it comes back from .env.local (live server only).
@@ -137,6 +133,7 @@ function ServerRegistration({ serverId, children }: { serverId: string; children
           clock: systemClock,
           signal: controller.signal,
           lostBefore: lostBefore.current,
+          hear: listener.hear,
           onStep: (step) => {
             setStatus({ state: 'sending', step })
           },
@@ -163,24 +160,26 @@ function ServerRegistration({ serverId, children }: { serverId: string; children
           }, delay)
           return
         }
+        if (outcome.kind === 'aborted') return
         if (outcome.kind === 'field') {
           setServerErrors({ [outcome.field]: REGISTER_CODE_MESSAGE[outcome.code] ?? outcome.code })
-          setArmed(false)
         }
-        if (outcome.kind === 'closed') setArmed(false)
-        if (outcome.kind !== 'aborted') setStatus({ state: 'error', outcome })
+        // Nothing more will be tried: the password and the code leave this tab's storage with the arming.
+        setArmed(false)
+        setStatus({ state: 'error', outcome })
       } finally {
         running.current = null
       }
     },
-    [api, setSession, clearRetry],
+    [api, setSession, clearRetry, listener],
   )
 
   const submit = useCallback(() => {
     setTouched(true)
     if (hasErrors(validateRegister(draft))) return
-    void send(draft, station.phase !== 'window')
-  }, [draft, send, station.phase])
+    // A stale echo of an old window is no reason to skip asking /public/config first.
+    void send(draft, !windowIsLive(station, Date.now()))
+  }, [draft, send, station])
 
   const arm = useCallback(() => {
     setTouched(true)
@@ -208,10 +207,10 @@ function ServerRegistration({ serverId, children }: { serverId: string; children
 
   // The armed application goes out on the first sealed window frame.
   useEffect(() => {
-    if (armed && station.phase === 'window' && status.state === 'armed') {
+    if (armed && status.state === 'armed' && windowIsLive(station, Date.now())) {
       void send(draft, false)
     }
-  }, [armed, station.phase, status.state, draft, send])
+  }, [armed, station, status.state, draft, send])
 
   const value = useMemo<RegistrationState>(
     () => ({ draft, setDraft, errors, status, submit, arm, disarm }),

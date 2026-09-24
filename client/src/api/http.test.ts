@@ -95,6 +95,14 @@ describe('rawRequest', () => {
     })
   })
 
+  it('treats a request cut off by the browser, not by us, as a network failure', async () => {
+    const { fetch } = scriptedFetch(clock, [new DOMException('Aborted', 'AbortError')])
+    expect(await rawRequest({ method: 'GET', url: 'u', signal: new AbortController().signal }, fetch)).toEqual({
+      kind: 'failure',
+      reason: 'network',
+    })
+  })
+
   it('reports a caller abort as aborted', async () => {
     const controller = new AbortController()
     controller.abort()

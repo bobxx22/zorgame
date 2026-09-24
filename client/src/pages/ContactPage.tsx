@@ -272,7 +272,9 @@ function Marker() {
   const { draft } = useRegistration()
   const username = session?.user.username ?? normalizeUsername(draft.username)
   const login = username || 'ваш-логін'
-  const command = `echo ${login} > .zoria && git add .zoria && git commit -m "Зоря.нет: логін у мережі" && git push`
+  const command = `printf '%s\\n' ${login} > .zoria && git add .zoria && git commit -m "Зоря.нет: логін у мережі" && git push`
+  // Windows PowerShell 5.1 writes `>` as UTF-16 with a BOM, which the bot may not read: ASCII explicitly.
+  const powershell = `Set-Content -Path .zoria -Value ${login} -Encoding ascii; git add .zoria; git commit -m "Zoria: login"; git push`
 
   return (
     <>
@@ -291,13 +293,25 @@ function Marker() {
       </p>
       <figure className="code">
         <figcaption>
-          <span className="lang">bash</span>
+          <span className="lang">bash, Git Bash</span>
           <span className="acts2">
             <CopyButton text={command} />
           </span>
         </figcaption>
         <pre>{command}</pre>
       </figure>
+      <figure className="code">
+        <figcaption>
+          <span className="lang">Windows PowerShell</span>
+          <span className="acts2">
+            <CopyButton text={powershell} />
+          </span>
+        </figcaption>
+        <pre>{powershell}</pre>
+      </figure>
+      <p className="note">
+        У PowerShell не пишіть <code>echo … &gt; .zoria</code>: він збереже файл у UTF-16, і бот може не прочитати логін.
+      </p>
       {!session && <Shut>Бот прочитає файл лише після реєстрації: до неї заявки для нього не існує.</Shut>}
     </>
   )

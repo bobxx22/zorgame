@@ -1,3 +1,4 @@
+import { readJson, removeKey, writeJson } from '../lib/storage'
 import { parseSession, type Session } from './schemas'
 
 /**
@@ -7,26 +8,29 @@ import { parseSession, type Session } from './schemas'
 export interface SessionStore {
   load(): Session | null
   save(session: Session | null): void
+  /** Calls back when another tab logged in or out on this server; returns the unsubscribe. */
+  watch(onChange: () => void): () => void
 }
 
 export function browserSessionStore(serverId: string): SessionStore {
   const name = `zoria.session.${serverId}`
   return {
-    load() {
-      try {
-        const raw = window.localStorage.getItem(name)
-        return raw === null ? null : parseSession(JSON.parse(raw) as unknown)
-      } catch {
-        return null
+    watch(onChange) {
+      const listener = (event: StorageEvent) => {
+        if (event.key === name || event.key === null) onChange()
+      }
+      window.addEventListener('storage', listener)
+      return () => {
+        window.removeEventListener('storage', listener)
       }
     },
+    load() {
+      const stored = readJson(name)
+      return stored === null ? null : parseSession(stored)
+    },
     save(session) {
-      try {
-        if (session) window.localStorage.setItem(name, JSON.stringify(session))
-        else window.localStorage.removeItem(name)
-      } catch {
-        // Storage unavailable: the session lasts until the tab is closed.
-      }
+      if (session) writeJson(name, session)
+      else removeKey(name)
     },
   }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, type ReactNode } from 'react'
-import { browserKeyStore } from '../ether/key-store'
+import { browserKeyStore, browserPollMarks } from '../ether/key-store'
 import { EtherListener } from '../ether/listener'
 import { EtherContext } from './ether-context'
 import { useServer } from './server-context'
@@ -14,6 +14,7 @@ export function EtherProvider({ children }: { children: ReactNode }) {
         api,
         keyStore: browserKeyStore(server.id),
         letterStore: browserKeyStore(server.id, 'letter'),
+        marks: browserPollMarks(server.id),
         pinnedFingerprint: server.keyFingerprint,
       }),
     [api, server.id, server.keyFingerprint],

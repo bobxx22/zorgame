@@ -164,6 +164,22 @@ describe('CabinetStore', () => {
     expect(store.getSnapshot().noise).toBe(true)
   })
 
+  it('does not call an envelope without a valid seal the station in static (CL-02)', async () => {
+    const clock = new FakeClock(0)
+    const { fetch } = scriptedFetch(clock, [json(503, JSON.parse(FRAME_A))])
+    const api = new ApiClient(BASE, { clock, fetch, random: () => 0 })
+    api.limiter.setPhase('window')
+    const store = new CabinetStore({
+      call: (options) => api.call({ ...options, token: 'T' }),
+      hear: () => Promise.resolve(false),
+      clock,
+      random: () => 0,
+    })
+    store.setPhase('window')
+    await store.tick()
+    expect(store.getSnapshot().noise).toBe(false)
+  })
+
   it('treats a sealed envelope instead of the summary as noise', async () => {
     const { store, paths } = setup([json(503, JSON.parse(FRAME_A))])
     await store.tick()
@@ -208,5 +224,22 @@ describe('CabinetStore', () => {
     await store.tick()
     expect(paths().slice(-2)).toEqual(['GET /stages', 'GET /stages/s2'])
     expect(store.getSnapshot().stageBodies.s2?.errata).toBe('Уточнення: такт 500 мс')
+  })
+})
+
+describe('lists that hold an odd record', () => {
+  it('shows a news item without publishedAt and skips only a broken one', async () => {
+    const { store } = setup([
+      json(200, summary()),
+      json(200, { items: [message('m1')], nextOffset: null }),
+      json(200, { items: [stageSummary('s2'), { id: 's3', position: 'third' }] }),
+      json(200, { items: [{ ...news('n1'), publishedAt: null }, { id: 'n2' }], nextOffset: null }),
+      json(200, { repository }),
+    ])
+    await store.tick()
+    const s = store.getSnapshot()
+    expect(s.news?.map((n) => [n.id, n.publishedAt])).toEqual([['n1', null]])
+    expect(s.stages?.map((x) => x.id)).toEqual(['s2'])
+    expect(s.problem).toMatch(/оголошень \(1\)/)
   })
 })

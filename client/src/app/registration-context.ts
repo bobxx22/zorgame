@@ -1,6 +1,8 @@
 import { createContext, useContext } from 'react'
 import type { RegisterOutcome, RegisterStep } from '../auth/register'
 import type { FieldErrors, RegisterForm } from '../auth/validate'
+import { isRecord } from '../lib/guards'
+import { readJson } from '../lib/storage'
 
 export type RegistrationStatus =
   | { state: 'idle' }
@@ -33,12 +35,8 @@ export function draftKey(serverId: string): string {
 
 /** Whether an application is armed for that server in this tab (read without its provider). */
 export function isArmedOn(serverId: string): boolean {
-  try {
-    const raw = window.sessionStorage.getItem(draftKey(serverId))
-    return raw !== null && (JSON.parse(raw) as { armed?: unknown }).armed === true
-  } catch {
-    return false
-  }
+  const stored = readJson(draftKey(serverId), 'session')
+  return isRecord(stored) && stored.armed === true
 }
 
 export function useRegistration(): RegistrationState {

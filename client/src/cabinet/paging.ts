@@ -13,7 +13,7 @@ export const MAX_RESTARTS = 3
 /** Hard stop against a server that never ends the list. */
 export const MAX_PAGES = 200
 
-export type PagedResult<T> = { ok: true; items: T[] } | { ok: false; result: ApiResult<Page<T>> }
+export type PagedResult<T> = { ok: true; items: T[]; skipped: number } | { ok: false; result: ApiResult<Page<T>> }
 
 export async function readAllPages<T extends { id: string }>(
   fetchPage: (offset: number, limit: number) => Promise<ApiResult<Page<T>>>,
@@ -23,10 +23,12 @@ export async function readAllPages<T extends { id: string }>(
     const items: T[] = []
     let offset: number | null = 0
     let shifted = false
+    let skipped = 0
 
     for (let page = 0; offset !== null && page < MAX_PAGES; page += 1) {
       const result = await fetchPage(offset, PAGE_LIMIT)
       if (!result.ok) return { ok: false, result }
+      skipped += result.data.skipped ?? 0
       for (const item of result.data.items) {
         if (seen.has(item.id)) {
           shifted = true
@@ -39,7 +41,7 @@ export async function readAllPages<T extends { id: string }>(
       offset = result.data.nextOffset
     }
 
-    if (!shifted) return { ok: true, items }
+    if (!shifted) return { ok: true, items, skipped }
   }
   // Still moving after several passes: keep what the last pass read, without duplicates.
   return readOnce(fetchPage)
@@ -50,11 +52,13 @@ async function readOnce<T extends { id: string }>(
 ): Promise<PagedResult<T>> {
   const byId = new Map<string, T>()
   let offset: number | null = 0
+  let skipped = 0
   for (let page = 0; offset !== null && page < MAX_PAGES; page += 1) {
     const result = await fetchPage(offset, PAGE_LIMIT)
     if (!result.ok) return { ok: false, result }
+    skipped += result.data.skipped ?? 0
     for (const item of result.data.items) if (!byId.has(item.id)) byId.set(item.id, item)
     offset = result.data.nextOffset
   }
-  return { ok: true, items: [...byId.values()] }
+  return { ok: true, items: [...byId.values()], skipped }
 }

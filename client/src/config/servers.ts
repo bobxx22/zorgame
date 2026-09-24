@@ -1,3 +1,5 @@
+import { readText, writeText } from '../lib/storage'
+
 /**
  * Servers the client can talk to. The live server and the training stand are
  * switched at runtime or by env, without touching code (CL-40).
@@ -96,17 +98,10 @@ export function availableServers(env: ServerEnv): ServerConfig[] {
 }
 
 export function readStoredServer(): string | null {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY)
-  } catch {
-    return null
-  }
+  return readText(STORAGE_KEY)
 }
 
+/** Without storage (private mode) the choice lasts until reload. */
 export function storeServer(id: ServerId): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, id)
-  } catch {
-    // Storage may be unavailable (private mode); the choice then lasts until reload.
-  }
+  writeText(STORAGE_KEY, id)
 }

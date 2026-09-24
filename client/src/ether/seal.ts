@@ -1,4 +1,5 @@
 import { decodeBase64Url, sha256Hex } from './bytes'
+import { isRecord } from '../lib/guards'
 
 /**
  * Station seal: Ed25519 (RFC 8032) over the UTF-8 bytes of the frame string
@@ -26,9 +27,6 @@ export type KeyProblem =
 
 export type KeyResult = { ok: true; key: StationKey } | { ok: false; problem: KeyProblem }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 /**
  * Checks a GET /ether/key body: Ed25519, 32-byte key, the fingerprint we compute

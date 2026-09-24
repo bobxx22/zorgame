@@ -15,6 +15,8 @@ import voiceNewStage from '../assets/sound/voice-new-stage.mp3'
 import voiceRegistered from '../assets/sound/voice-registered.mp3'
 import voiceVerified from '../assets/sound/voice-verified.mp3'
 import voiceWindowOpen from '../assets/sound/voice-window-open.mp3'
+import { isRecord } from '../lib/guards'
+import { readJson, writeJson } from '../lib/storage'
 import type { Cue, SfxName, VoiceName } from './cues'
 
 /**
@@ -68,25 +70,15 @@ export interface RadioSnapshot extends RadioSettings {
   unlocked: boolean
 }
 
+/** Both on unless switched off before; without storage the choice lasts until reload. */
 function loadSettings(): RadioSettings {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<RadioSettings>
-      return { signals: parsed.signals !== false, voice: parsed.voice !== false }
-    }
-  } catch {
-    // No storage or a broken value: defaults.
-  }
-  return { signals: true, voice: true }
+  const stored = readJson(STORAGE_KEY)
+  if (!isRecord(stored)) return { signals: true, voice: true }
+  return { signals: stored.signals !== false, voice: stored.voice !== false }
 }
 
 function saveSettings(settings: RadioSettings): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
-  } catch {
-    // Storage may be unavailable; the choice lasts until reload.
-  }
+  writeJson(STORAGE_KEY, settings)
 }
 
 export class Radio {

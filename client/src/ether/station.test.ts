@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { parseFrame, type EtherFrame } from './frame'
 import { signalFrame } from './fixtures'
-import { applyFrame, initialStation, letter, restoreLetter, serverNow, storedLetter } from './station'
+import {
+  applyFrame,
+  initialStation,
+  letter,
+  restoreLetter,
+  serverNow,
+  storedLetter,
+  windowIsLive,
+  type StationState,
+} from './station'
 
 function frame(patch: Record<string, unknown>): EtherFrame {
   const parsed = parseFrame(JSON.stringify(signalFrame(patch)))
@@ -76,6 +85,29 @@ describe('applyFrame', () => {
     let s = applyFrame(initialStation, roll('2026-09-24T09:05:00.000Z', ['a', 'b']), T0)
     s = applyFrame(s, roll('2026-09-24T09:04:00.000Z', ['a']), T0)
     expect(s.roll?.entries.map((e) => e.name)).toEqual(['a', 'b'])
+  })
+})
+
+describe('windowIsLive', () => {
+  const at = Date.parse('2026-09-24T12:00:00.000Z')
+  const inWindow = (closesAt: string | null): StationState => ({
+    ...initialStation,
+    phase: 'window',
+    window: closesAt ? { opensAtMs: at - 3_600_000, closesAtMs: Date.parse(closesAt) } : null,
+  })
+
+  it('believes a window that is still to close', () => {
+    expect(windowIsLive(inWindow('2026-09-24T19:00:00.000Z'), at)).toBe(true)
+  })
+  it('takes an echo of a window closed long ago for what it is', () => {
+    expect(windowIsLive(inWindow('2026-09-24T11:40:00.000Z'), at)).toBe(false)
+  })
+  it('allows a local clock a few minutes behind', () => {
+    expect(windowIsLive(inWindow('2026-09-24T11:58:00.000Z'), at)).toBe(true)
+  })
+  it('is false outside the window and true for a frame without a closing time', () => {
+    expect(windowIsLive({ ...initialStation, phase: 'static' }, at)).toBe(false)
+    expect(windowIsLive(inWindow(null), at)).toBe(true)
   })
 })
 

@@ -13,7 +13,7 @@ import {
   TRAINING_KEY_BODY,
   type TestStation,
 } from './fixtures'
-import { ETHER_INTERVAL_MS, EtherListener, KEY_REFETCH_MS, type KeyStore } from './listener'
+import { ETHER_INTERVAL_MS, EtherListener, KEY_REFETCH_MS, memoryMarks, type KeyStore } from './listener'
 
 const BASE = 'https://stand.zoria.net/api/v1'
 
@@ -174,6 +174,39 @@ describe('EtherListener polling', () => {
     expect(calls[1]?.at).toBe(jammedAt + 120_000 + GATE_MARGIN_MS)
   })
 
+  it('waits out the Retry-After of an outage when it is longer than the backoff', async () => {
+    const { listener } = setup([json(503, { error: { code: 'stopping' } }, { 'Retry-After': '90' })], {
+      stored: TRAINING_KEY_BODY,
+    })
+    await listener.prepareKey()
+    expect(await listener.tick()).toBe(90_000)
+  })
+
+  it('keeps the X-Request-Id of an answer in the reception log', async () => {
+    const { listener } = setup([json(502, { error: { code: 'internal-error' } }, { 'X-Request-Id': 'req-7' })], {
+      stored: TRAINING_KEY_BODY,
+    })
+    await listener.prepareKey()
+    await listener.tick()
+    expect(listener.getSnapshot().log[0]).toMatchObject({ status: 502, requestId: 'req-7' })
+  })
+
+  it('does not read the roll again when the page is reopened within its minute', async () => {
+    const { listener, paths, clock } = setup(
+      [json(200, JSON.parse(FRAME_A)), json(200, JSON.parse(FRAME_D)), json(200, JSON.parse(FRAME_A))],
+      { stored: TRAINING_KEY_BODY },
+    )
+    await listener.prepareKey()
+    const first = listener.wantRoll()
+    await listener.tick()
+    first()
+    clock.current += ETHER_INTERVAL_MS
+    const second = listener.wantRoll()
+    await listener.tick()
+    second()
+    expect(paths()).toEqual(['/ether', '/ether/roll', '/ether'])
+  })
+
   it('polls the roll only while wanted and at most once a minute', async () => {
     const { listener, paths, clock } = setup(
       [
@@ -237,5 +270,26 @@ describe('EtherListener start/stop', () => {
     expect(calls).toHaveLength(1)
     expect(seen[0]).toBe(true)
     unsubscribe()
+  })
+
+  it('does not ask the ether sooner than 15 s after the last request of any tab (CL-08)', async () => {
+    const clock = new ParkedClock()
+    const { fetch, calls } = scriptedFetch(clock, [json(200, JSON.parse(FRAME_A))])
+    const api = new ApiClient(BASE, { clock, fetch, random: () => 0 })
+    const marks = memoryMarks()
+    marks.mark('/ether', clock.now() - 5_000)
+    const listener = new EtherListener({
+      api,
+      keyStore: memoryStore(TRAINING_KEY_BODY),
+      pinnedFingerprint: TRAINING_FINGERPRINT,
+      marks,
+      clock,
+      random: () => 0,
+    })
+    listener.start()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(calls).toHaveLength(0)
+    expect(listener.getSnapshot().nextPollAtMs).toBe(clock.now() + 10_000)
+    listener.stop()
   })
 })

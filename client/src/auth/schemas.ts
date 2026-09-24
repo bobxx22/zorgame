@@ -1,3 +1,4 @@
+import { isRecord } from '../lib/guards'
 /**
  * Shape guards for 2xx bodies of part 1. A 2xx object that passes is a real
  * answer (spec 5.2: an API-like object never comes as noise). Unknown fields
@@ -51,11 +52,6 @@ export interface Repository {
   verifiedElsewhere: boolean
 }
 
-type Rec = Record<string, unknown>
-
-function isRecord(value: unknown): value is Rec {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 const str = (v: unknown): v is string => typeof v === 'string'
 const strOrNull = (v: unknown): v is string | null => v === null || typeof v === 'string'

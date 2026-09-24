@@ -55,6 +55,27 @@ function ServerSession({ serverId, children }: { serverId: string; children: Rea
     [store],
   )
 
+  // Login or logout in another tab of this server reaches this one too.
+  useEffect(
+    () =>
+      store.watch(() => {
+        const other = store.load()
+        const current = sessionRef.current
+        if (other?.token === current?.token) return
+        if (other && !isExpired(other, Date.now())) {
+          sessionRef.current = other
+          setSessionState(other)
+          setLost(false)
+        } else if (current) {
+          // Logged out elsewhere on purpose: no "connection lost" dialog here.
+          sessionRef.current = null
+          setSessionState(null)
+          setLost(false)
+        }
+      }),
+    [store],
+  )
+
   const setSession = useCallback(
     (next: Session) => {
       sessionRef.current = next

@@ -1,3 +1,4 @@
+import { isRecord } from '../lib/guards'
 /**
  * Shape guards for the cabinet: summary, news, letters, task parts. Optional
  * fields of the contract (notice, archivedAt, errataAt) default to null;
@@ -19,7 +20,8 @@ export interface News {
   body: string
   createdAt: string
   updatedAt: string
-  publishedAt: string
+  /** Nullable in the contract: such an item is dated by createdAt. */
+  publishedAt: string | null
   archivedAt: string | null
 }
 
@@ -63,6 +65,8 @@ export interface Stage extends Omit<StageSummary, 'excerpt'> {
 export interface Page<T> {
   items: T[]
   nextOffset: number | null
+  /** Items that did not pass the guard and were left out. */
+  skipped?: number
 }
 
 export interface DeveloperCheck {
@@ -71,9 +75,7 @@ export interface DeveloperCheck {
   checks: Record<string, boolean>
 }
 
-type Rec = Record<string, unknown>
 
-const isRecord = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v)
 const str = (v: unknown): v is string => typeof v === 'string'
 const time = (v: unknown): v is string => typeof v === 'string' && !Number.isNaN(Date.parse(v))
 const timeOrNull = (v: unknown): v is string | null => v === null || time(v)
@@ -93,7 +95,7 @@ export function parseNews(v: unknown): News | null {
   const { id, title, body, createdAt, updatedAt, publishedAt } = v
   const archivedAt = optionalTime(v.archivedAt)
   if (!str(id) || !str(title) || !str(body) || archivedAt === undefined) return null
-  if (!time(createdAt) || !time(updatedAt) || !time(publishedAt)) return null
+  if (!time(createdAt) || !time(updatedAt) || !timeOrNull(publishedAt)) return null
   return { id, title, body, createdAt, updatedAt, publishedAt, archivedAt }
 }
 
@@ -139,19 +141,23 @@ export function parseStage(v: unknown): Stage | null {
   return { id, position, title, body, publishedAt, releasedAt, acknowledgedAt, errata, errataAt }
 }
 
-/** `{items, nextOffset}` where every item must pass the guard. */
+/**
+ * `{items, nextOffset}`. An item that does not pass the guard is left out and
+ * counted: one odd record must not hide the whole list.
+ */
 export function parsePage<T>(item: (v: unknown) => T | null) {
   return (v: unknown): Page<T> | null => {
     if (!isRecord(v) || !Array.isArray(v.items)) return null
     const { nextOffset } = v
     if (!(nextOffset === null || count(nextOffset))) return null
     const items: T[] = []
+    let skipped = 0
     for (const raw of v.items) {
       const parsed = item(raw)
-      if (!parsed) return null
-      items.push(parsed)
+      if (parsed) items.push(parsed)
+      else skipped += 1
     }
-    return { items, nextOffset }
+    return { items, nextOffset, skipped }
   }
 }
 
@@ -159,13 +165,13 @@ export function wrapped<T>(key: string, item: (v: unknown) => T | null) {
   return (v: unknown): T | null => (isRecord(v) ? item(v[key]) : null)
 }
 
+/** The released parts; a part that does not parse is left out rather than hiding the others. */
 export function parseStageList(v: unknown): StageSummary[] | null {
   if (!isRecord(v) || !Array.isArray(v.items)) return null
   const items: StageSummary[] = []
   for (const raw of v.items) {
     const parsed = parseStageSummary(raw)
-    if (!parsed) return null
-    items.push(parsed)
+    if (parsed) items.push(parsed)
   }
   return items
 }

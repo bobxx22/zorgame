@@ -109,6 +109,8 @@ export interface RegisterDeps {
   signal?: AbortSignal
   /** An earlier try of the same application lost its answer (the armed loop carries this over). */
   lostBefore?: boolean
+  /** Verifies an ether envelope that came instead of an answer; without it any envelope is believed. */
+  hear?: (text: string) => Promise<boolean>
 }
 
 type LoginCheck = { kind: 'exists'; session: Session } | { kind: 'absent' } | { kind: 'unknown'; error: ApiFailure }
@@ -193,7 +195,8 @@ export async function registerWithRecovery(form: RegisterForm, deps: RegisterDep
       }
 
       if (error.kind === 'http') {
-        if (error.envelope) return { kind: 'not-open' }
+        // The station talking instead of the API means "not open yet" - but only under its seal (CL-02).
+        if (error.envelope) return !deps.hear || (await deps.hear(error.text)) ? { kind: 'not-open' } : failed(error, trace, deps.clock)
         if (error.status === 403 && error.code === 'registration-closed') return { kind: 'closed' }
         if (error.status === 422 || error.status === 409 || error.status === 400) {
           const code = trace.lost && error.code === 'invalid-invitation' ? 'invitation-spent' : error.code

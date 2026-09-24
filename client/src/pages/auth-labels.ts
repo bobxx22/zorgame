@@ -19,6 +19,12 @@ export const REASON_TEXT: Record<Exclude<ReasonCode, 'organizer'>, string> = {
   'inviter-mismatch': 'Запрошення надіслав не той GitHub-акаунт, що вказано в заявці. Запросіть із нього.',
 }
 
+/** Languages of server texts (CL-42), for the application form and the settings. */
+export const LANG_OPTIONS = [
+  { value: 'uk', label: 'Українська' },
+  { value: 'en', label: 'English' },
+] as const
+
 export const LOGIN_CODE_MESSAGE: Record<string, string> = {
   'invalid-credentials': 'Невірний логін або пароль.',
   'rate-limited': 'Забагато спроб входу. Зачекайте хвилину.',

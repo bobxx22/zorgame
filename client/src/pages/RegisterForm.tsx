@@ -1,4 +1,4 @@
-import type { ReactNode, SubmitEvent } from 'react'
+import { useState, type ReactNode, type SubmitEvent } from 'react'
 import { useEther } from '../app/ether-context'
 import { useRegistration, type RegistrationStatus } from '../app/registration-context'
 import { askNotifications } from '../app/notifications'
@@ -7,16 +7,12 @@ import { REGISTER_CODE_MESSAGE, type RegisterOutcome } from '../auth/register'
 import { parseRepository, type FormField, type Lang } from '../auth/validate'
 import { envInvitation } from '../config/invitation'
 import { serverNow } from '../ether/station'
-import { formatDayTime, formatDuration, formatLocalTime, zoneLabel } from '../lib/time'
+import { formatDayTime, formatDuration, formatLocalTime, formatUtc, zoneLabel } from '../lib/time'
 import { useNow } from '../lib/use-now'
 import { useRadioState } from '../sound/radio-context'
 import { Icon } from '../ui/Icon'
 import { Seg } from '../ui/Seg'
-
-const LANGS = [
-  { value: 'uk', label: 'Українська' },
-  { value: 'en', label: 'English' },
-] as const
+import { LANG_OPTIONS } from './auth-labels'
 
 /** Where the window is, in one line above the form. */
 function WindowNote() {
@@ -67,11 +63,6 @@ const STEP_TEXT = {
   retrying: 'Акаунта немає. Надсилаємо заявку ще раз…',
 } as const
 
-/** "2026-09-24 09:00:04 UTC": the form the organizers ask for when a window is to be extended. */
-function utc(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`
-}
-
 function failureText(outcome: Exclude<RegisterOutcome, { kind: 'registered' }>): string {
   if (outcome.kind === 'not-open') return 'Сервер ще відповідає ефіром.'
   if (outcome.kind !== 'failed') return ''
@@ -86,7 +77,7 @@ function Report({ outcome }: { outcome: Exclude<RegisterOutcome, { kind: 'regist
   if (!serverSide) return null
   return (
     <span className="report">
-      Для організаторів: {utc(outcome.at)}
+      Для організаторів: {formatUtc(outcome.at)}
       {outcome.status !== null && `, відповідь ${String(outcome.status)}`}
       {outcome.requestId && (
         <>
@@ -146,6 +137,8 @@ export function RegisterForm() {
   const repo = parseRepository(draft.repository)
   const { server } = useServer()
   const fromEnv = draft.invitation !== '' && draft.invitation === envInvitation(server.id)
+  // The code is one-time: hidden like a password, so it does not end up in a screen recording.
+  const [showCode, setShowCode] = useState(false)
 
   function onSubmit(event: SubmitEvent) {
     event.preventDefault()
@@ -202,15 +195,29 @@ export function RegisterForm() {
             </label>
             <label className="fld">
               <span className="fl">Код заявки</span>
-              <input
-                autoComplete="off"
-                placeholder="код із листа або телеграму"
-                aria-invalid={bad('invitation')}
-                value={draft.invitation}
-                onChange={(e) => {
-                  setDraft({ invitation: e.target.value })
-                }}
-              />
+              <span className="with-btn">
+                <input
+                  type={showCode ? 'text' : 'password'}
+                  autoComplete="one-time-code"
+                  spellCheck={false}
+                  placeholder="код із листа або телеграму"
+                  aria-invalid={bad('invitation')}
+                  value={draft.invitation}
+                  onChange={(e) => {
+                    setDraft({ invitation: e.target.value })
+                  }}
+                />
+                <button
+                  type="button"
+                  className="reveal"
+                  aria-pressed={showCode}
+                  onClick={() => {
+                    setShowCode(!showCode)
+                  }}
+                >
+                  {showCode ? 'сховати' : 'показати'}
+                </button>
+              </span>
               <span className="hint">
                 {fromEnv
                   ? 'Код підставлено з .env.local. Він одноразовий: нікому його не передавайте.'
@@ -255,7 +262,7 @@ export function RegisterForm() {
               <span className="fl">Мова листів сервера</span>
               <Seg
                 label="Мова листів сервера"
-                options={LANGS}
+                options={LANG_OPTIONS}
                 value={draft.lang}
                 disabled={armed}
                 onChange={(lang: Lang) => {
