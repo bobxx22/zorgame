@@ -6,6 +6,7 @@ import { Bar } from './Bar'
 import { ErrorBoundary } from './ErrorBoundary'
 import { Foot } from './Foot'
 import { SessionGuard } from './SessionUi'
+import { StationNotices } from './StationNotices'
 
 export function Layout() {
   const main = useRef<HTMLElement>(null)
@@ -31,6 +32,7 @@ export function Layout() {
       </main>
       <Foot />
       <StationSounds />
+      <StationNotices />
     </>
   )
 }

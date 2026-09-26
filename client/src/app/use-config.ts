@@ -8,8 +8,10 @@ import { useServer } from './server-context'
 /**
  * GET /public/config per server. Before the window the station answers it
  * with noise and it costs a token of the ether limit, so it is asked only in
- * the window and after; again when the phase changes or someone logs in, and
- * once a minute while it keeps failing. A good answer is kept for the page.
+ * the window and after, or with a session while no frame is verified (a
+ * session means the window has come); again when the phase changes or
+ * someone logs in, and once a minute while it keeps failing. A good answer is
+ * kept for the page.
  */
 const known = new WeakMap<ApiClient, Config>()
 const RETRY_MS = 60_000
@@ -20,8 +22,8 @@ export function useConfig(): ConfigState {
   const { api } = useServer()
   const { station } = useEther()
   const { session } = useAuth()
-  const open = station.phase === 'window' || station.phase === 'after'
   const loggedIn = session !== null
+  const open = station.phase === 'window' || station.phase === 'after' || (station.phase === null && loggedIn)
   const [loaded, setLoaded] = useState<{ api: ApiClient; value: ConfigState } | null>(null)
   const [attempt, setAttempt] = useState(0)
 

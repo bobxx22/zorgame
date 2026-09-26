@@ -10,9 +10,15 @@ import { applyFrame, initialStation, restoreLetter, storedLetter, type StationSt
  * no more often than once a minute and only while someone looks at it (CL-08).
  * Acts only on verified frames (CL-02); failures back off with jitter (CL-09);
  * a jam is waited out by the API client's gate (CL-07).
+ *
+ * After the window nothing new comes on air, while every /ether request still
+ * spends the address's ether tokens: then the ether is asked every 5 minutes,
+ * and at the usual pace only while the roll is watched.
  */
 
 export const ETHER_INTERVAL_MS = 15_000
+/** The ether's pace in the `after` phase: CL-08 sets only the upper limit. */
+export const QUIET_ETHER_INTERVAL_MS = 5 * 60_000
 export const ROLL_INTERVAL_MS = 60_000
 /** Random extra pause so clients behind one address do not poll in lockstep. */
 export const POLL_JITTER_MS = 3_000
@@ -135,6 +141,8 @@ export class EtherListener {
   #logId = 0
   /** Retry-After of the last outage answer, honoured by the next pause. */
   #holdMs = 0
+  /** The pause the last cycle asked for (interval, backoff or Retry-After) and when it began. */
+  #pause = { fromMs: Number.NEGATIVE_INFINITY, ms: 0 }
 
   constructor(options: EtherListenerOptions) {
     this.#api = options.api
@@ -229,12 +237,12 @@ export class EtherListener {
     try {
       await this.prepareKey(signal)
       while (!signal.aborted) {
-        // Another tab, a reload or a pause may have asked the ether moments ago: wait out the rest of 15 s.
-        // Never more than one interval: a mark from the future (the clock was set back) counts as "just now".
-        const early = Math.min(ETHER_INTERVAL_MS, this.#marks.last('/ether') + ETHER_INTERVAL_MS - this.#clock.now())
-        if (early > 0) {
-          this.#update({ nextPollAtMs: this.#clock.now() + early })
-          await this.#clock.sleep(early, signal)
+        const now = this.#clock.now()
+        const wait = this.#dueMs(now) - now
+        if (wait > 0) {
+          this.#update({ nextPollAtMs: now + wait })
+          // A long pause is slept in steps: a look at the roll ends the quiet pace within one interval.
+          await this.#clock.sleep(Math.min(wait, ETHER_INTERVAL_MS + POLL_JITTER_MS), signal)
           continue
         }
         let delay: number
@@ -245,8 +253,7 @@ export class EtherListener {
           this.#log('/ether', 'network', null, error instanceof Error ? error.message : 'error')
           delay = Math.max(ETHER_INTERVAL_MS, this.#backoff.next())
         }
-        this.#update({ nextPollAtMs: this.#clock.now() + delay })
-        await this.#clock.sleep(delay, signal)
+        this.#pause = { fromMs: this.#clock.now(), ms: delay }
       }
     } catch (error) {
       if (!isAbortError(error)) {
@@ -254,6 +261,20 @@ export class EtherListener {
         this.stop()
       }
     }
+  }
+
+  /**
+   * When /ether may be asked next: one interval after the last request of any
+   * tab or reload, and not before the pause the last cycle asked for ends.
+   * Neither waits longer than its own length: a time from the future (the
+   * clock was set back) counts as "just now".
+   */
+  #dueMs(now: number): number {
+    const quiet = this.#snapshot.station.phase === 'after' && this.#rollWanted === 0
+    const interval = quiet ? QUIET_ETHER_INTERVAL_MS : ETHER_INTERVAL_MS
+    const byMark = Math.min(now, this.#marks.last('/ether')) + interval
+    const { fromMs, ms } = this.#pause
+    return Math.max(byMark, Math.min(now, fromMs) + ms)
   }
 
   #jitter(): number {

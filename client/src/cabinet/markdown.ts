@@ -4,6 +4,11 @@
  * [text](url) links. Everything else is plain text; HTML is never interpreted,
  * and only http(s) links become links. The result is a tree that React renders
  * as text nodes, so no markup from a body ever reaches the DOM as HTML.
+ *
+ * Two readings beyond the subset keep long texts usable: lines of a table or
+ * a drawing (starting with `|` or `+-`, or with box-drawing characters) stay
+ * as they are in a preformatted block instead of melting into one paragraph,
+ * and a bare http(s) address is a link.
  */
 
 export type Inline =
@@ -66,6 +71,31 @@ function readLink(source: string, i: number): { text: string; url: string; end: 
   return null
 }
 
+const URL_MAX = 2_000
+
+/** A bare http(s) address at `i`, after a non-word character; trailing punctuation stays text. */
+function readBareUrl(source: string, i: number): { href: string; text: string; end: number } | null {
+  const head = source.slice(i, i + 8).toLowerCase()
+  if (!head.startsWith('http://') && !head.startsWith('https://')) return null
+  if (i > 0 && /[\p{L}\p{N}_/]/u.test(source.charAt(i - 1))) return null
+  let end = i
+  while (end < source.length && end - i < URL_MAX && !/[\s<>"`]/.test(source.charAt(end))) end += 1
+  let text = source.slice(i, end)
+  // "(see https://a.b/c)." - the closing parenthesis and the full stop belong to the sentence.
+  const open = text.split('(').length - 1
+  let close = text.split(')').length - 1
+  for (;;) {
+    const last = text.charAt(text.length - 1)
+    if (/[.,;:!?'*]/.test(last)) text = text.slice(0, -1)
+    else if (last === ')' && close > open) {
+      text = text.slice(0, -1)
+      close -= 1
+    } else break
+  }
+  const href = safeHref(text)
+  return href && new URL(href).hostname ? { href, text, end: i + text.length } : null
+}
+
 export function parseInline(source: string, allowLinks = true): Inline[] {
   const out: Inline[] = []
   // Once a closing mark was not found after some point, it is not searched for again: linear on any input.
@@ -104,6 +134,15 @@ export function parseInline(source: string, allowLinks = true): Inline[] {
       }
     }
 
+    if (allowLinks && (source.charAt(i) === 'h' || source.charAt(i) === 'H')) {
+      const bare = readBareUrl(source, i)
+      if (bare) {
+        out.push({ t: 'link', href: bare.href, c: [{ t: 'text', v: bare.text }] })
+        i = bare.end
+        continue
+      }
+    }
+
     pushText(out, source.charAt(i))
     i += 1
   }
@@ -115,6 +154,8 @@ const BULLET = /^\s*[-*]\s+(.*)$/
 // Up to three digits: a line that starts with a year ("2026. Сезон...") is a sentence, not item 2026.
 const ORDERED = /^\s*(\d{1,3})\.\s+(.*)$/
 const FENCE = /^\s*```/
+/** A line of a table or a drawing: kept as is, not joined into a paragraph. */
+const DRAWN = /^\s*(?:\||\+[-=+])|[\u2500-\u257f]/
 
 export function parseMarkdown(source: string): Block[] {
   const lines = source.replace(/\r\n?/g, '\n').split('\n')
@@ -137,6 +178,16 @@ export function parseMarkdown(source: string): Block[] {
         i += 1
       }
       i += 1 // closing fence, or past the end if it is missing
+      blocks.push({ t: 'pre', v: body.join('\n') })
+      continue
+    }
+
+    if (DRAWN.test(line)) {
+      const body: string[] = []
+      while (i < lines.length && DRAWN.test(lines[i] ?? '')) {
+        body.push(lines[i] ?? '')
+        i += 1
+      }
       blocks.push({ t: 'pre', v: body.join('\n') })
       continue
     }
@@ -178,7 +229,16 @@ export function parseMarkdown(source: string): Block[] {
     const paragraph: string[] = []
     while (i < lines.length) {
       const next = lines[i] ?? ''
-      if (next.trim() === '' || FENCE.test(next) || HEADING.test(next) || BULLET.test(next) || ORDERED.test(next)) break
+      if (
+        next.trim() === '' ||
+        FENCE.test(next) ||
+        DRAWN.test(next) ||
+        HEADING.test(next) ||
+        BULLET.test(next) ||
+        ORDERED.test(next)
+      ) {
+        break
+      }
       paragraph.push(next.trim())
       i += 1
     }

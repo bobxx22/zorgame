@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ApiClient } from '../api/client'
 import { FakeClock, json, scriptedFetch } from '../api/testing'
 import { FRAME_A } from '../ether/fixtures'
-import { CabinetStore, SUMMARY_INTERVAL_MS, type AuthCall } from './store'
+import { CabinetStore, SUMMARY_INTERVAL_MS, UNKNOWN_PHASE_INTERVAL_MS, type AuthCall } from './store'
 
 const BASE = 'https://stand.zoria.net/api/v1'
 const T = '2026-09-24T09:00:00.000Z'
@@ -178,6 +178,22 @@ describe('CabinetStore', () => {
     store.setPhase('window')
     await store.tick()
     expect(store.getSnapshot().noise).toBe(false)
+  })
+
+  it('keeps the 15 s pace with an unknown phase while the server answers for real (CL-08)', async () => {
+    const clock = new FakeClock(0)
+    const { fetch } = scriptedFetch(clock, [...firstLoad(), json(503, JSON.parse(FRAME_A))])
+    const api = new ApiClient(BASE, { clock, fetch, random: () => 0 })
+    api.limiter.setPhase('after')
+    const store = new CabinetStore({
+      call: (options) => api.call({ ...options, token: 'T' }),
+      hear: () => Promise.resolve(false),
+      clock,
+      random: () => 0,
+    })
+    expect(await store.tick()).toBe(SUMMARY_INTERVAL_MS)
+    // An envelope nobody could verify may be the static's noise: then once a minute.
+    expect(await store.tick()).toBe(UNKNOWN_PHASE_INTERVAL_MS)
   })
 
   it('treats a sealed envelope instead of the summary as noise', async () => {

@@ -252,8 +252,8 @@ function SoundButton() {
 }
 
 /**
- * The network has no password change or recovery: a stray click must not leave
- * a participant outside. The first press only asks, the second (within a few
+ * The client keeps no password, and a lost one is replaced only by a code from
+ * the organizers: a stray click must not leave a participant outside. The first press only asks, the second (within a few
  * seconds) logs out - no blocking confirm() that would freeze the ether.
  */
 function LogoutButton({ compact, onDone }: { compact: boolean; onDone?: () => void }) {
@@ -284,7 +284,7 @@ function LogoutButton({ compact, onDone }: { compact: boolean; onDone?: () => vo
       <button
         type="button"
         className="btn sm warn"
-        title="Зміни й відновлення пароля в мережі немає: переконайтеся, що пароль збережено"
+        title="Переконайтеся, що пароль збережено: загублений замінить лише код від організаторів"
         onClick={press}
       >
         <Icon name="out" />

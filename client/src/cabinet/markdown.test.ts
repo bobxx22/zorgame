@@ -91,4 +91,32 @@ describe('markdown edge cases', () => {
     expect(parseMarkdown('2026. Сезон почався.')).toEqual([{ t: 'p', c: [{ t: 'text', v: '2026. Сезон почався.' }] }])
     expect(parseMarkdown('1. раз\n2. два')[0]).toMatchObject({ t: 'ol', start: 1 })
   })
+
+  it('keeps a table or a drawing line by line instead of one paragraph', () => {
+    const source = 'Поле:\n| A | B |\n|---|---|\n| 1 | 2 |\nДалі текст.\n+--+\n|ab|\n+--+\n┌─┐ схема'
+    expect(parseMarkdown(source)).toEqual([
+      { t: 'p', c: [{ t: 'text', v: 'Поле:' }] },
+      { t: 'pre', v: '| A | B |\n|---|---|\n| 1 | 2 |' },
+      { t: 'p', c: [{ t: 'text', v: 'Далі текст.' }] },
+      { t: 'pre', v: '+--+\n|ab|\n+--+\n┌─┐ схема' },
+    ])
+  })
+
+  it('links a bare http(s) address and leaves the sentence around it', () => {
+    expect(parseInline('Див. https://zoria.net/spec/part2/ (або http://a.b/c_(d)).')).toEqual([
+      { t: 'text', v: 'Див. ' },
+      { t: 'link', href: 'https://zoria.net/spec/part2/', c: [{ t: 'text', v: 'https://zoria.net/spec/part2/' }] },
+      { t: 'text', v: ' (або ' },
+      { t: 'link', href: 'http://a.b/c_(d)', c: [{ t: 'text', v: 'http://a.b/c_(d)' }] },
+      { t: 'text', v: ').' },
+    ])
+    expect(parseInline('[сайт](https://zoria.net) і `https://x.y`')).toEqual([
+      { t: 'link', href: 'https://zoria.net/', c: [{ t: 'text', v: 'сайт' }] },
+      { t: 'text', v: ' і ' },
+      { t: 'code', v: 'https://x.y' },
+    ])
+    expect(parseInline('javascript:alert(1) https:// xhttps://a.b')).toEqual([
+      { t: 'text', v: 'javascript:alert(1) https:// xhttps://a.b' },
+    ])
+  })
 })

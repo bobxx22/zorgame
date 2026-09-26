@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useCabinet, useCabinetStore } from '../app/cabinet-context'
+import { bridgeRows } from '../cabinet/bridge'
 import type { Stage, StageSummary } from '../cabinet/schemas'
 import { PART_PLAN } from '../config/season'
 import { cls } from '../lib/cls'
@@ -50,20 +51,14 @@ export function StagesPage() {
 }
 
 function Bridge({ stages }: { stages: readonly StageSummary[] }) {
-  const byPosition = new Map(stages.map((stage) => [stage.position, stage]))
-  const positions = [...new Set([...PART_PLAN.map((p) => p.position), ...stages.map((s) => s.position)])].sort(
-    (a, b) => a - b,
-  )
-
   return (
     <ol className="bridge">
-      {positions.map((position) => {
-        const stage = byPosition.get(position)
-        const plan = PART_PLAN.find((p) => p.position === position)
-        if (stage) {
+      {bridgeRows(stages, PART_PLAN).map((row) => {
+        if (row.kind === 'stage') {
+          const { stage } = row
           const acked = stage.acknowledgedAt !== null
           return (
-            <li key={position} className={cls('mod', 'out', !acked && 'live')}>
+            <li key={`s-${stage.id}`} className={cls('mod', 'out', !acked && 'live')}>
               <Link to={`/stages/${encodeURIComponent(stage.id)}`}>
                 <div className="w">
                   <span className="dt num">видано {formatDay(stage.releasedAt)}</span>
@@ -72,7 +67,7 @@ function Bridge({ stages }: { stages: readonly StageSummary[] }) {
                   {stage.errataAt && <span className="er">уточнення від {formatDay(stage.errataAt)}</span>}
                 </div>
                 <div className="pl">
-                  <span className="pnum">{position}</span>
+                  <span className="pnum">{stage.position}</span>
                   <span className="st">
                     <i className="lamp" />
                     {acked ? 'отримано' : 'підтвердіть'}
@@ -82,16 +77,17 @@ function Bridge({ stages }: { stages: readonly StageSummary[] }) {
             </li>
           )
         }
+        const { plan } = row
         return (
-          <li key={position} className="mod">
+          <li key={`p-${String(plan.position)}`} className="mod">
             <div>
               <div className="w">
-                <span className="dt num">очікується {plan?.day ?? ''}</span>
-                <b>{plan?.title ?? `Частина ${String(position)}`}</b>
+                <span className="dt num">очікується {plan.day}</span>
+                <b>{plan.title}</b>
                 <p>Відкриється в кабінеті у свій строк.</p>
               </div>
               <div className="pl">
-                <span className="pnum">{position}</span>
+                <span className="pnum">{plan.position}</span>
                 <span className="st">
                   <i className="lamp" />
                   ще не видано
@@ -114,7 +110,11 @@ export function StagePage() {
   const cabinet = useCabinet()
   const [load, setLoad] = useState<Load>({ state: 'loading' })
   const [acking, setAcking] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   const stage = cabinet?.stageBodies[id]
+  // A letter or a part that moved the summary may be this very part: a failed or missing one is asked again.
+  const released = cabinet?.summary?.releasedStages ?? null
+  const unread = cabinet?.summary?.unread ?? null
 
   useEffect(() => {
     if (!store || cabinet?.noise) return
@@ -126,7 +126,12 @@ export function StagePage() {
     return () => {
       active = false
     }
-  }, [store, id, cabinet?.noise])
+  }, [store, id, cabinet?.noise, attempt, released, unread])
+
+  const retry = () => {
+    setLoad({ state: 'loading' })
+    setAttempt((n) => n + 1)
+  }
 
   const acknowledge = () => {
     if (!store || !stage) return
@@ -168,8 +173,23 @@ export function StagePage() {
       {() => (
         <>
           {!stage && load.state === 'loading' && <p className="note">Читаємо частину…</p>}
-          {load.state === 'missing' && <p className="callout warn">Такої частини немає або її ще не видано.</p>}
-          {!stage && load.state === 'failed' && <p className="callout err">Не вдалося прочитати частину.</p>}
+          {!stage && (load.state === 'missing' || load.state === 'failed') && (
+            <>
+              {load.state === 'missing' ? (
+                <p className="callout warn">
+                  Такої частини немає або її ще не видано. Клієнт спитає знову, щойно прийде лист або нова частина.
+                </p>
+              ) : (
+                <p className="callout err">Не вдалося прочитати частину.</p>
+              )}
+              <div className="acts">
+                <button type="button" className="btn sm" onClick={retry}>
+                  <Icon name="refresh" />
+                  Спробувати ще
+                </button>
+              </div>
+            </>
+          )}
           {stage && (
             <>
               <div className="side-inline">

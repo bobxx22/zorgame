@@ -1,6 +1,7 @@
 import { useState, type SubmitEvent } from 'react'
 import { useAuth } from '../app/auth-context'
 import { useCabinet, useCabinetStore } from '../app/cabinet-context'
+import { askNotifications, noticePermission, type NoticePermission } from '../app/notifications'
 import { REGISTER_CODE_MESSAGE } from '../auth/register'
 import { parseMe, parseRepositoryEnvelope } from '../auth/schemas'
 import { checkRepository, parseRepository, type Lang } from '../auth/validate'
@@ -230,12 +231,20 @@ export function ChangeRepository() {
 }
 
 /** Sound of the station, language of server texts (CL-42), an exchange check (POST /developer/check). */
+const NOTICES_TEXT: Record<NoticePermission, string> = {
+  granted: 'Увімкнено: коли вкладка у фоні, про новий лист, нову частину, зміну статусу доступу і кінець сесії скаже система.',
+  default: 'Коли вкладка у фоні, про новий лист, нову частину, зміну статусу доступу і кінець сесії може сказати система.',
+  denied: 'Заборонено в браузері. Увімкнути можна в налаштуваннях сайту (значок ліворуч від адреси).',
+  unsupported: 'Цей браузер не показує сповіщень сторінок. Звук і вкладка скажуть про події, поки клієнт відкритий.',
+}
+
 export function Settings() {
   const { session, call, setSession } = useAuth()
   const radio = useRadio()
   const sound = useRadioState()
   const [langNote, setLangNote] = useState<string | null>(null)
   const [check, setCheck] = useState<DeveloperCheck | string | null>(null)
+  const [notices, setNotices] = useState<NoticePermission>(noticePermission)
   const unmountSignal = useUnmountSignal()
 
   async function changeLang(lang: Lang) {
@@ -291,6 +300,24 @@ export function Settings() {
             }}
           />
           <span className="dd">Коротка фраза станції після сигналу: «Просвіт відкрито. Вийдіть на зв'язок».</span>
+        </span>
+      </li>
+      <li>
+        <span className="t">Сповіщення системи</span>
+        <span className="d">
+          {notices === 'default' && (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => {
+                void askNotifications().then(setNotices)
+              }}
+            >
+              <Icon name="mail" />
+              Дозволити
+            </button>
+          )}
+          <span className="dd">{NOTICES_TEXT[notices]}</span>
         </span>
       </li>
       <li>

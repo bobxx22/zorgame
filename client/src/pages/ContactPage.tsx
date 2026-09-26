@@ -20,6 +20,7 @@ import { AccessStatus, ChangeRepository, Settings, Shut } from './AccessSections
 import { accessStatusOf } from './auth-labels'
 import { LOOK_LABEL, lookCountdown, lookOf } from './ether-labels'
 import { LoginForm } from './LoginForm'
+import { RecoverForm } from './RecoverForm'
 import { RegisterForm } from './RegisterForm'
 
 type Mode = 'register' | 'login'
@@ -164,6 +165,7 @@ function Application() {
       ) : (
         <div className="formbox">
           <LoginForm />
+          <RecoverForm />
         </div>
       )}
     </>
@@ -186,8 +188,8 @@ function Account() {
       )}
       {status.state === 'done' && (
         <p className="callout warn">
-          <b>Збережіть пароль зараз,</b> якщо ще не зробили цього: зміни й відновлення пароля в мережі немає, а сесія
-          живе добу. Без пароля через добу не буде ні статусу доступу, ні листів, ні частини 2.
+          <b>Збережіть пароль зараз,</b> якщо ще не зробили цього: сесія живе добу, а загублений пароль замінить лише
+          одноразовий код від організаторів. Без входу не буде ні статусу доступу, ні листів, ні частини 2.
         </p>
       )}
       <ul className="short">

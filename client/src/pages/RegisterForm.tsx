@@ -145,7 +145,7 @@ export function RegisterForm() {
   const [repeat, setRepeat] = useState('')
   const [repeatError, setRepeatError] = useState<string | null>(null)
 
-  /** The password is typed twice and offered to the password manager: it cannot be recovered. */
+  /** The password is typed twice and offered to the password manager: only the organizers can replace it. */
   function passwordReady(): boolean {
     if (repeat !== draft.password) {
       setRepeatError('Паролі не збігаються. Введіть той самий пароль ще раз.')
@@ -264,7 +264,7 @@ export function RegisterForm() {
                   {showPassword ? 'сховати' : 'показати'}
                 </button>
               </span>
-              <span className="hint">12-256 знаків. Зміни і відновлення пароля в мережі немає: збережіть його.</span>
+              <span className="hint">12-256 знаків. Збережіть його: змінити пароль можна лише за кодом від організаторів.</span>
               {error('password')}
             </label>
             <label className="fld">
@@ -337,7 +337,7 @@ export function RegisterForm() {
                 disabled={busy}
                 onClick={() => {
                   if (!passwordReady()) return
-                  askNotifications()
+                  void askNotifications()
                   arm()
                 }}
               >

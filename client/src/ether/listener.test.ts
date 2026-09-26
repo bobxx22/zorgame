@@ -13,7 +13,14 @@ import {
   TRAINING_KEY_BODY,
   type TestStation,
 } from './fixtures'
-import { ETHER_INTERVAL_MS, EtherListener, KEY_REFETCH_MS, memoryMarks, type KeyStore } from './listener'
+import {
+  ETHER_INTERVAL_MS,
+  EtherListener,
+  KEY_REFETCH_MS,
+  memoryMarks,
+  QUIET_ETHER_INTERVAL_MS,
+  type KeyStore,
+} from './listener'
 
 const BASE = 'https://stand.zoria.net/api/v1'
 
@@ -291,6 +298,41 @@ describe('EtherListener start/stop', () => {
     expect(calls).toHaveLength(0)
     expect(listener.getSnapshot().nextPollAtMs).toBe(clock.now() + 10_000)
     listener.stop()
+  })
+
+  it('asks the ether every 5 minutes after the window, and at the usual pace while the roll is watched', async () => {
+    const station = await testStation()
+    const after = () =>
+      station.seal(
+        signalFrame({
+          at: '2026-09-25T18:00:00.000Z',
+          phase: 'after',
+          window: { opensAt: '2026-09-25T05:00:00.000Z', closesAt: '2026-09-25T17:00:00.000Z' },
+        }),
+      )
+    const start = async (watchRoll: boolean) => {
+      const clock = new ParkedClock()
+      const { fetch, calls } = scriptedFetch(clock, [text(200, await after()), text(200, await after())])
+      const listener = new EtherListener({
+        api: new ApiClient(BASE, { clock, fetch, random: () => 0 }),
+        keyStore: memoryStore(station.body),
+        pinnedFingerprint: station.fingerprint,
+        clock,
+        random: () => 0,
+      })
+      if (watchRoll) listener.wantRoll()
+      listener.start()
+      // The first pause is set once the cycle, seal checks included, is over.
+      for (let waited = 0; listener.getSnapshot().nextPollAtMs === null && waited < 2_000; waited += 10) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      const wait = (listener.getSnapshot().nextPollAtMs ?? 0) - clock.now()
+      listener.stop()
+      return { calls: calls.length, wait }
+    }
+    expect(await start(false)).toEqual({ calls: 1, wait: QUIET_ETHER_INTERVAL_MS })
+    // The roll is read too, and the ether keeps its 15 s.
+    expect(await start(true)).toEqual({ calls: 2, wait: ETHER_INTERVAL_MS })
   })
 
   it('waits at most one interval when the last mark is from the future (clock set back)', async () => {

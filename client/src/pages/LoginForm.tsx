@@ -1,5 +1,6 @@
 import { useState, type SubmitEvent } from 'react'
 import { useAuth } from '../app/auth-context'
+import { askNotifications } from '../app/notifications'
 import { useServer } from '../app/server-context'
 import { parseIssuedSession } from '../auth/schemas'
 import { normalizeUsername } from '../auth/validate'
@@ -48,7 +49,10 @@ export function LoginForm({ onDone }: { onDone?: () => void }) {
 
   function onSubmit(event: SubmitEvent) {
     event.preventDefault()
-    if (!busy) void login()
+    if (busy) return
+    // The click is the gesture browsers want: letters and parts can then reach a background tab.
+    void askNotifications()
+    void login()
   }
 
   return (

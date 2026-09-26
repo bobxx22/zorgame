@@ -299,6 +299,24 @@ function login(body) {
   return { status: 200, body: newSession(account) }
 }
 
+// The organizers hand out a one-time recovery code on request (FAQ, 25.09); here it is RECOVER-<login>, once.
+const usedRecovery = new Set()
+
+function recover(body) {
+  if (!exactFields(body, ['token', 'password'])) return fail(400, 'invalid-fields')
+  const token = typeof body.token === 'string' ? body.token : ''
+  const account = token.startsWith('RECOVER-') ? accounts.get(token.slice('RECOVER-'.length)) : undefined
+  if (!account || usedRecovery.has(token)) return fail(422, 'invalid-recovery')
+  if (typeof body.password !== 'string' || body.password.length < 12 || body.password.length > 256) {
+    return fail(422, 'invalid-field', 'password')
+  }
+  usedRecovery.add(token)
+  account.password = body.password
+  // Every old login of the account ends.
+  for (const [key, session] of sessions) if (session.username === account.username) sessions.delete(key)
+  return { status: 204, body: null }
+}
+
 /** limit 1..100 (default 50), offset 0..1 000 000; null for invalid-query. */
 function paging(url) {
   const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 50
@@ -334,6 +352,8 @@ const AUTH_ROUTES = /^\/(auth\/logout|me(\/repository|\/summary)?|news|inbox(\/[
  */
 export function participant({ req, url, method, path, body, phase, opensAt }) {
   if (method === 'GET' && path === '/public/config') return { status: 200, body: config(phase) }
+
+  if (method === 'POST' && path === '/auth/recover') return recover(body)
 
   if (method === 'POST' && (path === '/auth/register' || path === '/auth/login')) {
     if (Math.random() < BUSY) return { ...fail(429, 'authentication-busy'), retryAfter: 5 }

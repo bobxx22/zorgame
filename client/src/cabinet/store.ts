@@ -30,7 +30,7 @@ import {
 
 export const SUMMARY_INTERVAL_MS = 15_000
 export const SUMMARY_JITTER_MS = 2_000
-/** When the phase is unknown the cabinet asks rarely: the answers may be noise. */
+/** When the phase is unknown and the answer looks like the ether, the cabinet asks rarely. */
 export const UNKNOWN_PHASE_INTERVAL_MS = 60_000
 /**
  * Letters are reread by the unread counter (CL-27), and also this often: a
@@ -183,7 +183,10 @@ export class CabinetStore {
       }
       if (isAuthLost(result) || isAborted(result)) return base
       this.#update({ problem: describeFailure(result) })
-      return Math.max(base, this.#backoff.next())
+      const pause = Math.max(base, this.#backoff.next())
+      // An envelope no seal confirms while the phase is unknown may be the static's noise,
+      // where every request spends the address's ether tokens: then ask rarely.
+      return this.#phase === null && isNoise(result) ? Math.max(pause, UNKNOWN_PHASE_INTERVAL_MS) : pause
     }
 
     this.#backoff.reset()
@@ -204,7 +207,8 @@ export class CabinetStore {
       synced.repository = next.repositoryAt
     }
 
-    return this.#phase === null ? Math.max(base, UNKNOWN_PHASE_INTERVAL_MS) : base
+    // A real answer is no noise: the pace of CL-08 holds even while no frame is verified (a rejected key).
+    return base
   }
 
   async refreshInbox(signal = this.#run?.signal): Promise<boolean> {
