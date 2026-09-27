@@ -5,10 +5,11 @@
  * and only http(s) links become links. The result is a tree that React renders
  * as text nodes, so no markup from a body ever reaches the DOM as HTML.
  *
- * Two readings beyond the subset keep long texts usable: lines of a table or
- * a drawing (starting with `|` or `+-`, or with box-drawing characters) stay
- * as they are in a preformatted block instead of melting into one paragraph,
- * and a bare http(s) address is a link.
+ * A few readings beyond the subset keep long texts usable: a pipe table with
+ * its `|---|` line is a table; other lines of a drawing (starting with `|` or
+ * `+-`, or with box-drawing characters) stay as they are in a preformatted
+ * block instead of melting into one paragraph; a wrapped list item stays
+ * whole; a bare http(s) address is a link.
  */
 
 export type Inline =
@@ -23,6 +24,7 @@ export type Block =
   | { t: 'ul'; items: Inline[][] }
   | { t: 'ol'; start: number; items: Inline[][] }
   | { t: 'pre'; v: string }
+  | { t: 'table'; head: Inline[][]; rows: Inline[][][] }
 
 export function safeHref(raw: string): string | null {
   const value = raw.trim()
@@ -188,7 +190,7 @@ export function parseMarkdown(source: string): Block[] {
         body.push(lines[i] ?? '')
         i += 1
       }
-      blocks.push({ t: 'pre', v: body.join('\n') })
+      blocks.push(readTable(body) ?? { t: 'pre', v: body.join('\n') })
       continue
     }
 
@@ -200,50 +202,98 @@ export function parseMarkdown(source: string): Block[] {
       continue
     }
 
-    if (BULLET.test(line)) {
-      const items: Inline[][] = []
+    const list = BULLET.test(line) ? BULLET : ORDERED.test(line) ? ORDERED : null
+    if (list) {
+      const start = Number(ORDERED.exec(line)?.[1] ?? 1)
+      const texts: string[] = []
       while (i < lines.length) {
-        const m = BULLET.exec(lines[i] ?? '')
-        if (!m) break
-        items.push(parseInline(m[1] ?? ''))
+        const next = lines[i] ?? ''
+        const item = list.exec(next)
+        if (item) texts.push(item[list === BULLET ? 1 : 2] ?? '')
+        // A wrapped item goes on in the next lines, indented or not, until a blank line or another block.
+        else if (texts.length > 0 && !startsBlock(next)) texts.push(`${texts.pop() ?? ''} ${next.trim()}`)
+        else break
         i += 1
       }
-      blocks.push({ t: 'ul', items })
-      continue
-    }
-
-    const ordered = ORDERED.exec(line)
-    if (ordered) {
-      const items: Inline[][] = []
-      const start = Number(ordered[1])
-      while (i < lines.length) {
-        const m = ORDERED.exec(lines[i] ?? '')
-        if (!m) break
-        items.push(parseInline(m[2] ?? ''))
-        i += 1
-      }
-      blocks.push({ t: 'ol', start, items })
+      const items = texts.map((text) => parseInline(text))
+      blocks.push(list === BULLET ? { t: 'ul', items } : { t: 'ol', start, items })
       continue
     }
 
     const paragraph: string[] = []
-    while (i < lines.length) {
-      const next = lines[i] ?? ''
-      if (
-        next.trim() === '' ||
-        FENCE.test(next) ||
-        DRAWN.test(next) ||
-        HEADING.test(next) ||
-        BULLET.test(next) ||
-        ORDERED.test(next)
-      ) {
-        break
-      }
-      paragraph.push(next.trim())
+    while (i < lines.length && !startsBlock(lines[i] ?? '')) {
+      paragraph.push((lines[i] ?? '').trim())
       i += 1
     }
     blocks.push({ t: 'p', c: parseInline(paragraph.join(' ')) })
   }
 
   return blocks
+}
+
+const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/
+
+/**
+ * A pipe table: every line starts with `|` and the second one is the `|---|`
+ * rule. Rows are cut or padded to the header's width. Anything else is null.
+ */
+function readTable(lines: string[]): Block | null {
+  const [head, rule, ...rest] = lines
+  if (head === undefined || rule === undefined || !TABLE_RULE.test(rule)) return null
+  if (!lines.every((line) => line.trimStart().startsWith('|'))) return null
+  const header = tableCells(head)
+  const rows = rest.map((line) => {
+    const cells = tableCells(line)
+    return header.map((_, n) => parseInline(cells[n] ?? ''))
+  })
+  return { t: 'table', head: header.map((cell) => parseInline(cell)), rows }
+}
+
+/** Cells of a table line; `\|` and a `|` inside `code` stay in the cell. */
+function tableCells(line: string): string[] {
+  let text = line.trim()
+  if (text.startsWith('|')) text = text.slice(1)
+  if (text.endsWith('|') && !text.endsWith('\\|')) text = text.slice(0, -1)
+  const cells: string[] = []
+  let cell = ''
+  let code = false
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text.charAt(i)
+    if (c === '\\' && text.charAt(i + 1) === '|') {
+      cell += '|'
+      i += 1
+      continue
+    }
+    if (c === '`') code = !code
+    if (c === '|' && !code) {
+      cells.push(cell.trim())
+      cell = ''
+      continue
+    }
+    cell += c
+  }
+  cells.push(cell.trim())
+  return cells
+}
+
+/** The words of a Markdown text without its marks: for a preview inside a link, where a link cannot be one. */
+export function plainText(source: string): string {
+  return inlineText(parseInline(source))
+}
+
+/** The words of parsed inline nodes, marks dropped. */
+export function inlineText(nodes: Inline[]): string {
+  return nodes.map((node) => (node.t === 'text' || node.t === 'code' ? node.v : inlineText(node.c))).join('')
+}
+
+/** A blank line or the start of another block ends a paragraph or a list item. */
+function startsBlock(line: string): boolean {
+  return (
+    line.trim() === '' ||
+    FENCE.test(line) ||
+    DRAWN.test(line) ||
+    HEADING.test(line) ||
+    BULLET.test(line) ||
+    ORDERED.test(line)
+  )
 }

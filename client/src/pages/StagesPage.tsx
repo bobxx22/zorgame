@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useCabinet, useCabinetStore } from '../app/cabinet-context'
 import { bridgeRows } from '../cabinet/bridge'
+import { plainText } from '../cabinet/markdown'
 import type { Stage, StageSummary } from '../cabinet/schemas'
 import { PART_PLAN } from '../config/season'
 import { cls } from '../lib/cls'
@@ -63,7 +64,7 @@ function Bridge({ stages }: { stages: readonly StageSummary[] }) {
                 <div className="w">
                   <span className="dt num">видано {formatDay(stage.releasedAt)}</span>
                   <b>{stage.title}</b>
-                  <p>{stage.excerpt}</p>
+                  <p>{plainText(stage.excerpt)}</p>
                   {stage.errataAt && <span className="er">уточнення від {formatDay(stage.errataAt)}</span>}
                 </div>
                 <div className="pl">

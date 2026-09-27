@@ -461,6 +461,8 @@ input:disabled{opacity:.55}
 /* markdown from the server inside a document */
 .md > :first-child{margin-top:0}
 .md h3{font-size:20px}
+.md .tbl{margin:var(--s4) 0 var(--s6)}
+.md .tbl code{overflow-wrap:anywhere}
 
 /* ===== session dialog ===== */
 .modal{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:var(--s4);background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}

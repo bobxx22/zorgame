@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { parseMarkdown, type Block, type Inline } from '../cabinet/markdown'
+import { inlineText, parseMarkdown, type Block, type Inline } from '../cabinet/markdown'
 
 /** Server text in the network's Markdown subset, rendered as text nodes only (CL-30). */
 export function Markdown({ source }: { source: string }) {
@@ -37,6 +37,34 @@ function renderBlock(block: Block, key: number) {
           {block.v}
         </pre>
       )
+    case 'table': {
+      // On a phone each row becomes a card, and a cell names its column itself.
+      const labels = block.head.map((cell) => inlineText(cell))
+      return (
+        <div key={key} className="tbl">
+          <table>
+            <thead>
+              <tr>
+                {block.head.map((cell, i) => (
+                  <th key={i}>{renderInline(cell)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, r) => (
+                <tr key={r}>
+                  {row.map((cell, i) => (
+                    <td key={i} data-label={labels[i]}>
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseInline, parseMarkdown, safeHref } from './markdown'
+import { parseInline, parseMarkdown, plainText, safeHref } from './markdown'
 
 describe('parseMarkdown (CL-30)', () => {
   it('reads headings, lists, paragraphs and code blocks', () => {
@@ -39,6 +39,33 @@ describe('parseMarkdown (CL-30)', () => {
   it('closes an unterminated code block at the end', () => {
     expect(parseMarkdown('```\nline')).toEqual([{ t: 'pre', v: 'line' }])
   })
+
+  it('keeps a wrapped list item whole, as in the part 1 text', () => {
+    const md = [
+      'Вручну:',
+      '',
+      '1. До просвіту ви відкриваєте клієнт раз на кілька годин, не рідше ніж раз',
+      '   на 10 годин.',
+      '2. Клієнт показує шум.',
+      '- пункт **жирно',
+      'далі** без відступу',
+      '',
+      'Абзац.',
+    ].join('\n')
+    expect(parseMarkdown(md)).toEqual([
+      { t: 'p', c: [{ t: 'text', v: 'Вручну:' }] },
+      {
+        t: 'ol',
+        start: 1,
+        items: [
+          [{ t: 'text', v: 'До просвіту ви відкриваєте клієнт раз на кілька годин, не рідше ніж раз на 10 годин.' }],
+          [{ t: 'text', v: 'Клієнт показує шум.' }],
+        ],
+      },
+      { t: 'ul', items: [[{ t: 'text', v: 'пункт ' }, { t: 'strong', c: [{ t: 'text', v: 'жирно далі' }] }, { t: 'text', v: ' без відступу' }]] },
+      { t: 'p', c: [{ t: 'text', v: 'Абзац.' }] },
+    ])
+  })
 })
 
 describe('parseInline', () => {
@@ -62,6 +89,15 @@ describe('parseInline', () => {
   it('leaves unclosed markers as text and does not bold inside code', () => {
     expect(parseInline('**open `x')).toEqual([{ t: 'text', v: '**open `x' }])
     expect(parseInline('`**x**`')).toEqual([{ t: 'code', v: '**x**' }])
+  })
+})
+
+describe('plainText', () => {
+  it('keeps the words of links, bold and code without the marks', () => {
+    expect(plainText('Поруч: [легенда](https://zoria.net/lore/legend/), **оцінювання** і `GET /stages`.')).toBe(
+      'Поруч: легенда, оцінювання і GET /stages.',
+    )
+    expect(plainText('[обрізане посилання](https://zoria.net/sp')).toBe('[обрізане посилання](https://zoria.net/sp')
   })
 })
 
@@ -92,13 +128,35 @@ describe('markdown edge cases', () => {
     expect(parseMarkdown('1. раз\n2. два')[0]).toMatchObject({ t: 'ol', start: 1 })
   })
 
-  it('keeps a table or a drawing line by line instead of one paragraph', () => {
-    const source = 'Поле:\n| A | B |\n|---|---|\n| 1 | 2 |\nДалі текст.\n+--+\n|ab|\n+--+\n┌─┐ схема'
+  it('reads a pipe table and keeps a drawing line by line instead of one paragraph', () => {
+    const source = [
+      'Поле:',
+      '| Що | Значення |',
+      '|---|:---:|',
+      '| Строк | у [календарі](https://zoria.net/reference/calendar/) |',
+      '| `a|b` | x \\| y | зайве |',
+      '| коротко |',
+      'Далі текст.',
+      '+--+',
+      '|ab|',
+      '+--+',
+      '┌─┐ схема',
+      '| без | лінійки |',
+    ].join('\n')
+    const text = (v: string) => [{ t: 'text', v }]
     expect(parseMarkdown(source)).toEqual([
-      { t: 'p', c: [{ t: 'text', v: 'Поле:' }] },
-      { t: 'pre', v: '| A | B |\n|---|---|\n| 1 | 2 |' },
-      { t: 'p', c: [{ t: 'text', v: 'Далі текст.' }] },
-      { t: 'pre', v: '+--+\n|ab|\n+--+\n┌─┐ схема' },
+      { t: 'p', c: text('Поле:') },
+      {
+        t: 'table',
+        head: [text('Що'), text('Значення')],
+        rows: [
+          [text('Строк'), [{ t: 'text', v: 'у ' }, { t: 'link', href: 'https://zoria.net/reference/calendar/', c: text('календарі') }]],
+          [[{ t: 'code', v: 'a|b' }], text('x | y')],
+          [text('коротко'), []],
+        ],
+      },
+      { t: 'p', c: text('Далі текст.') },
+      { t: 'pre', v: '+--+\n|ab|\n+--+\n┌─┐ схема\n| без | лінійки |' },
     ])
   })
 
