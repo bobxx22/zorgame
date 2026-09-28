@@ -276,12 +276,23 @@ function tableCells(line: string): string[] {
   return cells
 }
 
-/** The words of a Markdown text without its marks: for a preview inside a link, where a link cannot be one. */
+/**
+ * The prose of a Markdown text without its marks: for a preview inside a
+ * link, where a link cannot be one. Tables and code blocks are left out.
+ */
 export function plainText(source: string): string {
   // The server cuts an excerpt at its length, sometimes inside a link: "[специфі" or "[текст](https://zo".
   const cut = /\[([^\]\n]*)(?:\]\([^)\s]*)?$/.exec(source)
-  const whole = cut ? `${source.slice(0, cut.index)}${cut[1] ?? ''}…` : source
-  return inlineText(parseInline(whole))
+  let whole = cut ? `${source.slice(0, cut.index)}${cut[1] ?? ''}…` : source
+  // An excerpt comes as one line, so a table in it is inline: "... машині. | Документ | ... |---|": it ends there.
+  if (/\|\s*:?-{3,}/.test(whole)) whole = whole.slice(0, whole.indexOf('|')).trimEnd()
+  return parseMarkdown(whole)
+    .flatMap((block) => {
+      if (block.t === 'h' || block.t === 'p') return [inlineText(block.c)]
+      if (block.t === 'ul' || block.t === 'ol') return block.items.map((item) => inlineText(item))
+      return []
+    })
+    .join(' ')
 }
 
 /** The words of parsed inline nodes, marks dropped. */

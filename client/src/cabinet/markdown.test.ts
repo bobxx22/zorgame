@@ -101,6 +101,12 @@ describe('plainText', () => {
     expect(plainText('Поруч: [легенда](https://zoria.net/lore/legend/), [специфі')).toBe('Поруч: легенда, специфі…')
     expect(plainText('див. [обрізане посилання](https://zoria.net/sp')).toBe('див. обрізане посилання…')
     expect(plainText('масив [1, 2] і далі')).toBe('масив [1, 2] і далі')
+    // The part 2 excerpt: a heading, a sentence and a table cut in its row.
+    const excerpt = '## 1. Що видано\n\nДруга частина дає гру цілком.\n\n| Документ | Що в ньому |\n|---|---|\n| 01-rules.md | правил'
+    expect(plainText(excerpt)).toBe('1. Що видано Друга частина дає гру цілком.')
+    // ... and as the server sends it: one line.
+    const oneLine = '1. Що видано Друга частина дає гру цілком. | Документ | Що в ньому | |---|---| | 01-rules.md | правил'
+    expect(plainText(oneLine)).toBe('Що видано Друга частина дає гру цілком.')
   })
 })
 
