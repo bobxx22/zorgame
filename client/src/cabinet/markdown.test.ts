@@ -97,7 +97,10 @@ describe('plainText', () => {
     expect(plainText('Поруч: [легенда](https://zoria.net/lore/legend/), **оцінювання** і `GET /stages`.')).toBe(
       'Поруч: легенда, оцінювання і GET /stages.',
     )
-    expect(plainText('[обрізане посилання](https://zoria.net/sp')).toBe('[обрізане посилання](https://zoria.net/sp')
+    // An excerpt cut inside a link keeps its words, not the marks.
+    expect(plainText('Поруч: [легенда](https://zoria.net/lore/legend/), [специфі')).toBe('Поруч: легенда, специфі…')
+    expect(plainText('див. [обрізане посилання](https://zoria.net/sp')).toBe('див. обрізане посилання…')
+    expect(plainText('масив [1, 2] і далі')).toBe('масив [1, 2] і далі')
   })
 })
 

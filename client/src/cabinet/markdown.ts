@@ -278,7 +278,10 @@ function tableCells(line: string): string[] {
 
 /** The words of a Markdown text without its marks: for a preview inside a link, where a link cannot be one. */
 export function plainText(source: string): string {
-  return inlineText(parseInline(source))
+  // The server cuts an excerpt at its length, sometimes inside a link: "[специфі" or "[текст](https://zo".
+  const cut = /\[([^\]\n]*)(?:\]\([^)\s]*)?$/.exec(source)
+  const whole = cut ? `${source.slice(0, cut.index)}${cut[1] ?? ''}…` : source
+  return inlineText(parseInline(whole))
 }
 
 /** The words of parsed inline nodes, marks dropped. */
