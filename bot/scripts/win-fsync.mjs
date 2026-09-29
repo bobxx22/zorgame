@@ -5,8 +5,7 @@
  * directory, the sync becomes a no-op; files are synced as before. Linux and
  * macOS are left untouched.
  *
- *   $env:NODE_OPTIONS = '--import ./scripts/win-fsync.mjs'   (PowerShell, in bot/)
- *   npm run play -- --fast
+ *   npm run play:win -- --fast     (package.json: node --import ./scripts/win-fsync.mjs ... pack)
  */
 import fs from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'

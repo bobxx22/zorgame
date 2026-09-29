@@ -47,8 +47,17 @@ cd bot
 export ZORIA_NPM_AUTH=$(node -p "require(process.env.HOME + '/.zoria-registry.json').auth")
 npm ci
 npm run build
+npm test
 npm run play -- --fast
 ```
+
+У PowerShell змінну задають так (там немає `export` і `HOME`), а пакет на Windows грає `npm run play:win` (`bot/README.md`, розділ «Windows»):
+
+```powershell
+$env:ZORIA_NPM_AUTH = node -p "require(require('os').homedir() + '/.zoria-registry.json').auth"
+```
+
+`.npmrc` із реєстром `@zoria` лежить і в корені, і в `bot/`: перевірка з чек-листа `npm view @zoria/engine version` відповідає версією з обох місць. Клієнта він не зачіпає: у `client/` свій `package.json`.
 
 Команди бота, файли й прапорці пакета - `bot/README.md`; документи частини 2 - `npx zaria-kit docs`.
 
@@ -58,7 +67,7 @@ npm run play -- --fast
 node scripts/check-secrets.mjs
 ```
 
-шукає значення `token` і `auth` у файлах, у підготовленому коміті й у всій історії та перевіряє, що кожен `.npmrc` лише посилається на змінну.
+шукає значення `token` і `auth` реєстру та код заявки з `client/.env.local` у файлах (двійкові теж), у підготовленому коміті й у всій історії та перевіряє, що кожен `.npmrc` лише посилається на змінну. Значення вона не друкує.
 
 ## Команди
 

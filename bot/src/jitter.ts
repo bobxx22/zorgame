@@ -9,6 +9,8 @@
    цілком. Боти встають разом, і якщо лобі ще не відкрито, ломляться в нього
    всі одразу - рівно той випадок, заради якого закон. */
 
+import { errText } from './errors.js';
+
 export function backoffMs(attempt: number, ceilMs: number, rnd: () => number = Math.random): number {
   const base = Math.max(1, Math.round(ceilMs / 3));
   const cap = Math.min(ceilMs, base * Math.pow(2, attempt));
@@ -20,11 +22,17 @@ export function backoffMs(attempt: number, ceilMs: number, rnd: () => number = M
    вердикт вузла (печатка чужа, слот зайнятий), піни і маніфест -
    несумісність; повтор їх не лікує. Розбір за текстом помилки connectBot
    (англійською, як її пише SDK): структурного коду вона не несе, тому список
-   повторюваного білий, а не чорний */
+   повторюваного білий, а не чорний. Сюди ж - присяга, на яку вузол не
+   відповів за connectTimeoutMs (SDK: "wire closed before the manifest:
+   timeout:5000"), і закриття до маніфесту кодом транспорту: лобі триває
+   init-ms (протокол 3.3), і одна невдала спроба його не вичерпує. Тести
+   (test/jitter.test.mjs) тримають ці тексти: новий SDK, що їх змінить,
+   упаде на тестах, а не мовчки в лобі */
 export function retryable(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errText(err);
   if (msg.startsWith('wire did not come up')) return true;
-  const m = /^wire closed before the oath, code (\d+)/.exec(msg);
+  if (msg.startsWith('wire closed before the manifest: timeout:')) return true;
+  const m = /^wire closed before the (?:oath, code |manifest: close:)(\d+)/.exec(msg);
   return m !== null && Number(m[1]) < 4000;
 }
 

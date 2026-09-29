@@ -12,7 +12,9 @@
     "start": "node dist/main.js",
     "play": "npm run build && zaria-kit pack",
     "lint:nakaz": "zaria-kit lint nakaz.yaml",
-    "check": "npm run build && zaria-kit lint nakaz.yaml"
+    "check": "npm run build && zaria-kit lint nakaz.yaml",
+    "test": "npm run build && node --test \"test/*.test.mjs\"",
+    "play:win": "npm run build && node --import ./scripts/win-fsync.mjs node_modules/@zoria/kit/bin/zaria-kit.mjs pack"
   },
   "zaria": {
     "bot": "node dist/main.js",

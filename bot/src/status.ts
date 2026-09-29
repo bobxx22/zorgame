@@ -18,6 +18,7 @@
 
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { errText } from './errors.js';
 
 export interface HeadStats {
   ticks: number;
@@ -110,7 +111,7 @@ async function route(head: Head, req: IncomingMessage, res: ServerResponse): Pro
     else send(res, 404, { error: 'path' });
   } catch (e) {
     if (e instanceof Refusal) send(res, e.code, { error: e.message });
-    else send(res, 500, { error: e instanceof Error ? e.message : String(e) });
+    else send(res, 500, { error: errText(e) });
   }
 }
 
