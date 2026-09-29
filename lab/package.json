@@ -1,0 +1,34 @@
+{
+  "name": "zaria-lab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Лабораторія бота: партії в процесі, повний запис, перегляд і порівняння тактик",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "bot": "npm --prefix ../bot run build",
+    "build": "tsc -p tsconfig.json && vite build",
+    "start": "npm run bot && npm run build && node server/main.ts",
+    "serve": "node server/main.ts",
+    "dev": "vite",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.server.json"
+  },
+  "dependencies": {
+    "@zoria/engine": "^1.0.0",
+    "@zoria/nakaz": "^1.0.0",
+    "@zoria/protocol": "^1.0.0",
+    "@zoria/sdk": "^1.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "~5.9",
+    "vite": "^8.3.0"
+  }
+}

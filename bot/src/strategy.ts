@@ -114,6 +114,8 @@ export class PulseStrategy implements Strategy {
   private asked: { at: number; order: Watch } | null = null;
   /* чи стоїть у кадрі цього такту пульс (першим) */
   private pulsed = false;
+  /* пульс останнього такту або null: діагностика для лабораторії (lab/) */
+  lastPulse: Order | null = null;
   private headFaults = 0;
 
   constructor(head: Head, log: (line: string) => void = () => undefined) {
@@ -150,6 +152,7 @@ export class PulseStrategy implements Strategy {
     const obs = quiet >= PULSE_AFTER && this.world ? decodeObserve(observe) : null;
     const pulse = obs && this.world ? pulseOrder(obs, orders, this.focus, this.world) : null;
     this.pulsed = pulse !== null;
+    this.lastPulse = pulse;
 
     const shift = this.pulsed ? 1 : 0;
     const index = orders.findIndex((order) => order.kind === 'watch');
