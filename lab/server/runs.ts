@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseStyle } from '../../bot/dist/styles.js';
 import type { RunMeta, RunRequest, SeatSpec } from '../shared/record.ts';
 
 export const RUNS = fileURLToPath(new URL('../runs/', import.meta.url));
@@ -62,7 +63,7 @@ export function parseSeat(seat: unknown, known: Known): SeatSpec {
   const s = seat as Partial<SeatSpec> | null;
   const kind = s?.kind;
   const name = String(s?.name ?? '');
-  if (kind === 'ours' && known.presets.includes(name)) {
+  if (kind === 'ours' && (known.presets.includes(name) || parseStyle(name) !== null)) {
     const tactics = Array.isArray(s?.tactics) ? s.tactics.map(String) : [];
     for (const t of tactics) {
       const [what, charter, after] = t.split(':');

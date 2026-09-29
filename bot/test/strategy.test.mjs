@@ -116,7 +116,7 @@ test('an unknown preset falls back to the default instead of crashing before the
   assert.equal(presetOrDefault('ÑˆÐ¸Ñ€', (line) => lines.push(line)), DEFAULT_PRESET);
   assert.equal(lines.length, 1);
   assert.equal(DEFAULT_PRESET, 'рівний');
-  assert.deepEqual(presets().sort(), ['облягач', 'обхідник', 'проривник', 'рівний', 'шир'].sort());
+  for (const name of ['облягач', 'обхідник', 'проривник', 'рівний', 'шир']) assert.ok(presets().includes(name), name);
 });
 
 /* a scripted head: what it says on each tick, and what it got back */

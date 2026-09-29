@@ -1,6 +1,7 @@
 /* bot :: strategy
-   Стратегія бота: голова архетипу SDK (ZARIA_PRESET - рівний, шир,
-   обхідник, проривник, облягач) і пульс, що тримає слот за ботом.
+   Стратегія бота: голова-дзеркало з характером (ZARIA_PRESET - ім'я
+   каталогу styles.ts або рядок «основа+ручка=число,...») і пульс, що тримає
+   слот за ботом.
 
    Контракт - WireBot (маніфест, кадр спостереження -> кадр команд,
    вердикти) плюс кадр щоденника віри. Мережі тут немає і бути не повинно:
@@ -22,9 +23,9 @@
 
 import { readFileSync } from 'node:fs';
 import { createEngine } from '@zoria/engine';
-import { ARCHETYPES, BeliefTrace, sampleBot } from '@zoria/sdk';
+import { BeliefTrace, MirrorBot } from '@zoria/sdk';
 import { createNakazSparring, NAKAZ_SAMPLES } from '@zoria/sdk/nakaz';
-import type { BeliefFrame, MirrorBot, WireBot } from '@zoria/sdk';
+import type { BeliefFrame, WireBot } from '@zoria/sdk';
 import {
   decodeManifest,
   decodeObserve,
@@ -37,6 +38,7 @@ import {
 } from '@zoria/protocol';
 import type { ChannelCfg, Hex, Manifest, Observe, Order, SlotName, Verdict } from '@zoria/protocol';
 import { errText } from './errors.js';
+import { parseStyle, STYLES } from './styles.js';
 
 export interface Strategy extends WireBot {
   /* кадр щоденника віри такту; null - кадру немає */
@@ -290,19 +292,19 @@ export class PulseStrategy implements Strategy {
   }
 }
 
-/* імена архетипів: за ними службова ручка зміни пресета вирішує, є такий
-   пресет чи ні */
+/* імена каталогу стилів: за ними службова ручка зміни пресета вирішує, є
+   такий пресет чи ні */
 export function presets(): string[] {
-  return Object.keys(ARCHETYPES);
+  return Object.keys(STYLES);
 }
 
 export const DEFAULT_PRESET = 'рівний';
 
 /* невідоме ім'я (одруківка, кодова сторінка cmd) не валить бота до присяги:
-   грає типовий архетип */
+   грає типовий стиль. Рядок «основа+ручка=число» - теж пресет */
 export function presetOrDefault(preset: string | undefined, log: (line: string) => void = () => undefined): string {
   if (!preset) return DEFAULT_PRESET;
-  if (presets().includes(preset)) return preset;
+  if (parseStyle(preset)) return preset;
   log('пресета «' + preset + '» немає, граю ' + DEFAULT_PRESET);
   return DEFAULT_PRESET;
 }
@@ -312,7 +314,8 @@ export function createStrategy(
   log: (line: string) => void = () => undefined,
   tactics: Tactics = parseTactics(process.env['ZARIA_TACTICS'] ?? DEFAULT_TACTICS, log),
 ): PulseStrategy {
-  const head = sampleBot(createEngine, presetOrDefault(preset, log));
+  const style = parseStyle(presetOrDefault(preset, log)) ?? STYLES[DEFAULT_PRESET]!;
+  const head = new MirrorBot(createEngine, { ...style });
   let filler: WireBot | null = null;
   if (tactics.fill) {
     try {

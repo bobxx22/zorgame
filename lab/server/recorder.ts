@@ -41,13 +41,13 @@ interface Ours extends WireBot {
 
 /* наказ місця, як його бере вузол: наш бот - bot/nakaz.yaml, архетип - «черепаха»
    (kit/src/rival.mjs), наказ - він сам */
-function seatNakaz(spec: SeatSpec): string {
+export function seatNakaz(spec: SeatSpec): string {
   if (spec.kind === 'ours' || spec.kind === 'our-nakaz') return readFileSync(OUR_NAKAZ, 'utf8');
   if (spec.kind === 'nakaz') return NAKAZ_SAMPLES[spec.name as SampleName];
   return NAKAZ_SAMPLES['черепаха'];
 }
 
-function makeBot(spec: SeatSpec): WireBot | Ours {
+export function makeBot(spec: SeatSpec): WireBot | Ours {
   if (spec.kind === 'archetype') return sampleBot(createEngine, spec.name);
   if (spec.kind === 'nakaz') return createNakazSparring(NAKAZ_SAMPLES[spec.name as SampleName]);
   if (spec.kind === 'our-nakaz') return createNakazSparring(readFileSync(OUR_NAKAZ, 'utf8'));
