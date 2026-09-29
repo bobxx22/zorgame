@@ -169,7 +169,7 @@ export function orderText(o: Record<string, unknown>): string {
     case 'bid':
       return `ставка на лот ${String(o['lot'])}: ${String(o['amount'])}`;
     case 'pact':
-      return `угода ${['пропозиція', 'згода', 'розрив'][Number(o['op'])] ?? String(o['op'])} → ${String(o['to'])}`;
+      return `угода ${({ offer: 'пропозиція', accept: 'згода', break: 'розрив' } as Record<string, string>)[String(o['op'])] ?? String(o['op'])} → ${String(o['to'])}`;
     case 'cry':
       return `клич «${CRIES[Number(o['phrase'])] ?? String(o['phrase'])}»`;
     default:

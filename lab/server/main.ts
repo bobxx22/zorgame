@@ -8,7 +8,11 @@
      POST   /api/runs                новий запуск (RunRequest)
      GET    /api/runs/:id            стан запуску
      DELETE /api/runs/:id            видалити запуск із записами
-     GET    /api/runs/:id/match/:n   запис партії n (1-3), gzip */
+     GET    /api/runs/:id/match/:n   запис партії n (1-3), gzip
+     GET    /api/tournaments         турніри
+     POST   /api/tournaments         новий турнір (TournamentRequest)
+     GET    /api/tournaments/:id     зведення турніру (TournamentView)
+     DELETE /api/tournaments/:id     видалити турнір і його запуски */
 
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -20,9 +24,10 @@ import { Worker } from 'node:worker_threads';
 import { ENGINE_HASH } from '@zoria/engine';
 import { ARCHETYPES } from '@zoria/sdk';
 import { NAKAZ_SAMPLES } from '@zoria/sdk/nakaz';
-import { presets } from '../../bot/dist/strategy.js';
-import type { LabOptions, RunMeta, RunRequest } from '../shared/record.ts';
+import { FILL_CHARTERS, presets } from '../../bot/dist/strategy.js';
+import type { LabOptions, RunMeta, RunRequest, SeatSpec } from '../shared/record.ts';
 import { deleteRun, listRuns, matchFile, newRunId, parseRequest, readMeta, saveMeta } from './runs.ts';
+import { deleteTournament, listTournaments, parseTournament, planTournament, readTournament, viewTournament } from './tournaments.ts';
 import type { WorkerJob, WorkerMessage } from './worker.ts';
 
 const PORT = Number(process.env['LAB_PORT'] ?? 4747);
@@ -34,6 +39,7 @@ const options: LabOptions = {
   presets: presets(),
   archetypes: Object.keys(ARCHETYPES),
   nakaz: Object.keys(NAKAZ_SAMPLES),
+  charters: [...FILL_CHARTERS],
   engine: ENGINE_HASH,
   cpus: CPUS,
 };
@@ -84,8 +90,9 @@ function pump(): void {
   }
 }
 
-function startRun(request: RunRequest): RunMeta {
+function startRun(request: RunRequest, tournament?: RunMeta['tournament']): RunMeta {
   const meta: RunMeta = { id: newRunId(), createdAt: new Date().toISOString(), request, status: 'queued', progress: { match: 0, t: 0 } };
+  if (tournament) meta.tournament = tournament;
   saveMeta(meta);
   live.set(meta.id, meta);
   queue.push(meta.id);
@@ -154,10 +161,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
   const [, what, id, sub, n] = parts;
   if (req.method === 'GET' && what === 'options') return json(res, 200, options);
+  if (what === 'tournaments') return tournaments(req, res, id);
   if (what !== 'runs') return json(res, 404, { error: 'path' });
 
   if (!id) {
-    if (req.method === 'GET') return json(res, 200, listRuns().map((meta) => live.get(meta.id) ?? meta));
+    if (req.method === 'GET') {
+      const all = url.searchParams.get('all') === '1';
+      return json(res, 200, listRuns().filter((meta) => all || !meta.tournament).map((meta) => live.get(meta.id) ?? meta));
+    }
     if (req.method === 'POST') {
       try {
         const request = parseRequest(await readBody(req), options);
@@ -194,6 +205,50 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'content-encoding': 'gzip', 'cache-control': 'max-age=3600' });
     res.end(readFileSync(file));
     return;
+  }
+  return json(res, 404, { error: 'path' });
+}
+
+const metaOf = (id: string): RunMeta | null => {
+  try {
+    return live.get(id) ?? readMeta(id);
+  } catch {
+    return null;
+  }
+};
+
+async function tournaments(req: IncomingMessage, res: ServerResponse, id: string | undefined): Promise<void> {
+  if (!id) {
+    if (req.method === 'GET') return json(res, 200, listTournaments().map((t) => viewTournament(t, metaOf)));
+    if (req.method === 'POST') {
+      try {
+        const request = parseTournament(await readBody(req), options);
+        const t = planTournament(request, (seed, lineup: [SeatSpec, SeatSpec, SeatSpec], tag) => startRun({ seed, ticks: request.ticks, lineup, matches: 3 }, tag).id);
+        return json(res, 201, viewTournament(t, metaOf));
+      } catch (e) {
+        return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return json(res, 404, { error: 'path' });
+  }
+  const t = readTournament(id);
+  if (!t) return json(res, 404, { error: 'tournament' });
+  if (req.method === 'GET') return json(res, 200, viewTournament(t, metaOf));
+  if (req.method === 'DELETE') {
+    for (const row of t.runs) {
+      for (const runId of row) {
+        const meta = metaOf(runId);
+        if (meta?.status === 'queued') {
+          const at = queue.indexOf(runId);
+          if (at >= 0) queue.splice(at, 1);
+        }
+        if (meta?.status === 'running') continue;
+        live.delete(runId);
+        deleteRun(runId);
+      }
+    }
+    deleteTournament(id);
+    return json(res, 200, { deleted: id });
   }
   return json(res, 404, { error: 'path' });
 }

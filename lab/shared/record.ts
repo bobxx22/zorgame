@@ -19,6 +19,15 @@ export interface SeatSpec {
   kind: SeatKind;
   /* пресет нашої голови, ім'я архетипу або зразка наказу */
   name: string;
+  /* надбудови нашого бота (bot/src/strategy.ts): fill:<наказ>[:N], nopact */
+  tactics?: string[];
+}
+
+export function seatText(seat: SeatSpec): string {
+  if (seat.kind === 'ours') return ['наш · ' + seat.name, ...(seat.tactics ?? [])].join(' · ');
+  if (seat.kind === 'archetype') return 'архетип · ' + seat.name;
+  if (seat.kind === 'our-nakaz') return 'наш наказ';
+  return 'наказ · ' + seat.name;
 }
 
 export interface MatchStatic {
@@ -84,6 +93,8 @@ export interface Frame {
   /* наше місце: що бот бачив у кадрі спостереження і який пульс подав */
   seen?: { foe: [string, string, number, number][]; noisy: [number, number][] };
   pulse?: unknown;
+  /* звідки кожна команда кадру нашого місця: pulse, head, fill */
+  src?: string[];
 }
 
 export interface SeatResult {
@@ -98,6 +109,8 @@ export interface SeatResult {
   denials: number;
   orders: number;
   pulses: number;
+  /* такти, коли в кадрі нашого місця були команди наказу-заповнювача */
+  fills: number;
   /* такти, коли слот вів наказ (мовчання бота 6 тактів і довше, правила 23.2) */
   nakazTicks: number;
   nakazEpisodes: { from: number; to: number }[];
@@ -131,6 +144,24 @@ export interface RunRequest {
   matches: 1 | 3;
 }
 
+/* підсумок учасника в одній партії - для турнірів без читання записів */
+export interface SeatLine {
+  participant: number;
+  slot: Slot;
+  place: number;
+  share: number;
+  score: number;
+  network: number;
+  orders: number;
+  stolen: number;
+  tax: number;
+  lit: number;
+  denials: number;
+  pulses: number;
+  fills: number;
+  nakazTicks: number;
+}
+
 export interface RunMeta {
   id: string;
   createdAt: string;
@@ -140,14 +171,72 @@ export interface RunMeta {
   progress: { match: number; t: number };
   /* доля кожного учасника за пакет */
   shares?: [number, number, number];
-  matches?: { index: number; places: Record<Slot, number>; scores: Record<Slot, number> }[];
+  matches?: { index: number; places: Record<Slot, number>; scores: Record<Slot, number>; seats?: SeatLine[] }[];
   ms?: number;
+  /* запуск - частина турніру: варіант і номер долини */
+  tournament?: { id: string; variant: number; seed: number };
 }
 
 export interface LabOptions {
   presets: string[];
   archetypes: string[];
   nakaz: string[];
+  /* накази, якими можна заповнювати простій голови */
+  charters: string[];
   engine: string;
   cpus: number;
+}
+
+export interface TournamentRequest {
+  name: string;
+  /* варіанти на місці учасника 1: наш бот із надбудовами або будь-хто інший як еталон */
+  variants: SeatSpec[];
+  /* суперники: пари з цього пулу по черзі, кожен варіант - на тих самих парах і долинах */
+  opponents: SeatSpec[];
+  seedFrom: number;
+  seeds: number;
+  ticks: number;
+}
+
+export interface Tournament {
+  id: string;
+  createdAt: string;
+  request: TournamentRequest;
+  /* пари суперників за номером долини */
+  pairs: [SeatSpec, SeatSpec][];
+  /* id запусків: [варіант][долина] */
+  runs: string[][];
+}
+
+export interface VariantStats {
+  variant: number;
+  label: string;
+  done: number;
+  total: number;
+  mean: number;
+  se: number;
+  min: number;
+  max: number;
+  /* різниця з варіантом 1 на тих самих долинах */
+  delta: { mean: number; se: number; n: number } | null;
+  places: [number, number, number];
+  score: number;
+  network: number;
+  orders: number;
+  stolen: number;
+  tax: number;
+  lit: number;
+  denials: number;
+  pulses: number;
+  fills: number;
+  nakazTicks: number;
+  opponentScore: number;
+}
+
+export interface TournamentView {
+  tournament: Tournament;
+  stats: VariantStats[];
+  /* частка варіанта на кожній долині: [долина][варіант], null - ще не зіграно */
+  grid: (number | null)[][];
+  status: { queued: number; running: number; done: number; failed: number };
 }

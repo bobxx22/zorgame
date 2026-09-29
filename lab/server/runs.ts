@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { RunMeta, RunRequest } from '../shared/record.ts';
+import type { RunMeta, RunRequest, SeatSpec } from '../shared/record.ts';
 
 export const RUNS = fileURLToPath(new URL('../runs/', import.meta.url));
 
@@ -50,8 +50,37 @@ export function deleteRun(id: string): void {
   rmSync(runDir(id), { recursive: true, force: true });
 }
 
+export interface Known {
+  presets: string[];
+  archetypes: string[];
+  nakaz: string[];
+  charters: string[];
+}
+
+/* місце з панелі: лише відомі імена, надбудови - лише з відомих */
+export function parseSeat(seat: unknown, known: Known): SeatSpec {
+  const s = seat as Partial<SeatSpec> | null;
+  const kind = s?.kind;
+  const name = String(s?.name ?? '');
+  if (kind === 'ours' && known.presets.includes(name)) {
+    const tactics = Array.isArray(s?.tactics) ? s.tactics.map(String) : [];
+    for (const t of tactics) {
+      const [what, charter, after] = t.split(':');
+      const ok =
+        (what === 'nopact' && charter === undefined) ||
+        (what === 'fill' && known.charters.includes(charter ?? '') && (after === undefined || (/^\d{1,4}$/.test(after) && Number(after) <= 1200)));
+      if (!ok) throw new Error('tactic ' + t);
+    }
+    return tactics.length ? { kind, name, tactics } : { kind, name };
+  }
+  if (kind === 'archetype' && known.archetypes.includes(name)) return { kind, name };
+  if (kind === 'nakaz' && known.nakaz.includes(name)) return { kind, name };
+  if (kind === 'our-nakaz') return { kind, name: 'nakaz.yaml' };
+  throw new Error('seat ' + String(kind) + ' ' + name);
+}
+
 /* запит із панелі: перевірити все, що піде в рушій */
-export function parseRequest(body: unknown, known: { presets: string[]; archetypes: string[]; nakaz: string[] }): RunRequest {
+export function parseRequest(body: unknown, known: Known): RunRequest {
   const b = body as Partial<RunRequest> | null;
   if (!b || typeof b !== 'object') throw new Error('body');
   const seed = Number(b.seed);
@@ -60,14 +89,6 @@ export function parseRequest(body: unknown, known: { presets: string[]; archetyp
   if (!Number.isInteger(ticks) || ticks < 10 || ticks > 1200) throw new Error('ticks');
   const matches = b.matches === 1 ? 1 : 3;
   if (!Array.isArray(b.lineup) || b.lineup.length !== 3) throw new Error('lineup');
-  const lineup = b.lineup.map((seat) => {
-    const kind = seat?.kind;
-    const name = String(seat?.name ?? '');
-    if (kind === 'ours' && known.presets.includes(name)) return { kind, name };
-    if (kind === 'archetype' && known.archetypes.includes(name)) return { kind, name };
-    if (kind === 'nakaz' && known.nakaz.includes(name)) return { kind, name };
-    if (kind === 'our-nakaz') return { kind, name: 'nakaz.yaml' };
-    throw new Error('seat ' + String(kind) + ' ' + name);
-  }) as RunRequest['lineup'];
+  const lineup = b.lineup.map((seat) => parseSeat(seat, known)) as RunRequest['lineup'];
   return { seed, ticks, lineup, matches };
 }

@@ -12,9 +12,9 @@ import { createNakazSparring, NAKAZ_SAMPLES, NakazGuard } from '@zoria/sdk/nakaz
 import type { SampleName } from '@zoria/sdk/nakaz';
 import { decodeManifest, decodeObserve, decodeOrders } from '@zoria/protocol';
 import type { Order } from '@zoria/protocol';
-import { createStrategy } from '../../bot/dist/strategy.js';
-import type { Strategy } from '../../bot/dist/strategy.js';
-import { SLOTS, TASKS } from '../shared/record.ts';
+import { createStrategy, parseTactics } from '../../bot/dist/strategy.js';
+import type { PulseStrategy } from '../../bot/dist/strategy.js';
+import { seatText, SLOTS, TASKS } from '../shared/record.ts';
 import type {
   Actor,
   Contract,
@@ -33,16 +33,9 @@ import type {
 const OUR_NAKAZ = new URL('../../bot/nakaz.yaml', import.meta.url);
 const ACTORS: readonly Actor[] = ['A', 'B', 'C', 'K'];
 
-export function seatLabel(spec: SeatSpec): string {
-  if (spec.kind === 'ours') return 'наш бот · ' + spec.name;
-  if (spec.kind === 'archetype') return 'архетип · ' + spec.name;
-  if (spec.kind === 'our-nakaz') return 'наш наказ';
-  return 'наказ · ' + spec.name;
-}
-
 /* наш бот: WireBot, що запам'ятовує останній кадр спостереження */
 interface Ours extends WireBot {
-  strategy: Strategy & { lastPulse?: Order | null };
+  strategy: PulseStrategy;
   lastObserve: Uint8Array | null;
 }
 
@@ -58,7 +51,7 @@ function makeBot(spec: SeatSpec): WireBot | Ours {
   if (spec.kind === 'archetype') return sampleBot(createEngine, spec.name);
   if (spec.kind === 'nakaz') return createNakazSparring(NAKAZ_SAMPLES[spec.name as SampleName]);
   if (spec.kind === 'our-nakaz') return createNakazSparring(readFileSync(OUR_NAKAZ, 'utf8'));
-  const strategy = createStrategy(spec.name);
+  const strategy = createStrategy(spec.name, () => undefined, parseTactics(spec.tactics ?? []));
   const ours: Ours = {
     strategy,
     lastObserve: null,
@@ -235,7 +228,7 @@ export function recordMatch(
     const spec = lineup[k]!;
     const bot = makeBot(spec);
     seating[slot] = k;
-    labels[slot] = seatLabel(spec);
+    labels[slot] = seatText(spec);
     /* як на вузлі: шість тактів мовчання - і слот веде наказ місця (правила 23.2) */
     const guard = new NakazGuard(bot, seatNakaz(spec));
     guards.set(slot, guard);
@@ -284,6 +277,7 @@ export function recordMatch(
         };
       }
       frame.pulse = ours.bot.strategy.lastPulse ?? null;
+      frame.src = [...ours.bot.strategy.lastSources];
     }
     frames.push(frame);
     if (t % 25 === 0) onTick(t);
@@ -297,10 +291,12 @@ export function recordMatch(
     let orders = 0;
     let denials = 0;
     let pulses = 0;
+    let fills = 0;
     for (const f of frames.slice(1)) {
       orders += f.ord[s]?.length ?? 0;
       denials += f.den[s]?.length ?? 0;
       if (s === ours?.slot && f.pulse) pulses++;
+      if (s === ours?.slot && f.src?.includes('fill')) fills++;
     }
     const guard = guards.get(s);
     return {
@@ -315,6 +311,7 @@ export function recordMatch(
       denials,
       orders,
       pulses,
+      fills,
       nakazTicks: guard?.nakazTicks ?? 0,
       nakazEpisodes: (guard?.episodes ?? []).map((e) => ({ from: e.from, to: e.to })),
     };

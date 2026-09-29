@@ -194,7 +194,7 @@ export function Orders({ record, slot, t, onSeek }: { record: MatchRecord; slot:
         <label>
           <input type="checkbox" checked={onlyDenied} onChange={() => setOnlyDenied(!onlyDenied)} /> лише відмови (за партію: {totalDenied})
         </label>
-        {ours && <span className="muted">пульс підсвічено</span>}
+        {ours && <span className="muted">пульс - пунктир, команди наказу-заповнювача - зелені</span>}
       </div>
       <ol className="log">
         {[...rows].reverse().map((f) => {
@@ -207,9 +207,13 @@ export function Orders({ record, slot, t, onSeek }: { record: MatchRecord; slot:
               <span className="cmds">
                 {orders.map((o, i) => {
                   const code = denied.get(i);
-                  const pulse = ours && i === 0 && f.pulse;
+                  const src = ours ? (f.src?.[i] ?? (i === 0 && f.pulse ? 'pulse' : 'head')) : 'head';
                   return (
-                    <span key={i} className={'cmd' + (code !== undefined ? ' denied' : '') + (pulse ? ' pulse' : '')}>
+                    <span
+                      key={i}
+                      className={'cmd' + (code !== undefined ? ' denied' : '') + (src === 'pulse' ? ' pulse' : '') + (src === 'fill' ? ' fill' : '')}
+                      title={src === 'fill' ? 'наказ-заповнювач' : src === 'pulse' ? 'пульс' : undefined}
+                    >
                       {orderText(o)}
                       {code !== undefined && <b> ✗ {DENY[code] ?? code}</b>}
                     </span>
@@ -271,6 +275,7 @@ export function Summary({ record }: { record: MatchRecord }) {
             <th>команд</th>
             <th>відмов</th>
             <th>пульсів</th>
+            <th title="тактів, коли простій заповнював наказ усередині бота">заповнено</th>
             <th title="такти, коли слот вів наказ: бот мовчав 6 тактів і довше (правила 23.2)">під наказом</th>
           </tr>
         </thead>
@@ -286,6 +291,7 @@ export function Summary({ record }: { record: MatchRecord }) {
               <td className="num">{r.orders}</td>
               <td className={'num' + (r.denials ? ' bad' : '')}>{r.denials}</td>
               <td className="num">{r.pulses}</td>
+              <td className="num">{r.fills ?? 0}</td>
               <td className={'num' + (r.nakazTicks > 0 ? ' bad' : '')} title={r.nakazEpisodes.map((e) => `${e.from}-${e.to}`).join(', ')}>
                 {r.nakazTicks}
                 {r.nakazEpisodes.length > 0 && <span className="muted"> ({r.nakazEpisodes.length} еп.)</span>}

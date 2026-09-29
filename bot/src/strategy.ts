@@ -20,8 +20,10 @@
    Пульс подається, лише якщо на нього вистачає каналу разом із командами
    голови і кадр не впирається в стелю: відмова - теж відхилена команда. */
 
+import { readFileSync } from 'node:fs';
 import { createEngine } from '@zoria/engine';
 import { ARCHETYPES, BeliefTrace, sampleBot } from '@zoria/sdk';
+import { createNakazSparring, NAKAZ_SAMPLES } from '@zoria/sdk/nakaz';
 import type { BeliefFrame, MirrorBot, WireBot } from '@zoria/sdk';
 import {
   decodeManifest,
@@ -91,40 +93,102 @@ export function pulseOrder(obs: Observe, orders: readonly Order[], focus: Watch 
   return left >= orderCost(world.cfg, 'watch', focus, obs.t, world.storms) ? focus : null;
 }
 
-/* вердикти кадру, де пульс стоїть першим, - як вердикти команд голови */
-export function headVerdicts(list: readonly Verdict[], pulsed: boolean): Verdict[] {
-  if (!pulsed) return [...list];
-  return list.filter(([i]) => i > 0).map(([i, ok, code]) => [i - 1, ok, code]);
+/* Надбудови над головою. Типово - DEFAULT_TACTICS: турнір лабораторії
+   показав, що заповнений простій сильніший за голую голову. Задаються
+   рядком ZARIA_TACTICS через кому; none - без надбудов:
+     fill:<наказ>[:N]  - простій голови заповнює наказ: зразок SDK (черепаха,
+                         експансія, економка, хвилини, замовлення, тиск) або
+                         наш (bot/nakaz.yaml). Наказ іде всередині бота
+                         кожен такт і знає світ; його команди йдуть у кадр,
+                         коли голова мовчить понад N тактів (типово 0). Слот
+                         лишається за ботом: це не епізод наказу вузла;
+     nopact            - не пропонувати і не приймати угод: податок угоди -
+                         десята частка доходу кожного такту (правила 19.5). */
+export const FILL_CHARTERS = [...Object.keys(NAKAZ_SAMPLES), 'наш'] as const;
+
+export interface Tactics {
+  fill: { charter: string; after: number } | null;
+  noPact: boolean;
+}
+
+export const NO_TACTICS: Tactics = { fill: null, noPact: false };
+
+/* здача: ZARIA_TACTICS організатори не задають, тож бій іде з цим рядком */
+export const DEFAULT_TACTICS = 'fill:наш:6';
+
+/* рядок надбудов; невідоме - у журнал і пропустити */
+export function parseTactics(spec: string | readonly string[] | undefined, log: (line: string) => void = () => undefined): Tactics {
+  const items = (typeof spec === 'string' ? spec.split(',') : (spec ?? [])).map((x) => x.trim()).filter(Boolean);
+  const out: Tactics = { fill: null, noPact: false };
+  for (const item of items) {
+    const [name, charter, after] = item.split(':');
+    if (name === 'none' && charter === undefined) continue;
+    if (name === 'nopact' && charter === undefined) out.noPact = true;
+    else if (name === 'fill' && charter && (FILL_CHARTERS as readonly string[]).includes(charter)) {
+      const n = after === undefined ? 0 : Number(after);
+      if (Number.isInteger(n) && n >= 0 && n <= 1200) out.fill = { charter, after: n };
+      else log('надбудова «' + item + '»: N - ціле 0-1200, пропускаю');
+    } else log('надбудови «' + item + '» немає, пропускаю');
+  }
+  return out;
+}
+
+/* текст наказу-заповнювача */
+export function charterText(name: string): string {
+  if (name === 'наш') return readFileSync(new URL('../nakaz.yaml', import.meta.url), 'utf8');
+  const text = (NAKAZ_SAMPLES as Readonly<Record<string, string>>)[name];
+  if (!text) throw new Error('no such charter: ' + name);
+  return text;
 }
 
 /* голова, яку обгортає пульс: дзеркало архетипу або підміна в тестах */
 export type Head = Pick<MirrorBot, 'init' | 'tick' | 'feedback' | 'mirror'>;
 
+/* звідки команда кадру: пульс, голова чи наказ-заповнювач, і її місце у своєму джерелі */
+export type Source = 'pulse' | 'head' | 'fill';
+interface Entry {
+  order: Order;
+  from: Source;
+  at: number;
+}
+
+export interface StrategyOpts {
+  tactics?: Tactics;
+  /* наказ-заповнювач; без нього fill не діє */
+  filler?: WireBot | null;
+}
+
 export class PulseStrategy implements Strategy {
   private readonly head: Head;
   private readonly log: (line: string) => void;
+  private readonly tactics: Tactics;
+  private readonly filler: WireBot | null;
   private slot: SlotName | null = null;
   private trace: BeliefTrace | null = null;
   private world: PulseWorld | null = null;
   /* тактів поспіль без прийнятої команди */
   private quiet = 0;
+  /* тактів поспіль, коли голова мовчала */
+  private headIdle = 0;
   /* фокус, прийнятий воротарем; до першого watch - вогнище */
   private focus: Watch | null = null;
-  /* watch голови цього кадру та його місце в кадрі: фокусом стане, коли його приймуть */
-  private asked: { at: number; order: Watch } | null = null;
-  /* чи стоїть у кадрі цього такту пульс (першим) */
-  private pulsed = false;
-  /* пульс останнього такту або null: діагностика для лабораторії (lab/) */
+  /* команди кадру цього такту в порядку кадру: за ними вердикти йдуть до свого джерела */
+  private sent: Entry[] = [];
+  /* діагностика для лабораторії (lab/): пульс і джерела команд останнього кадру */
   lastPulse: Order | null = null;
+  lastSources: Source[] = [];
   private headFaults = 0;
 
-  constructor(head: Head, log: (line: string) => void = () => undefined) {
+  constructor(head: Head, log: (line: string) => void = () => undefined, opts: StrategyOpts = {}) {
     this.head = head;
     this.log = log;
+    this.tactics = opts.tactics ?? NO_TACTICS;
+    this.filler = this.tactics.fill ? (opts.filler ?? null) : null;
   }
 
   init(manifest: Uint8Array, slot: SlotName): void {
     this.head.init(manifest, slot);
+    this.filler?.init(manifest, slot);
     this.slot = slot;
     this.trace = new BeliefTrace(slot);
     const m = decodeManifest(manifest);
@@ -132,47 +196,78 @@ export class PulseStrategy implements Strategy {
     this.world = m && hearth ? { cfg: m.cfg as unknown as ChannelCfg, storms: m.storms, hearth } : null;
     this.focus = hearth ? { kind: 'watch', q: hearth.q, r: hearth.r, keep: 0 } : null;
     this.quiet = 0;
+    this.headIdle = 0;
   }
 
   tick(observe: Uint8Array): Uint8Array {
     let reply: Uint8Array | null = null;
-    let orders: Order[] = [];
+    let headOrders: Order[] = [];
     try {
       reply = this.head.tick(observe);
       const decoded = decodeOrders(reply);
       // a reply that does not decode is garbage for the node too: the pulse speaks instead
       if (decoded === null) reply = null;
-      orders = decoded ?? [];
+      headOrders = decoded ?? [];
     } catch (e) {
       this.fail('tick', e);
+    }
+    // the filler follows every tick, so that it knows the world when its turn comes
+    let fillOrders: Order[] = [];
+    if (this.filler) {
+      try {
+        fillOrders = decodeOrders(this.filler.tick(observe)) ?? [];
+      } catch (e) {
+        this.fail('fill', e);
+      }
+    }
+
+    let entries: Entry[] = headOrders
+      .map((order, at): Entry => ({ order, from: 'head', at }))
+      .filter((e) => !(this.tactics.noPact && e.order.kind === 'pact' && e.order.op !== 'break'));
+    this.headIdle = headOrders.length === 0 ? this.headIdle + 1 : 0;
+    const fill = this.tactics.fill;
+    if (fill && entries.length === 0 && this.headIdle > fill.after) {
+      entries = fillOrders.map((order, at): Entry => ({ order, from: 'fill', at }));
     }
 
     const quiet = this.quiet;
     this.quiet += 1;
+    const orders = entries.map((e) => e.order);
     const obs = quiet >= PULSE_AFTER && this.world ? decodeObserve(observe) : null;
     const pulse = obs && this.world ? pulseOrder(obs, orders, this.focus, this.world) : null;
-    this.pulsed = pulse !== null;
     this.lastPulse = pulse;
+    this.sent = pulse ? [{ order: pulse, from: 'pulse', at: 0 }, ...entries] : entries;
+    this.lastSources = this.sent.map((e) => e.from);
 
-    const shift = this.pulsed ? 1 : 0;
-    const index = orders.findIndex((order) => order.kind === 'watch');
-    const watch = orders[index];
-    this.asked = watch?.kind === 'watch' ? { at: index + shift, order: watch } : null;
-
-    if (pulse) return encodeOrders([pulse, ...orders]);
-    return reply ?? encodeOrders(orders);
+    // untouched head reply goes out byte for byte
+    if (!pulse && reply && entries.length === headOrders.length && entries.every((e) => e.from === 'head')) return reply;
+    return encodeOrders(this.sent.map((e) => e.order));
   }
 
   feedback(verdicts: Uint8Array): void {
     const list = decodeVerdicts(verdicts);
     if (list?.some(([, ok]) => ok)) this.quiet = 0;
-    const asked = this.asked;
-    if (asked && list?.some(([i, ok]) => i === asked.at && ok)) this.focus = asked.order;
+    const head: Verdict[] = [];
+    const filler: Verdict[] = [];
+    for (const [i, ok, code] of list ?? []) {
+      const entry = this.sent[i];
+      if (!entry) continue;
+      if (ok && entry.order.kind === 'watch') this.focus = entry.order;
+      if (entry.from === 'head') head.push([entry.at, ok, code]);
+      else if (entry.from === 'fill') filler.push([entry.at, ok, code]);
+    }
     try {
       // the head gets back only the verdicts on its own commands, at their own positions
-      this.head.feedback(list && this.pulsed ? encodeVerdicts(headVerdicts(list, true)) : verdicts);
+      this.head.feedback(list ? encodeVerdicts(head) : verdicts);
     } catch (e) {
       this.fail('feedback', e);
+    }
+    if (this.filler && filler.length > 0) {
+      try {
+        this.filler.feedback?.(encodeVerdicts(filler));
+      } catch (e) {
+        this.fail('fill feedback', e);
+      }
     }
   }
 
@@ -212,6 +307,19 @@ export function presetOrDefault(preset: string | undefined, log: (line: string) 
   return DEFAULT_PRESET;
 }
 
-export function createStrategy(preset = process.env['ZARIA_PRESET'], log: (line: string) => void = () => undefined): Strategy {
-  return new PulseStrategy(sampleBot(createEngine, presetOrDefault(preset, log)), log);
+export function createStrategy(
+  preset = process.env['ZARIA_PRESET'],
+  log: (line: string) => void = () => undefined,
+  tactics: Tactics = parseTactics(process.env['ZARIA_TACTICS'] ?? DEFAULT_TACTICS, log),
+): PulseStrategy {
+  const head = sampleBot(createEngine, presetOrDefault(preset, log));
+  let filler: WireBot | null = null;
+  if (tactics.fill) {
+    try {
+      filler = createNakazSparring(charterText(tactics.fill.charter));
+    } catch (e) {
+      log('наказ-заповнювач «' + tactics.fill.charter + '» не прочитався, граю без нього: ' + errText(e));
+    }
+  }
+  return new PulseStrategy(head, log, { tactics, filler });
 }

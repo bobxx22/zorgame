@@ -11,12 +11,16 @@ import {
   costAt,
   DEFAULT_PRESET,
   FAIL_LOG_EVERY,
-  headVerdicts,
   PULSE_AFTER,
   PulseStrategy,
   presetOrDefault,
   presets,
   pulseOrder,
+  parseTactics,
+  charterText,
+  FILL_CHARTERS,
+  NO_TACTICS,
+  DEFAULT_TACTICS,
 } from '../dist/strategy.js';
 
 const cfg = { upFloor: 96, downFloor: 1024, relayUp: 24, relayDown: 192, netK: 8, chanOrder: 32, chanTick: 32, scanCost: 256, scanRad: 3, watchByte: 7, stormCost: 2 };
@@ -104,19 +108,6 @@ test('costAt: a unit at its cell, watch and scan at the target, the rest at the 
   assert.deepEqual(costAt({ kind: 'bid', lot: 0, amount: 60 }, obs, hearth), hearth);
 });
 
-test('verdicts of a frame with the pulse first go back to the head at its own positions', () => {
-  const list = [
-    [0, true, 0],
-    [1, false, 11],
-    [2, true, 0],
-  ];
-  assert.deepEqual(headVerdicts(list, true), [
-    [0, false, 11],
-    [1, true, 0],
-  ]);
-  assert.deepEqual(headVerdicts(list, false), list);
-});
-
 test('an unknown preset falls back to the default instead of crashing before the oath', () => {
   const lines = [];
   assert.equal(presetOrDefault('шир'), 'шир');
@@ -150,9 +141,9 @@ function fakeHead(say) {
 const silent = () => encodeOrders([]);
 
 /* plays slot A for `ticks` ticks and returns what went on the wire and what was refused */
-function play(head, ticks = 90) {
+function play(head, ticks = 90, opts = {}) {
   const lines = [];
-  const bot = new PulseStrategy(head, (line) => lines.push(line));
+  const bot = new PulseStrategy(head, (line) => lines.push(line), opts);
   const sent = new Map();
   const refused = new Map();
   runMatch(createEngine, {
@@ -175,7 +166,7 @@ function play(head, ticks = 90) {
     run = accepted > 0 ? 0 : run + 1;
     longest = Math.max(longest, run);
   }
-  return { sent, refused, longest, lines };
+  return { sent, refused, longest, lines, bot };
 }
 
 test('a silent head keeps the slot: at most 2 quiet ticks in a row, nothing refused', () => {
@@ -256,4 +247,86 @@ test('the strategy survives a head whose feedback throws', () => {
   // a belief without a mirror is null, and a reset without a slot does nothing
   assert.equal(bot.belief(null), null);
   bot.resetBelief();
+});
+
+test('tactics: fill with a charter and a delay, no pacts; unknown ones are logged and skipped', () => {
+  assert.deepEqual(parseTactics(undefined), NO_TACTICS);
+  assert.deepEqual(parseTactics('fill:черепаха'), { fill: { charter: 'черепаха', after: 0 }, noPact: false });
+  assert.deepEqual(parseTactics('fill:наш:6, nopact'), { fill: { charter: 'наш', after: 6 }, noPact: true });
+  assert.deepEqual(parseTactics(['nopact']), { fill: null, noPact: true });
+  assert.deepEqual(parseTactics('none'), NO_TACTICS);
+  assert.deepEqual(parseTactics(DEFAULT_TACTICS), { fill: { charter: 'наш', after: 6 }, noPact: false });
+  const lines = [];
+  assert.deepEqual(parseTactics('fill:нема,fill:тиск:-1,dance,nopact:1', (l) => lines.push(l)), NO_TACTICS);
+  assert.equal(lines.length, 4);
+  assert.deepEqual([...FILL_CHARTERS].sort(), ['економка', 'експансія', 'замовлення', 'наш', 'тиск', 'хвилини', 'черепаха'].sort());
+  assert.match(charterText('наш'), /^nakaz: 1/m);
+  assert.match(charterText('черепаха'), /nakaz: 1/);
+  assert.throws(() => charterText('нема'));
+});
+
+/* a charter double: says `yard клинок` every tick and remembers its verdicts */
+function fakeFiller(say = () => encodeOrders([{ kind: 'yard', cls: 'клинок' }])) {
+  const fed = [];
+  let inits = 0;
+  let ticks = 0;
+  return {
+    fed,
+    get inits() {
+      return inits;
+    },
+    get ticks() {
+      return ticks;
+    },
+    init() {
+      inits++;
+    },
+    tick() {
+      ticks++;
+      return say(ticks);
+    },
+    feedback(bytes) {
+      fed.push(decodeVerdicts(bytes));
+    },
+  };
+}
+
+test('fill: while the head is silent the charter speaks, and gets back the verdicts on its own commands', () => {
+  const filler = fakeFiller();
+  const { sent, bot } = play(fakeHead(silent), 20, { tactics: parseTactics('fill:черепаха'), filler });
+  assert.equal(filler.inits, 1);
+  assert.equal(filler.ticks, 20);
+  // every tick carries the charter's yard; the pulse is never needed while it is accepted
+  const first = sent.get(1) ?? [];
+  assert.deepEqual(first[0], { kind: 'yard', cls: 'клинок' });
+  assert.deepEqual(bot.lastSources.length > 0 ? bot.lastSources.every((s) => s === 'fill' || s === 'pulse') : true, true);
+  // the charter hears about its own command at its own position
+  assert.ok(filler.fed.length > 0);
+  assert.ok(filler.fed.every((list) => list.every(([i]) => i === 0)));
+});
+
+test('fill:N waits for N silent ticks of the head; a speaking head is never overridden', () => {
+  const filler = fakeFiller();
+  // the head speaks on tick 1 only
+  const head = fakeHead((n) => (n === 1 ? encodeOrders([{ kind: 'watch', q: 6, r: -12, keep: 0 }]) : encodeOrders([])));
+  const { sent } = play(head, 12, { tactics: parseTactics('fill:черепаха:3'), filler });
+  const yards = (t) => (sent.get(t) ?? []).filter((o) => o.kind === 'yard').length;
+  assert.equal(yards(1), 0);
+  // silent ticks 2, 3, 4 are the first three: the charter speaks from the fourth (tick 5)
+  assert.equal(yards(2) + yards(3) + yards(4), 0);
+  assert.equal(yards(5), 1);
+  assert.equal(filler.ticks, 12);
+});
+
+test('nopact: offers and acceptances of the head do not go out, a break does', () => {
+  const head = fakeHead((n) =>
+    encodeOrders(n % 2 ? [{ kind: 'pact', op: 'offer', to: 'B' }, { kind: 'watch', q: 6, r: -12, keep: 0 }] : [{ kind: 'pact', op: 'break', to: 'B' }]),
+  );
+  const { sent } = play(head, 6, { tactics: parseTactics('nopact') });
+  const kinds = [...sent.values()].flat().filter((o) => o.kind === 'pact').map((o) => o.op);
+  assert.ok(kinds.length > 0);
+  assert.ok(kinds.every((op) => op === 'break'));
+  // without the tactic the offer goes out
+  const plain = play(head, 6);
+  assert.ok([...plain.sent.values()].flat().some((o) => o.kind === 'pact' && o.op === 'offer'));
 });
