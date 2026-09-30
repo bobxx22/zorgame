@@ -95,7 +95,7 @@ const known = new Set(['hours', 'workers', 'from', 'validate', 'base', 'ticks', 
 for (const k of Object.keys(f)) if (!known.has(k)) throw new Error('прапорця --' + k + ' немає');
 const hours = Number(f['hours'] ?? 8);
 const workers = Number(f['workers'] ?? Math.max(1, availableParallelism() - 1));
-if (!(hours > 0 && hours <= 48)) throw new Error('--hours: 0-48');
+if (!(hours > 0 && hours <= 240)) throw new Error('--hours: 0-240');
 if (!Number.isInteger(workers) || workers < 1 || workers > 64) throw new Error('--workers: 1-64');
 
 const DIR = join(RUNS, 'search');
@@ -382,6 +382,8 @@ function cross(a: Style, b: Style, r: () => number): Style {
 }
 
 function children(gen: number, parents: readonly string[]): string[] {
+  /* батьків ще немає (покоління 0 - лише основа або не дійшло до верхньої ступені) */
+  if (!parents.length) return [];
   const r = rng(gen * 7919 + 17);
   const out: string[] = [];
   let tries = 0;
