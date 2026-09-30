@@ -7,7 +7,7 @@ import { createStrategy, DEFAULT_PRESET, DEFAULT_TACTICS, NO_TACTICS, presetOrDe
 
 test('the SDK archetypes are in the catalog unchanged, every style is full and within bounds', () => {
   for (const name of Object.keys(ARCHETYPES)) assert.deepEqual(STYLES[name], ARCHETYPES[name]);
-  assert.equal(Object.keys(STYLES).length, 19);
+  assert.equal(Object.keys(STYLES).length, 20);
   for (const [name, st] of Object.entries(STYLES)) {
     assert.deepEqual(Object.keys(st).sort(), ['mind', ...KNOBS].sort(), name);
     for (const k of KNOBS) assert.ok(st[k] >= 0 && st[k] <= KNOB_MAX[k], name + '.' + k);
@@ -37,7 +37,10 @@ test('the catalog and the knob bounds are exactly these numbers', () => {
     зоряний: { mind: '', dark: 1, grow: 1, steal: 1, raid: 1, order: 1, klinok: 0.5, build: 1, guard: 0.5, scout: 0, deep: 0, spare: 1, pirate: 0, siege: 1, pact: 1 },
     широблог: { mind: 'різчик', dark: 1.6, grow: 1.2, steal: 1.3, raid: 1.7, order: 0.7, klinok: 0.45, build: 1, guard: 0.5, scout: 1, deep: 0.6, spare: 0, pirate: 0, siege: 1, pact: 1 },
     тихий: { mind: '', dark: 0.3, grow: 1.4, steal: 0.55, raid: 0.4, order: 0.8, klinok: 0.15, build: 1.6, guard: 1, scout: 0, deep: 0, spare: 1, pirate: 0, siege: 0, pact: 1 },
+    світанок: { mind: 'різчик', dark: 1, grow: 1.4, steal: 1, raid: 1, order: 1, klinok: 0.5, build: 0.4, guard: 0.7, scout: 0.8, deep: 0, spare: 1, pirate: 0, siege: 1, pact: 1 },
   });
+  // the search winner under its catalog name is exactly the string the search played
+  assert.deepEqual(STYLES['світанок'], parseStyle('зоряний+mind=різчик,grow=1.4,build=0.4,guard=0.7,scout=0.8'));
   assert.deepEqual(KNOB_MAX, { dark: 4, grow: 3, steal: 3, raid: 3, order: 3, klinok: 1, build: 3, guard: 1, scout: 2, deep: 1.5, spare: 2, pirate: 2, siege: 2, pact: 1 });
   assert.equal(LAND_MAX, 2);
   for (const k of KNOBS) {
@@ -56,8 +59,8 @@ test('land is set only explicitly: no style carries it, a string may', () => {
   assert.equal(styleSpec('широблог', STYLES['широблог']), 'широблог');
 });
 
-test('the default is широблог with fill:наш:6; an empty ZARIA_TACTICS means the default, none means bare', () => {
-  assert.equal(DEFAULT_PRESET, 'широблог');
+test('the default is світанок with fill:наш:6; an empty ZARIA_TACTICS means the default, none means bare', () => {
+  assert.equal(DEFAULT_PRESET, 'світанок');
   assert.equal(DEFAULT_TACTICS, 'fill:наш:6');
   const saved = process.env['ZARIA_TACTICS'];
   try {

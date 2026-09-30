@@ -137,7 +137,7 @@ test('an unknown preset falls back to the default instead of crashing before the
   assert.equal(presetOrDefault(''), DEFAULT_PRESET);
   assert.equal(presetOrDefault('ÑˆÐ¸Ñ€', (line) => lines.push(line)), DEFAULT_PRESET);
   assert.equal(lines.length, 1);
-  assert.equal(DEFAULT_PRESET, 'широблог');
+  assert.equal(DEFAULT_PRESET, 'світанок');
   for (const name of ['облягач', 'обхідник', 'проривник', 'рівний', 'шир']) assert.ok(presets().includes(name), name);
 });
 

@@ -16,7 +16,13 @@
      npm run search -- --resume <id> --hours 3   продовжити; зігране не повторюється
    Прапорці: --hours 8, --workers <ядра-1>, --from 5000 (перша долина),
    --validate 60 (свіжих долин), --base <стиль бою>, --ticks 1200,
-   --start стиль;стиль;... (покоління 0; типово - весь каталог).
+   --start стиль;стиль;... (покоління 0; типово - весь каталог),
+   --pool arch|mixed (суперники: пари архетипів SDK або змішаний пул).
+
+   Змішаний пул - на випадок, коли стиль «заточився» під архетипи SDK: наш
+   бот у бойовій конфігурації (самогра), архетипи рівний і облягач (шаблон
+   учасника), стилі рушія опортуніст і рейдер у нашій обгортці і бот, чий
+   слот увесь матч веде наказ експансія (учасник, чий бот не запустився).
 
    Результати: runs/search/<id>/results.ndjson (пакет на рядок),
    report.md (таблиця кращих, оновлюється після кожного кроку). Ctrl+C
@@ -58,6 +64,9 @@ interface Config {
   validate: number;
   tactics: string[];
   start: string[];
+  pool: 'arch' | 'mixed';
+  /* суперники, закріплені на старті: зміна стилю бою не міняє пул продовження */
+  opponents: SeatSpec[];
 }
 
 const RUNGS = [30, 60, 120];
@@ -68,8 +77,21 @@ const FINALISTS = 5;
 /* свіжі долини - далеко від пошукових */
 const FRESH = 100_000;
 
+function poolOf(pool: Config['pool']): SeatSpec[] {
+  if (pool === 'arch') return Object.keys(ARCHETYPES).map((name) => ({ kind: 'archetype', name }));
+  const tactics = DEFAULT_TACTICS.split(',');
+  return [
+    { kind: 'ours', name: DEFAULT_PRESET, tactics },
+    { kind: 'archetype', name: 'рівний' },
+    { kind: 'archetype', name: 'облягач' },
+    { kind: 'ours', name: 'опортуніст', tactics },
+    { kind: 'ours', name: 'рейдер', tactics },
+    { kind: 'nakaz', name: 'експансія' },
+  ];
+}
+
 const f = flags(process.argv.slice(2));
-const known = new Set(['hours', 'workers', 'from', 'validate', 'base', 'ticks', 'resume', 'start']);
+const known = new Set(['hours', 'workers', 'from', 'validate', 'base', 'ticks', 'resume', 'start', 'pool']);
 for (const k of Object.keys(f)) if (!known.has(k)) throw new Error('прапорця --' + k + ' немає');
 const hours = Number(f['hours'] ?? 8);
 const workers = Number(f['workers'] ?? Math.max(1, availableParallelism() - 1));
@@ -83,6 +105,8 @@ if (f['resume']) {
   if (!/^[a-z0-9-]{8,40}$/.test(f['resume']) || !existsSync(path)) throw new Error('пошуку ' + f['resume'] + ' немає');
   cfg = JSON.parse(readFileSync(path, 'utf8')) as Config;
   cfg.start ??= Object.keys(STYLES);
+  cfg.pool ??= 'arch';
+  cfg.opponents ??= poolOf('arch');
 } else {
   cfg = {
     id: newRunId(),
@@ -93,7 +117,11 @@ if (f['resume']) {
     tactics: DEFAULT_TACTICS.split(','),
     /* стилі-рядки мають коми, тож список - через крапку з комою */
     start: f['start'] ? f['start'].split(';').map((x) => x.trim()).filter(Boolean) : Object.keys(STYLES),
+    pool: (f['pool'] ?? 'arch') as Config['pool'],
+    opponents: [],
   };
+  if (cfg.pool !== 'arch' && cfg.pool !== 'mixed') throw new Error('--pool: arch або mixed');
+  cfg.opponents = poolOf(cfg.pool);
   for (const spec of cfg.start) if (!parseStyle(spec)) throw new Error('--start: незрозумілий стиль ' + spec);
   if (!Object.hasOwn(STYLES, cfg.base)) throw new Error('--base: одне з ' + Object.keys(STYLES).join(', '));
   if (!Number.isInteger(cfg.from) || cfg.from < 0 || cfg.from > 2 ** 30) throw new Error('--from');
@@ -108,9 +136,10 @@ const REPORT = join(HOME, 'report.md');
 const started = Date.now();
 const deadline = started + hours * 3600_000;
 
-/* ===== суперники: усі пари архетипів SDK, пара долини - за її номером ===== */
+/* ===== суперники: усі пари пулу, пара долини - за її номером ===== */
 
-const POOL: SeatSpec[] = Object.keys(ARCHETYPES).map((name) => ({ kind: 'archetype', name }));
+const POOL: SeatSpec[] = cfg.opponents;
+
 const PAIRS: [SeatSpec, SeatSpec][] = [];
 for (let i = 0; i < POOL.length; i++) for (let j = i + 1; j < POOL.length; j++) PAIRS.push([POOL[i]!, POOL[j]!]);
 
@@ -412,7 +441,7 @@ function report(gen: number): void {
   const text = [
     `# Нічний пошук стилю ${cfg.id}`,
     '',
-    `Основа: \`${cfg.base}\`, надбудови: \`${cfg.tactics.join(',')}\`. Суперники: пари архетипів SDK по черзі. Долини пошуку ${cfg.from}-${cfg.from + TOP - 1}, свіжі - з ${cfg.from + FRESH}.`,
+    `Основа: \`${cfg.base}\`, надбудови: \`${cfg.tactics.join(',')}\`. Суперники: ${cfg.pool === 'mixed' ? 'змішаний пул (наш бот, рівний, облягач, опортуніст, рейдер, наказ експансія)' : 'пари архетипів SDK'} по черзі. Долини пошуку ${cfg.from}-${cfg.from + TOP - 1}, свіжі - з ${cfg.from + FRESH}.`,
     '',
     `Етап: **${phase}**, покоління ${gen}. Зіграно пакетів: ${packs} за цей запуск (усього в журналі ${[...played.values()].reduce((s, m) => s + m.size, 0)}), ${mins.toFixed(0)} хв, пакет у середньому ${(packs ? packMs / packs / 1000 : 0).toFixed(1)} с на потік, потоків ${workers}.`,
     '',
