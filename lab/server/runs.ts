@@ -69,6 +69,7 @@ export function parseSeat(seat: unknown, known: Known): SeatSpec {
       const [what, charter, after] = t.split(':');
       const ok =
         (what === 'nopact' && charter === undefined) ||
+        (what === 'none' && charter === undefined) ||
         (what === 'fill' && known.charters.includes(charter ?? '') && (after === undefined || (/^\d{1,4}$/.test(after) && Number(after) <= 1200)));
       if (!ok) throw new Error('tactic ' + t);
     }

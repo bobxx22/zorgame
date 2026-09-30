@@ -1,7 +1,7 @@
 /* bot :: strategy
    Стратегія бота: голова-дзеркало з характером (ZARIA_PRESET - ім'я
-   каталогу styles.ts або рядок «основа+ручка=число,...») і пульс, що тримає
-   слот за ботом.
+   каталогу styles.ts або рядок «основа+ручка=число,...», типово широблог) і
+   пульс, що тримає слот за ботом.
 
    Контракт - WireBot (маніфест, кадр спостереження -> кадр команд,
    вердикти) плюс кадр щоденника віри. Мережі тут немає і бути не повинно:
@@ -15,6 +15,8 @@
        юниту, якому голова в цьому кадрі нічого не дала: кадр спостереження
        знято до команд (6.3), і воротар виконує їх по черзі (6.4), тож halt
        такому юниту скасував би щойно дану команду;
+     - jam без цілі клинку в справі, який не глушить і не таранить, -
+       теж безкоштовний; наміру глушити в нього й так немає;
      - повтор фокуса, який воротар уже прийняв, - 32 байти каналу. Він стоїть
        першим, тож watch голови в тому самому кадрі, якщо його приймуть,
        перекриває його.
@@ -89,15 +91,21 @@ export function pulseOrder(obs: Observe, orders: readonly Order[], focus: Watch 
   const left = channelLeft(obs, orders, world);
   const busy = new Set(orders.flatMap((order) => ('unit' in order ? [order.unit] : [])));
   const idle = obs.mine.units.find((unit) => unit.task === null && unit.wait === 0 && !busy.has(unit.id));
-  // halt is free, but the gatekeeper accepts it only while 32 bytes are left (rules 13.4)
+  // halt and jam are free, but the gatekeeper accepts them only while 32 bytes are left (rules 13.4)
   if (idle && left >= world.cfg.chanOrder) return { kind: 'halt', unit: idle.id };
+  /* клинок у справі, що не глушить і не таранить: jam без цілі лише скидає
+     намір глушити, а його й так немає - світ не змінюється (zaria-sim-order.js, subJam) */
+  const klinok = obs.mine.units.find((u) => u.cls === 'клинок' && u.task !== null && u.task.jam === null && u.task.ram === null && u.wait === 0 && !busy.has(u.id));
+  if (klinok && left >= world.cfg.chanOrder) return { kind: 'jam', unit: klinok.id, target: null, hold: false };
   if (!focus) return null;
   return left >= orderCost(world.cfg, 'watch', focus, obs.t, world.storms) ? focus : null;
 }
 
-/* Надбудови над головою. Типово - DEFAULT_TACTICS: турнір лабораторії
-   показав, що заповнений простій сильніший за голую голову. Задаються
-   рядком ZARIA_TACTICS через кому; none - без надбудов:
+/* Надбудови над головою. Типово - DEFAULT_TACTICS. Заповнювач спрацьовує
+   рідко (близько такту за партію): на 60 свіжих долинах бот без надбудов
+   проти fill:наш:6 - -0.10 ± 0.15 частки за пакет, у межах похибки. Його
+   лишено, бо шкоди немає, а в довгий простій він дає ткача. Задаються
+   рядком ZARIA_TACTICS через кому; none - без надбудов, порожньо - типові:
      fill:<наказ>[:N]  - простій голови заповнює наказ: зразок SDK (черепаха,
                          експансія, економка, хвилини, замовлення, тиск) або
                          наш (bot/nakaz.yaml). Наказ іде всередині бота
@@ -115,7 +123,8 @@ export interface Tactics {
 
 export const NO_TACTICS: Tactics = { fill: null, noPact: false };
 
-/* здача: ZARIA_TACTICS організатори не задають, тож бій іде з цим рядком */
+/* здача: ZARIA_TACTICS організатори не задають, тож бій іде з цим рядком.
+   Порожня змінна (стек часто так задає) - теж цей рядок; без надбудов - none */
 export const DEFAULT_TACTICS = 'fill:наш:6';
 
 /* рядок надбудов; невідоме - у журнал і пропустити */
@@ -298,7 +307,10 @@ export function presets(): string[] {
   return Object.keys(STYLES);
 }
 
-export const DEFAULT_PRESET = 'рівний';
+/* широблог: на 80 свіжих долинах проти пар архетипів SDK +0.53 ± 0.17 частки
+   за пакет до рівного і втричі менше відмов (перевірка 30.09); після зсуву
+   світу 05.10 - перемірити */
+export const DEFAULT_PRESET = 'широблог';
 
 /* невідоме ім'я (одруківка, кодова сторінка cmd) не валить бота до присяги:
    грає типовий стиль. Рядок «основа+ручка=число» - теж пресет */
@@ -312,7 +324,7 @@ export function presetOrDefault(preset: string | undefined, log: (line: string) 
 export function createStrategy(
   preset = process.env['ZARIA_PRESET'],
   log: (line: string) => void = () => undefined,
-  tactics: Tactics = parseTactics(process.env['ZARIA_TACTICS'] ?? DEFAULT_TACTICS, log),
+  tactics: Tactics = parseTactics(process.env['ZARIA_TACTICS'] || DEFAULT_TACTICS, log),
 ): PulseStrategy {
   const style = parseStyle(presetOrDefault(preset, log)) ?? STYLES[DEFAULT_PRESET]!;
   const head = new MirrorBot(createEngine, { ...style });

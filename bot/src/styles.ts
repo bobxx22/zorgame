@@ -14,7 +14,10 @@ import { ARCHETYPES } from '@zoria/sdk';
 export const KNOBS = ['dark', 'grow', 'steal', 'raid', 'order', 'klinok', 'build', 'guard', 'scout', 'deep', 'spare', 'pirate', 'siege', 'pact'] as const;
 export type Knob = (typeof KNOBS)[number];
 export type Mind = '' | 'різчик';
-export type Style = { mind: Mind } & Record<Knob, number>;
+/* land - необов'язкова: без неї голова бере landContest світу (зараз 0), тож у
+   стиль вона потрапляє лише заданою явно - новий світ 05.10 може змінити типове */
+export type Style = { mind: Mind; land?: number } & Record<Knob, number>;
+export const LAND_MAX = 2;
 
 /* межі ручок, за рушієм (source/js/core/zaria-bot*.js):
      dark    чужа темрява за захопленою голкою проти своєї хвилини
@@ -30,7 +33,8 @@ export type Style = { mind: Mind } & Record<Knob, number>;
      spare   ціна запасного шляху мережі (обхідник)
      pirate  клинок чергує біля чужого контракту
      siege   облога: жертва, пара вузлів, тримачі; на зорі - кільце
-     pact    ймовірність угоди проти лідера (0-1, жереб) */
+     pact    ймовірність угоди проти лідера (0-1, жереб)
+     land    мірило руїни: приріст своєї частки і спірність соти (0-2) */
 export const KNOB_MAX: Readonly<Record<Knob, number>> = {
   dark: 4,
   grow: 3,
@@ -48,10 +52,11 @@ export const KNOB_MAX: Readonly<Record<Knob, number>> = {
   pact: 1,
 };
 
-/* повний стиль із часткового: відсутня ручка - нуль, як у SDK */
+/* повний стиль із часткового: відсутня ручка - нуль, як у SDK; land - лише задана */
 export function fullStyle(way: Partial<Style>): Style {
   const st = { mind: way.mind ?? '' } as Style;
   for (const k of KNOBS) st[k] = way[k] ?? 0;
+  if (way.land !== undefined) st.land = way.land;
   return st;
 }
 
@@ -106,9 +111,14 @@ export function parseStyle(spec: string): Style | null {
       st.mind = v;
       continue;
     }
-    if (!(KNOBS as readonly string[]).includes(k) || !/^\d+(\.\d+)?$/.test(v)) return null;
+    if (!/^\d+(\.\d+)?$/.test(v)) return null;
     const n = Number(v);
-    if (n > KNOB_MAX[k as Knob]) return null;
+    if (k === 'land') {
+      if (n > LAND_MAX) return null;
+      st.land = n;
+      continue;
+    }
+    if (!(KNOBS as readonly string[]).includes(k) || n > KNOB_MAX[k as Knob]) return null;
     st[k as Knob] = n;
   }
   return st;
@@ -121,5 +131,6 @@ export function styleSpec(base: string, st: Style): string {
   const diff: string[] = [];
   if (st.mind !== b.mind) diff.push('mind=' + st.mind);
   for (const k of KNOBS) if (st[k] !== b[k]) diff.push(k + '=' + String(Math.round(st[k] * 100) / 100));
+  if (st.land !== undefined && st.land !== b.land) diff.push('land=' + String(Math.round(st.land * 100) / 100));
   return diff.length ? base + '+' + diff.join(',') : base;
 }

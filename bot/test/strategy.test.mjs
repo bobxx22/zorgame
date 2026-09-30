@@ -65,6 +65,28 @@ test('pulse leaves busy and stepping units alone', () => {
   assert.equal(pulseOrder(observe(units), [], null, world), null);
 });
 
+test('pulse clears the absent jam intent of a busy Klinok for free, before paying for a watch', () => {
+  const walking = unit('K-A2', { cls: 'клинок', task });
+  const jam = { kind: 'jam', unit: 'K-A2', target: null, hold: false };
+  assert.deepEqual(pulseOrder(observe([unit('T-A1', { task }), walking]), [], focus, world), jam);
+  // an idle unit still gets the halt first
+  assert.deepEqual(pulseOrder(observe([unit('T-A1'), walking]), [], focus, world), { kind: 'halt', unit: 'T-A1' });
+  // a Klinok that jams, rams, waits in the yard, has no task or was commanded in this frame is left alone
+  for (const other of [
+    unit('K-A2', { cls: 'клинок', task: { ...task, jam: { q: 1, r: 1 } } }),
+    unit('K-A2', { cls: 'клинок', task: { ...task, ram: 'T-B3' } }),
+    unit('K-A2', { cls: 'клинок', task, wait: 1 }),
+  ]) {
+    assert.deepEqual(pulseOrder(observe([other]), [], focus, world), focus);
+  }
+  assert.deepEqual(pulseOrder(observe([walking]), [{ kind: 'move', unit: 'K-A2', q: 1, r: 1, goal: null, home: false }], focus, world), focus);
+  // a Tkach never gets a jam; 31 bytes left - no jam either
+  assert.deepEqual(pulseOrder(observe([unit('T-A1', { task })]), [], focus, world), focus);
+  const three = Array.from({ length: 3 }, () => ({ kind: 'yard', cls: 'клинок' }));
+  assert.deepEqual(pulseOrder(observe([walking], 128), three, focus, world), jam);
+  assert.equal(pulseOrder(observe([walking], 127), three, focus, world), null);
+});
+
 test('halt needs 32 bytes left: exactly 32 is enough, 31 is not', () => {
   const three = Array.from({ length: 3 }, () => ({ kind: 'yard', cls: 'клинок' }));
   // 128 - 3 * 32 = 32
@@ -115,7 +137,7 @@ test('an unknown preset falls back to the default instead of crashing before the
   assert.equal(presetOrDefault(''), DEFAULT_PRESET);
   assert.equal(presetOrDefault('ÑˆÐ¸Ñ€', (line) => lines.push(line)), DEFAULT_PRESET);
   assert.equal(lines.length, 1);
-  assert.equal(DEFAULT_PRESET, 'рівний');
+  assert.equal(DEFAULT_PRESET, 'широблог');
   for (const name of ['облягач', 'обхідник', 'проривник', 'рівний', 'шир']) assert.ok(presets().includes(name), name);
 });
 

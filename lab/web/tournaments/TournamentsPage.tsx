@@ -8,10 +8,11 @@ import { api } from '../lib/api.ts';
 import { fmt } from '../lib/look.ts';
 import { SeatEditor } from '../runs/SeatEditor.tsx';
 
+/* бойова конфігурація першою: з нею парна різниця решти */
 const DEFAULT_VARIANTS: SeatSpec[] = [
-  { kind: 'ours', name: 'рівний' },
-  { kind: 'ours', name: 'рівний', tactics: ['fill:черепаха:6'] },
-  { kind: 'ours', name: 'рівний', tactics: ['fill:черепаха'] },
+  { kind: 'ours', name: 'широблог' },
+  { kind: 'ours', name: 'зоряний' },
+  { kind: 'ours', name: 'різчик' },
 ];
 
 const key = (s: SeatSpec) => s.kind + ':' + s.name;
@@ -88,7 +89,7 @@ export function TournamentsPage({ onOpen }: { onOpen: (id: string) => void }) {
                 </div>
               ))}
               <div>
-                <button className="mini" disabled={variants.length >= 8} onClick={() => setVariants([...variants, { kind: 'ours', name: 'рівний' }])}>
+                <button className="mini" disabled={variants.length >= 8} onClick={() => setVariants([...variants, { kind: 'ours', name: 'широблог' }])}>
                   + варіант
                 </button>
               </div>

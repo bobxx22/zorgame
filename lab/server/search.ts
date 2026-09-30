@@ -3,18 +3,20 @@
    стилями (bot/src/styles.ts) на тих самих долинах проти тих самих пар
    архетипів SDK; мірило - парна різниця часток за пакет зі стилем-основою.
 
-   Покоління - відсів половинами: усі кандидати на 10 долинах, краща половина
-   ще на 10, далі на 40 і 80. Кращі за весь час стають батьками: наступне
-   покоління - їхні мутації і схрещення. Коли часу лишається лише на
-   перевірку, п'ятеро кращих і основа грають на свіжих долинах, яких пошук не
-   бачив: відбір на тих самих 80 долинах завищує різницю переможця, свіжі
-   долини показують чесну.
+   Покоління - відсів половинами: усі кандидати на 30 долинах, краща половина
+   ще на 30, далі на 120 (шум парної різниці - 1.1-1.8 частки за пакет, на 10
+   долинах відсів був би жеребом). Покоління 0 - --start або весь каталог;
+   далі кращі за весь час стають батьками: наступне покоління - їхні мутації і
+   схрещення. Коли часу лишається лише на перевірку, п'ятеро кращих і основа
+   грають на свіжих долинах, яких пошук не бачив: відбір на тих самих долинах
+   завищує різницю переможця, свіжі долини показують чесну.
 
    Запуск (з каталогу lab/):
      npm run search -- --hours 8
      npm run search -- --resume <id> --hours 3   продовжити; зігране не повторюється
    Прапорці: --hours 8, --workers <ядра-1>, --from 5000 (перша долина),
-   --validate 60 (свіжих долин), --base рівний, --ticks 1200.
+   --validate 60 (свіжих долин), --base <стиль бою>, --ticks 1200,
+   --start стиль;стиль;... (покоління 0; типово - весь каталог).
 
    Результати: runs/search/<id>/results.ndjson (пакет на рядок),
    report.md (таблиця кращих, оновлюється після кожного кроку). Ctrl+C
@@ -25,7 +27,7 @@ import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { ARCHETYPES } from '@zoria/sdk';
-import { DEFAULT_TACTICS } from '../../bot/dist/strategy.js';
+import { DEFAULT_PRESET, DEFAULT_TACTICS } from '../../bot/dist/strategy.js';
 import { fullStyle, KNOB_MAX, KNOBS, parseStyle, STYLES, styleSpec } from '../../bot/dist/styles.js';
 import type { Knob, Style } from '../../bot/dist/styles.js';
 import type { SeatSpec } from '../shared/record.ts';
@@ -55,17 +57,19 @@ interface Config {
   ticks: number;
   validate: number;
   tactics: string[];
+  start: string[];
 }
 
-const RUNGS = [10, 20, 40, 80];
+const RUNGS = [30, 60, 120];
+const TOP = RUNGS[RUNGS.length - 1]!;
 const PARENTS = 4;
-const CHILDREN = 12;
+const CHILDREN = 8;
 const FINALISTS = 5;
 /* свіжі долини - далеко від пошукових */
 const FRESH = 100_000;
 
 const f = flags(process.argv.slice(2));
-const known = new Set(['hours', 'workers', 'from', 'validate', 'base', 'ticks', 'resume']);
+const known = new Set(['hours', 'workers', 'from', 'validate', 'base', 'ticks', 'resume', 'start']);
 for (const k of Object.keys(f)) if (!known.has(k)) throw new Error('прапорця --' + k + ' немає');
 const hours = Number(f['hours'] ?? 8);
 const workers = Number(f['workers'] ?? Math.max(1, availableParallelism() - 1));
@@ -78,15 +82,19 @@ if (f['resume']) {
   const path = join(DIR, f['resume'], 'config.json');
   if (!/^[a-z0-9-]{8,40}$/.test(f['resume']) || !existsSync(path)) throw new Error('пошуку ' + f['resume'] + ' немає');
   cfg = JSON.parse(readFileSync(path, 'utf8')) as Config;
+  cfg.start ??= Object.keys(STYLES);
 } else {
   cfg = {
     id: newRunId(),
-    base: f['base'] ?? 'рівний',
+    base: f['base'] ?? DEFAULT_PRESET,
     from: Number(f['from'] ?? 5000),
     ticks: Number(f['ticks'] ?? 1200),
     validate: Number(f['validate'] ?? 60),
     tactics: DEFAULT_TACTICS.split(','),
+    /* стилі-рядки мають коми, тож список - через крапку з комою */
+    start: f['start'] ? f['start'].split(';').map((x) => x.trim()).filter(Boolean) : Object.keys(STYLES),
   };
+  for (const spec of cfg.start) if (!parseStyle(spec)) throw new Error('--start: незрозумілий стиль ' + spec);
   if (!Object.hasOwn(STYLES, cfg.base)) throw new Error('--base: одне з ' + Object.keys(STYLES).join(', '));
   if (!Number.isInteger(cfg.from) || cfg.from < 0 || cfg.from > 2 ** 30) throw new Error('--from');
   if (!Number.isInteger(cfg.ticks) || cfg.ticks < 10 || cfg.ticks > 1200) throw new Error('--ticks');
@@ -230,6 +238,8 @@ interface Stat {
   first: number;
   nakaz: number;
   denials: number;
+  /* пакетів, зіграних точнісінько як основа: стиль нічого не змінив */
+  same: number;
 }
 function stat(spec: string, seeds: readonly number[]): Stat {
   const mine = played.get(spec);
@@ -240,6 +250,7 @@ function stat(spec: string, seeds: readonly number[]): Stat {
   let matches = 0;
   let nakaz = 0;
   let denials = 0;
+  let same = 0;
   for (const seed of seeds) {
     const r = mine?.get(seed);
     const b = base?.get(seed);
@@ -247,6 +258,7 @@ function stat(spec: string, seeds: readonly number[]): Stat {
     d.push(r.share - b.share);
     shares.push(r.share);
     first += r.places.filter((p) => p === 1).length;
+    if (r.score === b.score && r.share === b.share) same++;
     matches += r.places.length;
     nakaz += r.nakazTicks;
     denials += r.denials;
@@ -255,7 +267,7 @@ function stat(spec: string, seeds: readonly number[]): Stat {
   const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / (a.length || 1);
   const m = mean(d);
   const se = n > 1 ? Math.sqrt(d.reduce((s, x) => s + (x - m) ** 2, 0) / (n - 1) / n) : 0;
-  return { spec, n, mean: mean(shares), delta: m, se, first: matches ? first / matches : 0, nakaz: n ? nakaz / n : 0, denials: n ? denials / n : 0 };
+  return { spec, n, mean: mean(shares), delta: m, se, first: matches ? first / matches : 0, nakaz: n ? nakaz / n : 0, denials: n ? denials / n : 0, same };
 }
 const range = (from: number, n: number, seed: (i: number) => number): number[] => Array.from({ length: n }, (_, i) => seed(from + i));
 const rungSeeds = (n: number) => range(0, n, searchSeed);
@@ -275,6 +287,21 @@ function rng(seed: number): () => number {
 const round = (x: number) => Math.round(x * 20) / 20;
 const baseOf = (spec: string) => spec.split('+')[0]!;
 
+/* klinok - поріг частки клинків у рої (верф: клинків/юнитів < klinok). Рій
+   ваги 8 - це 2-8 юнитів, і досяжні частки - 1/6, 1/5, 1/4, 1/3, 2/5, 1/2,
+   3/5, 2/3: будь-які два значення між сусідніми частками грають однаково
+   (klinok 0.35 і 0.5 дали 60 з 60 однакових пакетів). Тож - лише ступені */
+const KLINOK_STEPS = [0.1, 0.18, 0.22, 0.3, 0.37, 0.45, 0.55, 0.63];
+/* guard і pact - пороги жеребу: крок 0.05 міняє виліт лише зрідка */
+const LOTS: readonly Knob[] = ['guard', 'pact'];
+const LAND_STEPS = [0.5, 1, 1.5, 2];
+
+function nearest(steps: readonly number[], v: number): number {
+  let best = 0;
+  for (let i = 1; i < steps.length; i++) if (Math.abs(steps[i]! - v) < Math.abs(steps[best]! - v)) best = i;
+  return best;
+}
+
 function mutate(st: Style, r: () => number): Style {
   const out = fullStyle(st);
   let changed = false;
@@ -283,8 +310,18 @@ function mutate(st: Style, r: () => number): Style {
       if (r() > 0.3) continue;
       const max = KNOB_MAX[k as Knob];
       const v = out[k as Knob];
-      /* нуль множенням не зрушиш: спляча ручка прокидається з імовірністю */
-      const next = v === 0 ? (r() < 0.3 ? round(r() * max * 0.5) : 0) : round(Math.min(max, Math.max(0, v * Math.exp((r() * 2 - 1) * 0.6))));
+      let next: number;
+      if (k === 'klinok') {
+        const i = nearest(KLINOK_STEPS, v) + (r() < 0.5 ? -1 : 1) * (r() < 0.25 ? 2 : 1);
+        next = KLINOK_STEPS[Math.max(0, Math.min(KLINOK_STEPS.length - 1, i))]!;
+      } else if (LOTS.includes(k)) {
+        next = Math.round(Math.min(max, Math.max(0, v + (r() < 0.5 ? -1 : 1) * (1 + Math.floor(r() * 3)) * 0.1)) * 10) / 10;
+      } else if (v === 0) {
+        /* нуль множенням не зрушиш: спляча ручка прокидається з імовірністю */
+        next = r() < 0.3 ? round(r() * max * 0.5) : 0;
+      } else {
+        next = round(Math.min(max, Math.max(0, v * Math.exp((r() * 2 - 1) * 0.6))));
+      }
       if (next !== v) {
         out[k as Knob] = next;
         changed = true;
@@ -294,6 +331,13 @@ function mutate(st: Style, r: () => number): Style {
       out.mind = out.mind ? '' : 'різчик';
       changed = true;
     }
+    if (r() < 0.1) {
+      /* land - необов'язкова: з'являється, крокує або зникає */
+      if (out.land === undefined) out.land = LAND_STEPS[Math.floor(r() * LAND_STEPS.length)]!;
+      else if (r() < 0.3) delete out.land;
+      else out.land = LAND_STEPS[Math.max(0, Math.min(LAND_STEPS.length - 1, nearest(LAND_STEPS, out.land) + (r() < 0.5 ? -1 : 1)))]!;
+      changed = true;
+    }
   }
   return out;
 }
@@ -301,6 +345,10 @@ function cross(a: Style, b: Style, r: () => number): Style {
   const out = fullStyle(a);
   for (const k of KNOBS) if (r() < 0.5) out[k as Knob] = b[k as Knob];
   if (r() < 0.5) out.mind = b.mind;
+  if (r() < 0.5) {
+    if (b.land === undefined) delete out.land;
+    else out.land = b.land;
+  }
   return out;
 }
 
@@ -335,19 +383,18 @@ function children(gen: number, parents: readonly string[]): string[] {
 
 const fmt = (x: number, d = 2) => (x >= 0 ? '+' : '') + x.toFixed(d);
 function hall(): Stat[] {
-  const top = RUNGS[RUNGS.length - 1]!;
-  const seeds = rungSeeds(top);
+  const seeds = rungSeeds(TOP);
   return [...played.keys()]
     .map((spec) => stat(spec, seeds))
-    .filter((s) => s.n >= top)
+    .filter((s) => s.n >= TOP)
     .sort((a, b) => b.delta - a.delta);
 }
 function table(rows: readonly Stat[], showOrigin: boolean): string {
-  const head = '| # | стиль | долин | частка | різниця з основою | 1-ші місця | наказ, тактів | відмов |' + (showOrigin ? ' звідки |' : '');
-  const sep = '|---|---|---|---|---|---|---|---|' + (showOrigin ? '---|' : '');
+  const head = '| # | стиль | долин | частка | різниця з основою | як основа | 1-ші місця | наказ, тактів | відмов за пакет |' + (showOrigin ? ' звідки |' : '');
+  const sep = '|---|---|---|---|---|---|---|---|---|' + (showOrigin ? '---|' : '');
   const lines = rows.map(
     (s, i) =>
-      `| ${i + 1} | \`${s.spec}\` | ${s.n} | ${s.mean.toFixed(2)} | ${fmt(s.delta)} ± ${s.se.toFixed(2)} | ${(s.first * 100).toFixed(0)}% | ${s.nakaz.toFixed(1)} | ${s.denials.toFixed(1)} |` +
+      `| ${i + 1} | \`${s.spec}\` | ${s.n} | ${s.mean.toFixed(2)} | ${fmt(s.delta)} ± ${s.se.toFixed(2)} | ${s.same} | ${(s.first * 100).toFixed(0)}% | ${s.nakaz.toFixed(1)} | ${s.denials.toFixed(1)} |` +
       (showOrigin ? ` ${origin.get(s.spec) ?? ''} |` : ''),
   );
   return [head, sep, ...lines].join('\n');
@@ -358,29 +405,29 @@ function report(gen: number): void {
   const mins = (Date.now() - started) / 60_000;
   const all = hall();
   const partial = [...played.keys()]
-    .map((spec) => stat(spec, rungSeeds(RUNGS[RUNGS.length - 1]!)))
-    .filter((s) => s.n > 0 && s.n < RUNGS[RUNGS.length - 1]!)
+    .map((spec) => stat(spec, rungSeeds(TOP)))
+    .filter((s) => s.n > 0 && s.n < TOP)
     .sort((a, b) => b.delta - a.delta)
     .slice(0, 15);
   const text = [
     `# Нічний пошук стилю ${cfg.id}`,
     '',
-    `Основа: \`${cfg.base}\`, надбудови: \`${cfg.tactics.join(',')}\`. Суперники: пари архетипів SDK по черзі. Долини пошуку ${cfg.from}-${cfg.from + RUNGS[RUNGS.length - 1]! - 1}, свіжі - з ${cfg.from + FRESH}.`,
+    `Основа: \`${cfg.base}\`, надбудови: \`${cfg.tactics.join(',')}\`. Суперники: пари архетипів SDK по черзі. Долини пошуку ${cfg.from}-${cfg.from + TOP - 1}, свіжі - з ${cfg.from + FRESH}.`,
     '',
     `Етап: **${phase}**, покоління ${gen}. Зіграно пакетів: ${packs} за цей запуск (усього в журналі ${[...played.values()].reduce((s, m) => s + m.size, 0)}), ${mins.toFixed(0)} хв, пакет у середньому ${(packs ? packMs / packs / 1000 : 0).toFixed(1)} с на потік, потоків ${workers}.`,
     '',
-    'Частка - середні очки за пакет (3-9). Різниця - парна: частка стилю мінус частка основи на тій самій долині, ± стандартна похибка. Різниця більша за дві похибки - уже не випадок.',
+    'Частка - середні очки за пакет (3-9). Різниця - парна: частка стилю мінус частка основи на тій самій долині, ± стандартна похибка. Різниця більша за дві похибки - уже не випадок. «Як основа» - пакетів, зіграних точнісінько як основа: якщо їх більшість, різниця - кілька випадкових пакетів.',
     '',
     ...(validation
       ? ['## Перевірка на свіжих долинах', '', 'Чесна оцінка: ці долини пошук не бачив.', '', table(validation, false), '']
       : []),
-    '## Кращі на 80 долинах пошуку',
+    `## Кращі на ${TOP} долинах пошуку`,
     '',
     'Відбір на тих самих долинах завищує різницю переможців; вирішує перевірка на свіжих.',
     '',
     table(all.slice(0, 30), true),
     '',
-    '## У відсіві (менше 80 долин)',
+    `## У відсіві (менше ${TOP} долин)`,
     '',
     table(partial, true),
     '',
@@ -392,7 +439,9 @@ function report(gen: number): void {
 /* ===== відсів половинами ===== */
 
 async function halving(gen: number, candidates: string[], reserveMs: () => number): Promise<boolean> {
-  let alive = candidates;
+  /* основа грає всі долини й так (ensure) - місце у відсіві їй не потрібне */
+  let alive = candidates.filter((spec) => spec !== cfg.base);
+  if (!alive.length) return true;
   for (const [k, n] of RUNGS.entries()) {
     const seeds = rungSeeds(n);
     const need = alive.reduce((s, spec) => s + seeds.filter((x) => !played.get(spec)?.has(x)).length, 0);
@@ -410,9 +459,9 @@ async function main(): Promise<void> {
   console.log(`пошук ${cfg.id}: ${hours} год, потоків ${workers}; звіт - ${REPORT}`);
   const freshSeeds = range(0, cfg.validate, freshSeed);
   const reserve = () => costMs((FINALISTS + 1) * cfg.validate);
-  for (const name of Object.keys(STYLES)) note(name, 'каталог');
+  for (const spec of cfg.start) note(spec, Object.hasOwn(STYLES, spec) ? 'каталог' : 'старт');
   let gen = 0;
-  let more = await halving(gen, Object.keys(STYLES), reserve);
+  let more = await halving(gen, cfg.start, reserve);
   while (more) {
     gen++;
     const parents = hall()

@@ -12,7 +12,7 @@ import { createNakazSparring, NAKAZ_SAMPLES, NakazGuard } from '@zoria/sdk/nakaz
 import type { SampleName } from '@zoria/sdk/nakaz';
 import { decodeManifest, decodeObserve, decodeOrders } from '@zoria/protocol';
 import type { Order } from '@zoria/protocol';
-import { createStrategy, parseTactics } from '../../bot/dist/strategy.js';
+import { createStrategy, DEFAULT_TACTICS, parseTactics } from '../../bot/dist/strategy.js';
 import type { PulseStrategy } from '../../bot/dist/strategy.js';
 import { seatText, SLOTS, TASKS } from '../shared/record.ts';
 import type {
@@ -51,7 +51,8 @@ export function makeBot(spec: SeatSpec): WireBot | Ours {
   if (spec.kind === 'archetype') return sampleBot(createEngine, spec.name);
   if (spec.kind === 'nakaz') return createNakazSparring(NAKAZ_SAMPLES[spec.name as SampleName]);
   if (spec.kind === 'our-nakaz') return createNakazSparring(readFileSync(OUR_NAKAZ, 'utf8'));
-  const strategy = createStrategy(spec.name, () => undefined, parseTactics(spec.tactics ?? []));
+  /* без поля tactics - як у бою; голу голову задає явне none */
+  const strategy = createStrategy(spec.name, () => undefined, parseTactics(spec.tactics ?? DEFAULT_TACTICS));
   const ours: Ours = {
     strategy,
     lastObserve: null,

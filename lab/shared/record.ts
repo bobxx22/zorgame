@@ -19,12 +19,16 @@ export interface SeatSpec {
   kind: SeatKind;
   /* пресет нашої голови, ім'я архетипу або зразка наказу */
   name: string;
-  /* надбудови нашого бота (bot/src/strategy.ts): fill:<наказ>[:N], nopact */
+  /* надбудови нашого бота (bot/src/strategy.ts): fill:<наказ>[:N], nopact, none;
+     не задано - типові, як у бою (DEFAULT_TACTICS) */
   tactics?: string[];
 }
 
 export function seatText(seat: SeatSpec): string {
-  if (seat.kind === 'ours') return ['наш · ' + seat.name, ...(seat.tactics ?? [])].join(' · ');
+  if (seat.kind === 'ours') {
+    const tactics = seat.tactics === undefined ? ['типові надбудови'] : seat.tactics.join(',') === 'none' ? ['без надбудов'] : seat.tactics;
+    return ['наш · ' + seat.name, ...tactics].join(' · ');
+  }
   if (seat.kind === 'archetype') return 'архетип · ' + seat.name;
   if (seat.kind === 'our-nakaz') return 'наш наказ';
   return 'наказ · ' + seat.name;
@@ -183,6 +187,9 @@ export interface LabOptions {
   nakaz: string[];
   /* накази, якими можна заповнювати простій голови */
   charters: string[];
+  /* бойова конфігурація нашого бота: стиль і надбудови за замовчуванням */
+  defaultPreset: string;
+  defaultTactics: string[];
   engine: string;
   cpus: number;
 }
