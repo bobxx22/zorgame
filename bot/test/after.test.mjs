@@ -83,6 +83,10 @@ test('cherta after the head: a Tkach heading inside the line is halted, a Klinok
     out.map((e) => e.order),
     [{ kind: 'jam', unit: 'K-A2', target: null, hold: false }, { kind: 'halt', unit: 'T-A1' }],
   );
+  // a Tkach mid-step is not halted: the gatekeeper would refuse it (code 4, «поворот»)
+  const stepping = observe(501, { units: [unit('T-A1', 'ткач', 5, 0, { wait: 1, task: { ...task, goal: { q: 3, r: 0 } } })] });
+  a.see(stepping);
+  assert.deepEqual(a.apply(stepping, []), []);
   // after dawn nothing changes
   const dawn = observe(1001, { units, dawn: true });
   a.see(dawn);

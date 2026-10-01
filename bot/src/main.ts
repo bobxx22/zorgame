@@ -16,7 +16,7 @@
      ZARIA_TACTICS надбудови над головою через кому (strategy.ts): fill:<наказ>[:N],
                    nopact, nofeed:T, k0:T, ram:R, hunt:R, cherta, stay:K, yardcap, nohook;
                    none - без надбудов;
-                   не задано чи порожньо - fill:наш:6,nofeed:1200,ram:6,nohook
+                   не задано чи порожньо - fill:наш:6,nofeed:1200,nohook,cherta,hunt:6
      ZARIA_FREEZE  1 - здачу заморожено: зміна пресета відповідає відмовою
      ZARIA_AGENT   ім'я агента в присязі (zaria-bot)
      STATUS_PORT   внутрішній службовий порт (status.ts); порожньо - без нього

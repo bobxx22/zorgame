@@ -62,14 +62,14 @@ test('land is set only explicitly: only полудень carries it, a string ma
   assert.equal(styleSpec('широблог', STYLES['широблог']), 'широблог');
 });
 
-test('the default is полудень with fill:наш:6,nofeed:1200,ram:6,nohook; an empty ZARIA_TACTICS means the default, none means bare', () => {
+test('the default is полудень with fill:наш:6,nofeed:1200,nohook,cherta,hunt:6; an empty ZARIA_TACTICS means the default, none means bare', () => {
   assert.equal(DEFAULT_PRESET, 'полудень');
-  assert.equal(DEFAULT_TACTICS, 'fill:наш:6,nofeed:1200,ram:6,nohook');
+  assert.equal(DEFAULT_TACTICS, 'fill:наш:6,nofeed:1200,nohook,cherta,hunt:6');
   const saved = process.env['ZARIA_TACTICS'];
   try {
     for (const [env, want] of [
-      [undefined, { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: 6, hunt: null, cherta: false, stay: null, yardCap: false, noHook: true, cache: null, surplus: null, engine: {} }],
-      ['', { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: 6, hunt: null, cherta: false, stay: null, yardCap: false, noHook: true, cache: null, surplus: null, engine: {} }],
+      [undefined, { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: null, hunt: 6, cherta: true, stay: null, yardCap: false, noHook: true, cache: null, surplus: null, engine: {} }],
+      ['', { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: null, hunt: 6, cherta: true, stay: null, yardCap: false, noHook: true, cache: null, surplus: null, engine: {} }],
       ['none', NO_TACTICS],
       ['nopact', { fill: null, noPact: true, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, surplus: null, engine: {} }],
     ]) {
