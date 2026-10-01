@@ -414,12 +414,17 @@ export class PulseStrategy implements Strategy {
     return (this.slot && E?.SIM?.world?.flare?.[this.slot]) || 0;
   }
 
-  /* чи є шлях юниту класу cls між клітинами (рушій дзеркала, botPath); немає
-     дзеркала - ні, і надбудова нікуди не шле */
+  /* чи можна дійти юниту класу cls до клітини (рушій дзеркала): сама клітина
+     прохідна (canPass - гора, вода чи край дають відмову «земля» на move) і є
+     шлях (botPath не перевіряє кінцеву клітину). Немає дзеркала - ні */
   private pathOk(from: Hex, to: Hex, cls: string): boolean {
-    const E = this.head.mirror() as { botPath?: (a: Hex, b: Hex, cap: number, u: unknown) => unknown[] | null } | null;
-    if (!E || typeof E.botPath !== 'function') return false;
+    const E = this.head.mirror() as {
+      botPath?: (a: Hex, b: Hex, cap: number, u: unknown) => unknown[] | null;
+      canPass?: (q: number, r: number) => boolean;
+    } | null;
+    if (!E || typeof E.botPath !== 'function' || typeof E.canPass !== 'function') return false;
     try {
+      if (!E.canPass(to.q, to.r)) return false;
       return E.botPath({ q: from.q, r: from.r }, { q: to.q, r: to.r }, 400, { q: from.q, r: from.r, cls, p: this.slot }) !== null;
     } catch {
       return false;
