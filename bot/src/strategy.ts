@@ -178,8 +178,9 @@ export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0
    Порожня змінна (стек часто так задає) - теж цей рядок; без надбудов - none.
    nofeed:1200 - з пошуку 01.10 разом зі стилем полудень (DEFAULT_PRESET);
    nohook - лише скорочує шлях після гачка знахідки; cherta і hunt:6 (таран v2
-   замість ram:6) - проти сильного пулу +0.30 ± 0.15 і +0.27 ± 0.13 на двох
-   наборах по 90 свіжих долин (02.10) */
+   замість ram:6) - див. покажчик у tactics.ts: на змішаному пулі cherta +0.10 ±
+   0.05, hunt ≈ 0; на сильному пулі пара +0.30 / +0.27, переважно проти наших
+   копій. Після правок 02.10 - перемір 2×2 (ram/hunt × з cherta / без) */
 export const DEFAULT_TACTICS = 'fill:наш:6,nofeed:1200,nohook,cherta,hunt:6';
 
 /* рядок надбудов; невідоме - у журнал і пропустити */
@@ -301,13 +302,23 @@ export class PulseStrategy implements Strategy {
     this.feedWarned = false;
     const t = this.tactics;
     const needAfter = t.ram !== null || t.hunt !== null || t.stay !== null || t.cherta || t.yardCap || t.noHook || t.cache !== null;
-    this.after = needAfter && m && this.world ? new AfterHead(t, m, slot, this.world, (at, obs) => this.links(at, obs)) : null;
+    this.after =
+      needAfter && m && this.world
+        ? new AfterHead(t, m, slot, this.world, (at, obs) => this.links(at, obs), (a, b, cls) => this.pathOk(a, b, cls), this.log)
+        : null;
     hookHead(this.head.mirror(), slot, this.tactics, this.log);
   }
 
   tick(observe: Uint8Array): Uint8Array {
     let reply: Uint8Array | null = null;
     let headOrders: Order[] = [];
+    /* кадр спостереження - до голови: надбудови спершу бачать світ і
+       виправляють дзеркало (чужі знахідки, відмовлені площадки) */
+    const obs = (this.quiet >= PULSE_AFTER || this.after || this.tactics.noFeed !== null) && this.world ? decodeObserve(observe) : null;
+    if (obs && this.after) {
+      this.after.see(obs);
+      this.after.syncMirror(this.head.mirror());
+    }
     try {
       reply = this.head.tick(observe);
       const decoded = decodeOrders(reply);
@@ -338,7 +349,6 @@ export class PulseStrategy implements Strategy {
 
     const quiet = this.quiet;
     this.quiet += 1;
-    const obs = (quiet >= PULSE_AFTER || this.after || this.tactics.noFeed !== null) && this.world ? decodeObserve(observe) : null;
     /* nofeed діє, а ткач однаково на підкормці (її поставив наказ вузла чи
        маска не спрацювала) - раз за партію в журнал: інакше втрату не видно */
     const nf = this.tactics.noFeed;
@@ -347,21 +357,26 @@ export class PulseStrategy implements Strategy {
       this.log('nofeed: ткач на підкормці на такті ' + obs.t + ' - перевірте маску (новий рушій?)');
     }
     if (obs && this.after && this.slot && this.world) {
-      this.after.see(obs);
       entries = this.after.apply(obs, entries);
       if (this.tactics.ram !== null) {
         const ram = ramOrder(obs, entries.map((e) => e.order), this.slot, this.after.owners, this.tactics.ram, this.world, this.after.refused);
         if (ram) entries = [...entries, { order: ram, from: 'tactic', at: 0 }];
       }
+      entries = this.after.vet(obs, entries, this.flareTokens());
     }
     const orders = entries.map((e) => e.order);
     const pulse = obs && quiet >= PULSE_AFTER && this.world ? pulseOrder(obs, orders, this.focus, this.world) : null;
     this.lastPulse = pulse;
     this.sent = pulse ? [{ order: pulse, from: 'pulse', at: 0 }, ...entries] : entries;
+    /* кадр понад стелю воротар не розглядає (хвіст - відмова «стеля»): пульс
+       стоїть першим і лишається */
+    if (obs && this.world) this.sent = this.sent.slice(0, orderCap(this.world.cfg, obs.pulse.chanAt));
     this.lastSources = this.sent.map((e) => e.from);
 
-    // untouched head reply goes out byte for byte
-    if (!pulse && reply && entries.length === headOrders.length && entries.every((e) => e.from === 'head')) return reply;
+    /* кадр голови йде байт у байт, лише якщо кожна команда - той самий об'єкт
+       голови на своєму місці: правка надбудови на місці (новий об'єкт) - уже
+       інший кадр */
+    if (!pulse && reply && this.sent.length === headOrders.length && this.sent.every((e, i) => e.from === 'head' && e.order === headOrders[i])) return reply;
     return encodeOrders(this.sent.map((e) => e.order));
   }
 
@@ -390,6 +405,24 @@ export class PulseStrategy implements Strategy {
       } catch (e) {
         this.fail('fill feedback', e);
       }
+    }
+  }
+
+  /* жетони спалаху дзеркала: скан із жетоном безкоштовний (правила 16.4) */
+  private flareTokens(): number {
+    const E = this.head.mirror() as { SIM?: { world?: { flare?: Record<string, number> } } } | null;
+    return (this.slot && E?.SIM?.world?.flare?.[this.slot]) || 0;
+  }
+
+  /* чи є шлях юниту класу cls між клітинами (рушій дзеркала, botPath); немає
+     дзеркала - ні, і надбудова нікуди не шле */
+  private pathOk(from: Hex, to: Hex, cls: string): boolean {
+    const E = this.head.mirror() as { botPath?: (a: Hex, b: Hex, cap: number, u: unknown) => unknown[] | null } | null;
+    if (!E || typeof E.botPath !== 'function') return false;
+    try {
+      return E.botPath({ q: from.q, r: from.r }, { q: to.q, r: to.r }, 400, { q: from.q, r: from.r, cls, p: this.slot }) !== null;
+    } catch {
+      return false;
     }
   }
 

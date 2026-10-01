@@ -33,9 +33,12 @@
      ram:R     вимкнено з 02.10 (замінено hunt:6). Клинок таранить чужого ткача
                на голці, що не його (гріє - таран чистий, правила 11.7). +0.17 ± 0.09.
      hunt:R    БІЙ (6). Таран v2: ширше коло мисливців, без розмінів (пауза
-               захоплення, транзит, не встигне). Сам ≈ 0; разом із cherta замість
-               ram:6 - проти сильного пулу +0.30 ± 0.15 і +0.27 ± 0.13 на двох
-               наборах по 90 свіжих долин.
+               захоплення, транзит, не встигне). Змішаний пул, 200 долин: сам
+               −0.01 ± 0.06, з cherta +0.07 ± 0.06 (cherta з ram:6 - +0.10 ±
+               0.05). Сильний пул (4 з 6 суперників - наші копії): з cherta
+               замість ram:6 +0.30 і +0.27, але приріст майже весь за столами з
+               двома копіями. Виміряно до правок 02.10 (мисливці не бачили пари
+               jam(null) + halt, правка cherta не йшла в провід) - перемір 2×2.
      stay:K    вимкнено. Не відкликати ткача за K тактів до захоплення. ≈ 0.
      nohook    БІЙ. Гачок знахідки (правила 16.8) веде ткача до схрону і назад
                у точку, де він звернув, навіть коли той уже стоїть на голці
@@ -47,7 +50,18 @@
                юнит до N клітин (клинок без справи чи ткач без задачі). +0.02 ±
                0.04, але ~0.1 відмови на пакет - поки не в бою.
      yardcap   вимкнено. Не замовляти юнит понад вагу рою (для голови-наказу).
-               −0.02 ± 0.02. */
+               −0.02 ± 0.02.
+
+   Завжди, коли є хоч одна надбудова після голови (AfterHead):
+     syncMirror  перед рішенням голови вписує в дзеркало чужі взяті знахідки
+               (помилка SDK: інакше фантомний жетон спалаху і відмова «вуха»)
+               і відмовлені площадки (кеш botSites забуває їх за 20 тактів).
+     vet       фільтр кадру: порожня пара jam(null) + halt клинку-вартовому
+               (~420 за партію, роздувала кадр - «стеля»), scan без вух і без
+               жетона, needle на відмовлену «землю». Хвіст понад стелю кадру
+               воротар не розглядає - кадр обрізано (strategy.ts).
+     самоперевірка  числа світу, які читають надбудови (CFG_KEYS), і ramClean -
+               інакше рядок у журнал: 05.10 нічого не має зламатися мовчки. */
 
 import { orderCap, orderCost } from '@zoria/protocol';
 import type { ActorName, ClsName, Hex, Manifest, NeedleSpec, Observe, Order, SlotName, Verdict } from '@zoria/protocol';
@@ -145,6 +159,29 @@ export function hookHead(engine: unknown, slot: SlotName, tactics: Tactics, log:
 
 const cell = (h: Hex): string => h.q + ',' + h.r;
 export const hexDist = (a: Hex, b: Hex): number => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q + a.r - b.q - b.r)) / 2;
+/* усі команди юнита в кадрі - «порожні»: jam без цілі й без hold і halt. Так
+   голова тримає клинка-вартового щотакту; його можна зайняти справою, ці
+   команди нічого не втрачають */
+export function idleOnly(entries: readonly Tagged[], idx: readonly number[]): boolean {
+  return idx.every((i) => {
+    const o = entries[i]!.order;
+    return o.kind === 'halt' || (o.kind === 'jam' && o.target === null && !o.hold);
+  });
+}
+
+/* кільце клітин на відстані r від центру */
+export function hexRing(c: Hex, r: number): Hex[] {
+  const dirs: Hex[] = [{ q: 1, r: 0 }, { q: 1, r: -1 }, { q: 0, r: -1 }, { q: -1, r: 0 }, { q: -1, r: 1 }, { q: 0, r: 1 }];
+  const out: Hex[] = [];
+  let h: Hex = { q: c.q + dirs[4]!.q * r, r: c.r + dirs[4]!.r * r };
+  for (let side = 0; side < 6; side++) {
+    for (let step = 0; step < r; step++) {
+      out.push(h);
+      h = { q: h.q + dirs[side]!.q, r: h.r + dirs[side]!.r };
+    }
+  }
+  return out;
+}
 
 /* хто володіє кожною голкою, наскільки ми знаємо: з маніфесту (руїни, кільце,
    стартові) і з кадрів - свої повністю, чужі - коли їх видно */
@@ -152,9 +189,12 @@ export class NeedleOwners {
   private readonly owner = new Map<string, ActorName | null>();
   private readonly ring = new Set<string>();
 
-  constructor(needles: readonly NeedleSpec[]) {
+  /* perm - який слот сидить на якому місці: n.start у маніфесті - буква МІСЦЯ
+     (правила 5.4), а не слот; у партіях 2 і 3 пакета вони різні */
+  constructor(needles: readonly NeedleSpec[], perm?: readonly SlotName[]) {
+    const seatSlot = (seat: SlotName): SlotName => perm?.[['A', 'B', 'C'].indexOf(seat)] ?? seat;
     for (const n of needles) {
-      this.owner.set(cell(n), n.start ?? (n.ring ? 'K' : null));
+      this.owner.set(cell(n), n.start ? seatSlot(n.start) : n.ring ? 'K' : null);
       if (n.ring) this.ring.add(cell(n));
     }
   }
@@ -220,6 +260,12 @@ export function ramOrder(
   return channelLeft(obs, orders, world) >= cost ? ram : null;
 }
 
+/* числа світу, які читають надбудови (AfterHead.num): самоперевірка при старті */
+export const CFG_KEYS = [
+  'heatNeedle', 'heatDark', 'heatEnemy', 'autonomy', 'stepTkach', 'stepKlinok', 'capGrace',
+  'weightTkach', 'weightKlinok', 'squadWeight', 'droneBuild', 'findHook', 'energyCap', 'scanCost', 'chanOrder',
+] as const;
+
 /* запис кадру: команда, її джерело і місце в ньому (strategy.ts, Entry) */
 export interface Tagged {
   order: Order;
@@ -252,7 +298,11 @@ export class AfterHead {
   private readonly hunts = new Map<string, string>();
   /* схрони і спалахи долини (маніфест) і вже взяті (подія find видна всім) */
   private readonly finds: { q: number; r: number; kind: string }[];
-  private readonly taken = new Set<string>();
+  private readonly taken = new Map<string, ActorName>();
+  /* площадки, де воротар відмовив needle кодом 11 «земля»: там уже чужа голка,
+     голова її не бачила і без пам'яті ставила б туди знову (кеш botSites
+     забуває відмови раз на 20 тактів) */
+  private readonly refusedSites = new Set<string>();
   /* схрон -> юнит, якого надбудова cache по нього послала */
   private readonly seekers = new Map<string, string>();
   private t = 0;
@@ -264,13 +314,45 @@ export class AfterHead {
     private readonly world: PulseWorld,
     /* чи дотягнеться нитка з клітини до своєї горящої голки чи вогнища (рушій дзеркала) */
     private readonly links: (at: Hex, obs: Observe) => boolean,
+    /* чи є шлях юниту класу cls з клітини до клітини (рушій дзеркала); немає дзеркала - ні */
+    private readonly pathOk: (from: Hex, to: Hex, cls: ClsName) => boolean = () => false,
+    log: (line: string) => void = () => undefined,
   ) {
-    this.owners = new NeedleOwners(man.needles);
+    this.owners = new NeedleOwners(man.needles, man.perm);
     this.cfg = man.cfg;
     this.citadel = man.citadel;
     this.cherta = man.cherta;
     for (const n of man.needles) if (n.start) this.start.add(cell(n));
     this.finds = man.finds.filter((f) => f.kind === 'cache' || f.kind === 'flare');
+    /* новий світ 05.10 може перейменувати число - тоді надбудова тихо рахувала
+       б за запасним значенням. Немає ключа - раз у журнал */
+    const missing = CFG_KEYS.filter((k) => typeof this.cfg[k] !== 'number');
+    if (missing.length) log('надбудови: у cfg маніфесту немає ' + missing.join(', ') + ' - беру запасні числа');
+    if ((tactics.hunt !== null || tactics.ram !== null) && this.cfg['ramClean'] !== 1) {
+      log('таран: ramClean = ' + String(this.cfg['ramClean']) + ' - таран по ткачу на роботі може бути розміном');
+    }
+  }
+
+  /* зеркало SDK не розбирає чужі події find (помилка SDK): взята суперником
+     знахідка в дзеркалі «лежить», наш юнит проходить її соту і дзеркало
+     нараховує собі фантомний жетон спалаху - голова вважає скан під бурею
+     безкоштовним, і воротар відмовляє «вуха». Перед рішенням голови вписати
+     взяті знахідки у w.find дзеркала, а відмовлені площадки - у кеш botSites */
+  syncMirror(engine: unknown): void {
+    const E = engine as {
+      SIM?: { world?: { find?: Record<string, unknown> } };
+      BOT_SITES?: Record<string, { refused?: Record<string, unknown> } | null>;
+    } | null;
+    const w = E?.SIM?.world;
+    if (w && this.taken.size) {
+      const found = w.find ?? (w.find = {});
+      for (const [k, p] of this.taken) if (!found[k]) found[k] = { p, t: this.t };
+    }
+    const sites = E?.BOT_SITES?.[this.slot];
+    if (sites && this.refusedSites.size) {
+      const refused = sites.refused ?? (sites.refused = {});
+      for (const k of this.refusedSites) refused[k] = 1;
+    }
   }
 
   private num(key: string, fallback: number): number {
@@ -284,7 +366,7 @@ export class AfterHead {
   see(obs: Observe): void {
     this.t = obs.t;
     this.owners.see(obs, this.slot);
-    for (const e of obs.events) if (e.type === 'find') this.taken.add(cell(e));
+    for (const e of obs.events) if (e.type === 'find') this.taken.set(cell(e), e.p);
     for (const n of obs.mine.needles) {
       const k = cell(n);
       if (!this.ours.has(k)) this.ours.set(k, this.known ? obs.t : -1e9);
@@ -381,8 +463,27 @@ export class AfterHead {
 
     const extra: Order[] = [];
     if (this.tactics.cherta && !obs.pub.dawn && !obs.pulse.mercy) {
-      /* хто вже йде за черту за старим планом - зупинити; клинок, що глушить
-         кільце зсередини черти, - без цілі (провокація, правила 21.6) */
+      /* Агресор для Ключника (правила 21.6, keeperJams) - клинок у черті до 1
+         від голки кільця, на якій тримається наша жива завада (вона живе ще до
+         20 тактів після останнього глушіння), і ткач, що стоїть на голці, яку
+         може гріти (гріє й без задачі, 13.6). Зняти ціль чи halt мало: обох -
+         ходом за черту (≥ cherta + 1 від цитаделі). Клинку посеред кроку -
+         jam без цілі: приймається й посеред кроку (10.6) і не продовжує заваду */
+      const liveRingJams = obs.mine.jams.filter((j) => j.until > obs.t && this.owners.at(j) === 'K');
+      for (const u of obs.mine.units) {
+        if (u.stuck || !this.underLine(u, obs)) continue;
+        const owner = this.owners.at(u);
+        const jamming = u.cls === 'клинок' && liveRingJams.some((j) => hexDist(u, j) <= 1);
+        const heating = u.cls === 'ткач' && owner !== undefined && owner !== this.slot;
+        if (!jamming && !heating) continue;
+        if (u.wait === 0) {
+          const to = this.exitLine(u);
+          if (to) out = this.replaceUnit(obs, out, u.id, { kind: 'move', unit: u.id, q: to.q, r: to.r, goal: null, home: false });
+        } else if (jamming) {
+          out = this.replaceUnit(obs, out, u.id, { kind: 'jam', unit: u.id, target: null, hold: false });
+        }
+      }
+      /* хто вже йде за черту за старим планом - зупинити */
       for (const u of obs.mine.units) {
         const goal = u.task?.goal;
         /* halt посеред кроку - відмова «поворот» (код 4): лише юниту між кроками */
@@ -422,7 +523,7 @@ export class AfterHead {
     if (this.tactics.hunt !== null) {
       const hit = this.hunt(obs, out, this.tactics.hunt);
       if (hit) {
-        if (hit.replaces !== null) out.splice(hit.replaces, 1);
+        out = out.filter((_, i) => !hit.replaces.includes(i));
         out.push({ order: hit.order, from: 'tactic', at: 0 });
         if (hit.order.kind === 'ram') this.hunts.set(hit.order.unit, hit.order.target);
       }
@@ -430,6 +531,25 @@ export class AfterHead {
 
     if (this.tactics.yardCap) out = this.capYard(obs, out);
     return out;
+  }
+
+  /* найближча клітина за чертою (cherta + 1 від цитаделі), до якої є шлях */
+  private exitLine(u: Observe['mine']['units'][number]): Hex | null {
+    const ring = hexRing(this.citadel, this.cherta + 1).sort((a, b) => hexDist(u, a) - hexDist(u, b));
+    for (const c of ring.slice(0, 8)) if (this.pathOk(u, c, u.cls)) return c;
+    return null;
+  }
+
+  /* усі команди юнита в кадрі - геть, натомість одна команда надбудови; якщо її
+     не вмістять канал чи стеля кадру - кадр як був */
+  private replaceUnit(obs: Observe, entries: Tagged[], unit: string, order: Order): Tagged[] {
+    const rest = entries.filter((e) => !('unit' in e.order && e.order.unit === unit));
+    const orders = rest.map((e) => e.order);
+    if (orders.length + 1 > orderCap(this.world.cfg, obs.pulse.chanAt)) return entries;
+    const at = obs.mine.units.find((u) => u.id === unit) ?? this.world.hearth;
+    const cost = order.kind === 'jam' || order.kind === 'halt' ? this.world.cfg.chanOrder : orderCost(this.world.cfg, order.kind, at, obs.t, this.world.storms);
+    if (channelLeft(obs, orders, this.world) < cost) return entries;
+    return [...rest, { order, from: 'tactic', at: 0 }];
   }
 
   /* скільки заряду дасть схрон зараз: понад стелю згоряє (правила 16.3) */
@@ -466,19 +586,16 @@ export class AfterHead {
       const seeker = sent ? units.get(sent) : undefined;
       if (seeker && seeker.task && seeker.task.path > 0 && !seeker.task.goal) continue;
       this.seekers.delete(key);
-      let best: { unit: string; at: Hex; time: number; replaces: number | null } | null = null;
+      let best: { unit: string; at: Hex; time: number; replaces: number[] } | null = null;
       for (const u of obs.mine.units) {
         if (u.stuck || u.wait > 0 || u.away > 0) continue;
         if (u.task && (u.task.ram || u.task.home)) continue;
         const mine = out.flatMap((e, i) => ('unit' in e.order && e.order.unit === u.id ? [i] : []));
-        let replaces: number | null = null;
+        let replaces: number[] = [];
         if (u.cls === 'клинок') {
           if (u.task && u.task.jam && u.task.path === 0) continue;
-          if (mine.length) {
-            const only = out[mine[0]!]!.order;
-            if (mine.length !== 1 || only.kind !== 'jam' || only.target !== null || only.hold) continue;
-            replaces = mine[0]!;
-          }
+          if (!idleOnly(out, mine)) continue;
+          replaces = mine;
         } else if (u.task !== null || mine.length) continue;
         const d = hexDist(u, f);
         if (d > N) continue;
@@ -486,7 +603,7 @@ export class AfterHead {
         if (!best || time < best.time) best = { unit: u.id, at: u, time, replaces };
       }
       if (!best) continue;
-      const rest = out.filter((_, i) => i !== best!.replaces);
+      const rest = out.filter((_, i) => !best!.replaces.includes(i));
       const orders = rest.map((e) => e.order);
       if (orders.length + 1 > orderCap(this.world.cfg, obs.pulse.chanAt)) continue;
       if (channelLeft(obs, orders, this.world) < orderCost(this.world.cfg, 'move', best.at, obs.t, this.world.storms)) continue;
@@ -513,7 +630,7 @@ export class AfterHead {
      лише на здобич на нашій голці до 3 кроків. Здобич стоїть на клітині ≥ 3
      тактів і варта тарану (worthy), клинок встигає до кінця прогріву.
      Ранги: наша голка (кільце після зорі - вище), руїна чи кільце, голка третього. */
-  private hunt(obs: Observe, entries: readonly Tagged[], R: number): { order: Order; replaces: number | null } | null {
+  private hunt(obs: Observe, entries: readonly Tagged[], R: number): { order: Order; replaces: number[] } | null {
     const link = obs.pub.pact.active.find((l) => l.a === this.slot || l.b === this.slot);
     const friend = link ? (link.a === this.slot ? link.b : link.a) : null;
     const chased = new Set(obs.mine.units.flatMap((u) => (u.task?.ram ? [u.task.ram] : [])));
@@ -536,17 +653,14 @@ export class AfterHead {
     entries.forEach((e, i) => {
       if ('unit' in e.order) byUnit.set(e.order.unit, [...(byUnit.get(e.order.unit) ?? []), i]);
     });
-    let best: { unit: string; at: Hex; target: string; rank: number; d: number; replaces: number | null } | null = null;
+    let best: { unit: string; at: Hex; target: string; rank: number; d: number; replaces: number[] } | null = null;
     for (const u of obs.mine.units) {
       if (u.cls !== 'клинок' || u.stuck || u.wait > 0 || u.away > 0) continue;
       if (u.task && (u.task.ram || u.task.home)) continue;
       const mine = byUnit.get(u.id) ?? [];
-      let replaces: number | null = null;
-      if (mine.length) {
-        const only = entries[mine[0]!]!.order;
-        if (mine.length !== 1 || only.kind !== 'jam' || only.target !== null || only.hold) continue;
-        replaces = mine[0]!;
-      }
+      /* голова дає клинку-вартовому пару jam(null) + halt щотакту: це не справа */
+      if (!idleOnly(entries, mine)) continue;
+      const replaces = mine;
       const holder = !!(u.task && u.task.jam && u.task.path === 0);
       for (const p of prey) {
         const d = hexDist(u, p.f);
@@ -556,7 +670,7 @@ export class AfterHead {
       }
     }
     if (!best) return null;
-    const orders = entries.filter((_, i) => i !== best!.replaces).map((e) => e.order);
+    const orders = entries.filter((_, i) => !best!.replaces.includes(i)).map((e) => e.order);
     if (orders.length + 1 > orderCap(this.world.cfg, obs.pulse.chanAt)) return null;
     const cost = orderCost(this.world.cfg, 'ram', best.at, obs.t, this.world.storms);
     if (channelLeft(obs, orders, this.world) < cost) return null;
@@ -580,11 +694,46 @@ export class AfterHead {
     });
   }
 
-  /* вердикти кадру: прийняті замовлення верфі - у чергу, відмови тарану - у пам'ять на 15 тактів */
+  /* Фільтр кадру перед відправкою (критерій К3: 2 бали лише за 0 відмов):
+     - «порожні» команди: halt юниту без задачі, jam без цілі й hold клинку без
+       наміру глушити - якщо юниту в кадрі нічого іншого не дано. Голова дає
+       таку пару кожному клинку-вартовому щотакту (~420 пар за партію) і
+       роздуває кадр понад стелю - відмова «стеля» (код 2);
+     - scan, на який не стане вух (з бурею), коли жетона спалаху немає -
+       відмова «вуха» (код 7);
+     - needle на площадку, де воротар уже відмовив «земля» (код 11).
+     Вердикти лишаються на своїх місцях (at записів не змінюється) */
+  vet(obs: Observe, entries: readonly Tagged[], flareTokens: number): Tagged[] {
+    const units = new Map(obs.mine.units.map((u) => [u.id, u]));
+    const noop = (o: Order): boolean => {
+      if (!('unit' in o)) return false;
+      const u = units.get(o.unit);
+      if (!u) return false;
+      if (o.kind === 'halt') return u.task === null;
+      if (o.kind === 'jam') return o.target === null && !o.hold && u.cls === 'клинок' && (u.task === null || u.task.jam === null);
+      return false;
+    };
+    const byUnit = new Map<string, number[]>();
+    entries.forEach((e, i) => {
+      if ('unit' in e.order) byUnit.set(e.order.unit, [...(byUnit.get(e.order.unit) ?? []), i]);
+    });
+    const drop = new Set<number>();
+    for (const idx of byUnit.values()) if (idx.every((i) => noop(entries[i]!.order))) for (const i of idx) drop.add(i);
+    entries.forEach((e, i) => {
+      const o = e.order;
+      if (o.kind === 'scan' && flareTokens <= 0 && orderCost(this.world.cfg, 'scan', o, obs.t, this.world.storms) > obs.pulse.ear) drop.add(i);
+      if (o.kind === 'needle' && this.refusedSites.has(cell(o))) drop.add(i);
+    });
+    return drop.size ? entries.filter((_, i) => !drop.has(i)) : [...entries];
+  }
+
+  /* вердикти кадру: прийняті замовлення верфі - у чергу, відмови тарану - у
+     пам'ять на 15 тактів, «земля» на needle - площадку в пам'ять до кінця партії */
   verdicts(sent: readonly Tagged[], list: readonly Verdict[]): void {
-    for (const [i, ok] of list) {
+    for (const [i, ok, code] of list) {
       const e = sent[i];
       if (!e) continue;
+      if (!ok && code === 11 && e.order.kind === 'needle') this.refusedSites.add(cell(e.order));
       if (ok && e.order.kind === 'yard') this.yards.push({ t: this.t, cls: e.order.cls });
       if (!ok && e.from === 'tactic' && e.order.kind === 'ram') {
         this.refusedUntil.set(e.order.unit + '>' + e.order.target, this.t + 15);

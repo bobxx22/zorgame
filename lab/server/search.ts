@@ -66,7 +66,7 @@ interface Config {
   validate: number;
   tactics: string[];
   start: string[];
-  pool: 'arch' | 'mixed' | 'strong';
+  pool: 'arch' | 'mixed' | 'strong' | 'foreign';
   /* суперники, закріплені на старті: зміна стилю бою не міняє пул продовження */
   opponents: SeatSpec[];
   /* search - покоління і відсів; eval - лише всі --start і основа на свіжих долинах */
@@ -92,6 +92,21 @@ function poolOf(pool: Config['pool']): SeatSpec[] {
   /* сильний пул: наш бій і його найближчі сильні сусіди (усі без підкормки) -
      нейтральний результат тут ~6 частки, і дрібні покращення не впираються в
      стелю шкали; плюс облягач і наказ експансія - інша манера гри */
+  /* чужий пул: жодної нашої голови без підкормки - лише те, чим, найімовірніше,
+     грають інші учасники (архетипи SDK, стилі рушія в обгортці лише з
+     заповнювачем, бот під наказом). Перевіряє, чи надбудова працює не лише
+     проти наших копій */
+  if (pool === 'foreign') {
+    const fixed = ['fill:наш:6'];
+    return [
+      { kind: 'archetype', name: 'рівний' },
+      { kind: 'archetype', name: 'облягач' },
+      { kind: 'archetype', name: 'проривник' },
+      { kind: 'ours', name: 'опортуніст', tactics: fixed },
+      { kind: 'ours', name: 'рейдер', tactics: fixed },
+      { kind: 'nakaz', name: 'експансія' },
+    ];
+  }
   if (pool === 'strong') {
     const own = DEFAULT_TACTICS.split(',');
     const nf = ['fill:наш:6', 'nofeed:1200', 'ram:6'];
@@ -188,7 +203,7 @@ if (f['resume']) {
     build: buildOf(),
   };
   if (f['eval'] !== undefined && f['eval'] !== '1') throw new Error('--eval 1');
-  if (cfg.pool !== 'arch' && cfg.pool !== 'mixed' && cfg.pool !== 'strong') throw new Error('--pool: arch, mixed або strong');
+  if (!['arch', 'mixed', 'strong', 'foreign'].includes(cfg.pool)) throw new Error('--pool: arch, mixed, strong або foreign');
   cfg.opponents = poolOf(cfg.pool);
   for (const spec of cfg.start) if (!candidateOf(spec)) throw new Error('--start: незрозумілий кандидат ' + spec);
   if (!Object.hasOwn(STYLES, cfg.base)) throw new Error('--base: одне з ' + Object.keys(STYLES).join(', '));
