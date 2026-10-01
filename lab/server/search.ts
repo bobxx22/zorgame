@@ -352,6 +352,12 @@ const rungSeeds = (n: number) => range(0, n, searchSeed);
 
 /* ===== потомство ===== */
 
+/* рядок -> 32 біти (FNV-1a) */
+function seedOf(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return h >>> 0;
+}
 function rng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -437,7 +443,9 @@ function children(gen: number, all: readonly string[]): string[] {
   const parents = all.filter((p) => parseStyle(p.split('|')[0]!));
   /* батьків ще немає (покоління 0 - лише основа або не дійшло до верхньої ступені) */
   if (!parents.length) return [];
-  const r = rng(gen * 7919 + 17);
+  /* зерно - з id пошуку: різні пошуки пробують різних нащадків, а продовження
+     (--resume) того самого пошуку - тих самих */
+  const r = rng(seedOf(cfg.id) ^ Math.imul(gen, 7919));
   const out: string[] = [];
   let tries = 0;
   while (out.length < CHILDREN && tries++ < 500) {
