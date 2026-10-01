@@ -67,14 +67,16 @@ interface HeadWorld {
   dawn?: number | boolean;
   keep?: { mercy?: Record<string, unknown> };
   bel?: Record<string, { at: Record<string, unknown> } | undefined>;
+  energy?: Record<string, number>;
 }
 
 /* надбудови голови: k0, nofeed, cherta і числа вбудованих голів. Немає рушія
    (підміна в тестах без дзеркала) або він не той - у журнал і без них */
 export function hookHead(engine: unknown, slot: SlotName, tactics: Tactics, log: (line: string) => void): void {
-  const { noFeed, k0, cherta } = tactics;
+  const { k0, cherta, surplus } = tactics;
+  let noFeed = tactics.noFeed;
   const knobs = Object.entries(tactics.engine);
-  if (noFeed === null && k0 === null && !cherta && !knobs.length) return;
+  if (noFeed === null && k0 === null && !cherta && !surplus && !knobs.length) return;
   const E = engine as HeadEngine | null;
   if (!E || typeof E.botOrders !== 'function' || !E.BOT_STYLE?.[slot] || !E.SIM) {
     log('надбудови голови (nofeed, k0, cherta, числа голови) без рушія дзеркала не діють');
@@ -83,9 +85,18 @@ export function hookHead(engine: unknown, slot: SlotName, tactics: Tactics, log:
   /* числа вбудованих голів - лише в своєму дзеркалі: MirrorBot.init уже
      переписав SIM_CFG з маніфесту, і більше його не чіпає */
   if (knobs.length && E.SIM_CFG) for (const [key, value] of knobs) E.SIM_CFG[key] = value;
-  if (noFeed === null && k0 === null && !cherta) return;
+  /* nofeed тримається на нутрощах рушія (w.fed, w.lit): новий світ 05.10 може
+     їх перейменувати - тоді маска мовчки перестала б діяти. Немає полів -
+     у журнал, і голова грає як є */
+  const w0 = (E.SIM as { world?: Partial<HeadWorld> }).world;
+  if (noFeed !== null && (!w0 || typeof w0.fed !== 'object' || w0.fed === null || typeof w0.lit !== 'object' || w0.lit === null)) {
+    log('nofeed: у рушії дзеркала немає w.fed / w.lit - маску вимкнено, голова підживлює як є');
+    noFeed = null;
+  }
+  if (noFeed === null && k0 === null && !cherta && !surplus) return;
   const style = E.BOT_STYLE[slot];
   const klinok = typeof style['klinok'] === 'number' ? style['klinok'] : 0;
+  const build = typeof style['build'] === 'number' ? style['build'] : 0;
   /* голки за чертою (центр - цитадель у 0,0): лише їх і ховає cherta */
   const inside = cherta ? (E.NEEDLES ?? []).filter((n) => hexDist(n, { q: 0, r: 0 }) <= (E.CHERTA_R ?? 6)).map((n) => n.key) : [];
   const decide = E.botOrders;
@@ -93,6 +104,9 @@ export function hookHead(engine: unknown, slot: SlotName, tactics: Tactics, log:
     const t = E.SIM.t;
     if (k0 !== null) style['klinok'] = t < k0 ? 0 : klinok;
     const world = w as HeadWorld;
+    /* surplus: заряд біля стелі згоряє - ручка build росте, голова ставить
+       щогли (botWantsMast) і сама ставить на лотах (ціна лота - 60 · build · …) */
+    if (surplus) style['build'] = (world.energy?.[p] ?? 0) >= surplus.at ? surplus.build : build;
     /* botTryFeed пропускає голку з w.fed; маска - лише на час рішення,
        бухгалтерія світу до неї вже порахована в sync дзеркала */
     const fed: string[] = [];

@@ -61,7 +61,7 @@ test('hookHead: nofeed marks every own lit needle fed only while the head decide
   let during = null;
   const E = {
     BOT_STYLE: { A: { klinok: 0.5 } },
-    SIM: { t: 100 },
+    SIM: { t: 100, world: { fed: {}, lit: {} } },
     botOrders: (p, world) => {
       during = { ...world.fed };
       if (E.SIM.t === 101) throw new Error('boom');

@@ -334,3 +334,37 @@ test('cache:N sends the fastest free unit for a cache that pays in full, one per
   a.see(obs);
   assert.deepEqual(a.apply(obs, []), []);
 });
+
+test('nofeed checks the engine at start: without w.fed / w.lit it logs and leaves the head as is', () => {
+  const botOrders = () => undefined;
+  const lines = [];
+  const E = { BOT_STYLE: { A: { klinok: 0.5 } }, SIM: { t: 0, world: { lit: {} } }, botOrders };
+  hookHead(E, 'A', parseTactics('nofeed:1200'), (l) => lines.push(l));
+  assert.equal(E.botOrders, botOrders);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /nofeed/);
+  // with the fields in place the head is wrapped, nothing logged
+  const ok = { BOT_STYLE: { A: { klinok: 0.5 } }, SIM: { t: 0, world: { lit: {}, fed: {} } }, botOrders };
+  hookHead(ok, 'A', parseTactics('nofeed:1200'), (l) => lines.push(l));
+  assert.notEqual(ok.botOrders, botOrders);
+  assert.equal(lines.length, 1);
+});
+
+test('surplus raises build while energy is at or above E, and gives the style value back below', () => {
+  assert.deepEqual(parseTactics('surplus:300:1.2').surplus, { at: 300, build: 1.2 });
+  const lines = [];
+  for (const bad of ['surplus:300', 'surplus:361:1', 'surplus:300:4', 'surplus:x:1']) assert.equal(parseTactics(bad, (l) => lines.push(l)).surplus, null, bad);
+  assert.equal(lines.length, 4);
+  const seen = [];
+  const E = { BOT_STYLE: { A: { klinok: 0.5, build: 0.25 } }, SIM: { t: 0, world: { lit: {}, fed: {} } }, botOrders: () => seen.push(E.BOT_STYLE.A.build) };
+  hookHead(E, 'A', parseTactics('surplus:300:1.2'), () => undefined);
+  for (const energy of [100, 299, 300, 360, 120]) E.botOrders('A', { lit: {}, fed: {}, own: {}, energy: { A: energy } });
+  assert.deepEqual(seen, [0.25, 0.25, 1.2, 1.2, 0.25]);
+});
+
+test('a feeder while nofeed is on is logged once per match', () => {
+  const lines = [];
+  const bot = createStrategy('полудень', (l) => lines.push(l), parseTactics('nofeed:1200'));
+  runMatch(createEngine, { seed: 2026, ticks: 300, bots: { A: bot } });
+  assert.equal(lines.filter((l) => /ткач на підкормці/.test(l)).length, 0, 'the mask works: no feeder at all');
+});

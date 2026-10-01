@@ -68,10 +68,10 @@ test('the default is полудень with fill:наш:6,nofeed:1200,ram:6,nohoo
   const saved = process.env['ZARIA_TACTICS'];
   try {
     for (const [env, want] of [
-      [undefined, { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: 6, hunt: null, cherta: false, stay: null, yardCap: false, noHook: true, cache: null, engine: {} }],
-      ['', { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: 6, hunt: null, cherta: false, stay: null, yardCap: false, noHook: true, cache: null, engine: {} }],
+      [undefined, { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: 6, hunt: null, cherta: false, stay: null, yardCap: false, noHook: true, cache: null, surplus: null, engine: {} }],
+      ['', { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: 6, hunt: null, cherta: false, stay: null, yardCap: false, noHook: true, cache: null, surplus: null, engine: {} }],
       ['none', NO_TACTICS],
-      ['nopact', { fill: null, noPact: true, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, engine: {} }],
+      ['nopact', { fill: null, noPact: true, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, surplus: null, engine: {} }],
     ]) {
       if (env === undefined) delete process.env['ZARIA_TACTICS'];
       else process.env['ZARIA_TACTICS'] = env;

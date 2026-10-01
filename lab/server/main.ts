@@ -35,10 +35,16 @@ const WEB = fileURLToPath(new URL('../dist-web/', import.meta.url));
 const CPUS = availableParallelism();
 const PARALLEL = Math.max(1, CPUS - 1);
 
+const NAKAZ_BROKEN: readonly string[] = ['хвилини', 'тиск'];
+
 const options: LabOptions = {
   presets: [...presets(), ...NAKAZ_HEADS],
   archetypes: Object.keys(ARCHETYPES),
-  nakaz: Object.keys(NAKAZ_SAMPLES),
+  /* зразки наказу як суперники - без двох із логічною дірою: «хвилини» і «тиск»
+     будують ткачів лише до 600-го і 400-го такту і втрачених не відновлюють, а
+     правило зорі в них стоїть після правила росту і не спрацьовує ніколи.
+     Перемога над таким рій-що-вимирає дає хибні бали (NAKAZ_BROKEN) */
+  nakaz: Object.keys(NAKAZ_SAMPLES).filter((name) => !NAKAZ_BROKEN.includes(name)),
   charters: [...FILL_CHARTERS],
   defaultPreset: DEFAULT_PRESET,
   defaultTactics: DEFAULT_TACTICS.split(','),

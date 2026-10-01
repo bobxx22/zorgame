@@ -66,7 +66,7 @@ interface Config {
   validate: number;
   tactics: string[];
   start: string[];
-  pool: 'arch' | 'mixed';
+  pool: 'arch' | 'mixed' | 'strong';
   /* суперники, закріплені на старті: зміна стилю бою не міняє пул продовження */
   opponents: SeatSpec[];
   /* search - покоління і відсів; eval - лише всі --start і основа на свіжих долинах */
@@ -89,6 +89,21 @@ const FRESH = 100_000;
    міряли (fill:наш:6), щоб пул не дрейфував разом із нашими знахідками */
 function poolOf(pool: Config['pool']): SeatSpec[] {
   if (pool === 'arch') return Object.keys(ARCHETYPES).map((name) => ({ kind: 'archetype', name }));
+  /* сильний пул: наш бій і його найближчі сильні сусіди (усі без підкормки) -
+     нейтральний результат тут ~6 частки, і дрібні покращення не впираються в
+     стелю шкали; плюс облягач і наказ експансія - інша манера гри */
+  if (pool === 'strong') {
+    const own = DEFAULT_TACTICS.split(',');
+    const nf = ['fill:наш:6', 'nofeed:1200', 'ram:6'];
+    return [
+      { kind: 'ours', name: DEFAULT_PRESET, tactics: own },
+      { kind: 'ours', name: 'світанок', tactics: nf },
+      { kind: 'ours', name: 'зоряний', tactics: nf },
+      { kind: 'ours', name: 'широблог', tactics: nf },
+      { kind: 'archetype', name: 'облягач' },
+      { kind: 'nakaz', name: 'експансія' },
+    ];
+  }
   const fixed = ['fill:наш:6'];
   return [
     { kind: 'ours', name: DEFAULT_PRESET, tactics: DEFAULT_TACTICS.split(',') },
@@ -173,7 +188,7 @@ if (f['resume']) {
     build: buildOf(),
   };
   if (f['eval'] !== undefined && f['eval'] !== '1') throw new Error('--eval 1');
-  if (cfg.pool !== 'arch' && cfg.pool !== 'mixed') throw new Error('--pool: arch або mixed');
+  if (cfg.pool !== 'arch' && cfg.pool !== 'mixed' && cfg.pool !== 'strong') throw new Error('--pool: arch, mixed або strong');
   cfg.opponents = poolOf(cfg.pool);
   for (const spec of cfg.start) if (!candidateOf(spec)) throw new Error('--start: незрозумілий кандидат ' + spec);
   if (!Object.hasOwn(STYLES, cfg.base)) throw new Error('--base: одне з ' + Object.keys(STYLES).join(', '));
@@ -212,7 +227,10 @@ interface Row {
   share: number;
   places: number[];
   score: number;
+  /* середній рахунок суперників за столом (сума за пакет) */
+  oppScore?: number;
   denials: number;
+  denialKinds?: Record<string, number>;
   nakazTicks: number;
   ms: number;
 }
@@ -284,7 +302,18 @@ function play(spec: string, seed: number): Promise<Row> {
     waiting.set(job.key, (r) => {
       if (!r.ok) return reject(new Error(spec + ' @ ' + seed + ': ' + r.error));
       const s: PackSeat = r.seats[0]!;
-      const row: Row = { spec, seed, share: s.share, places: s.places, score: Math.round(s.score * 10) / 10, denials: s.denials, nakazTicks: s.nakazTicks, ms: r.ms };
+      const row: Row = {
+        spec,
+        seed,
+        share: s.share,
+        places: s.places,
+        score: Math.round(s.score * 10) / 10,
+        oppScore: Math.round(s.oppScore * 10) / 10,
+        denials: s.denials,
+        denialKinds: s.denialKinds,
+        nakazTicks: s.nakazTicks,
+        ms: r.ms,
+      };
       appendFileSync(RESULTS, JSON.stringify(row) + '\n');
       remember(row);
       packs++;
@@ -323,6 +352,11 @@ interface Stat {
   denials: number;
   /* пакетів, зіграних точнісінько як основа: стиль нічого не змінив */
   same: number;
+  /* парна різниця «рахунок мінус середнє суперників» у хвилинах за пакет */
+  margin: number;
+  marginSe: number;
+  /* відмови за джерелом:командою:кодом, сума */
+  kinds: Record<string, number>;
 }
 function stat(spec: string, seeds: readonly number[]): Stat {
   const mine = played.get(spec);
@@ -334,6 +368,8 @@ function stat(spec: string, seeds: readonly number[]): Stat {
   let nakaz = 0;
   let denials = 0;
   let same = 0;
+  const dm: number[] = [];
+  const kinds: Record<string, number> = {};
   for (const seed of seeds) {
     const r = mine?.get(seed);
     const b = base?.get(seed);
@@ -345,12 +381,16 @@ function stat(spec: string, seeds: readonly number[]): Stat {
     matches += r.places.length;
     nakaz += r.nakazTicks;
     denials += r.denials;
+    if (r.oppScore !== undefined && b.oppScore !== undefined) dm.push(r.score - r.oppScore - (b.score - b.oppScore));
+    for (const [k, v] of Object.entries(r.denialKinds ?? {})) kinds[k] = (kinds[k] ?? 0) + v;
   }
   const n = d.length;
   const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / (a.length || 1);
   const m = mean(d);
   const se = n > 1 ? Math.sqrt(d.reduce((s, x) => s + (x - m) ** 2, 0) / (n - 1) / n) : 0;
-  return { spec, n, mean: mean(shares), delta: m, se, first: matches ? first / matches : 0, nakaz: n ? nakaz / n : 0, denials: n ? denials / n : 0, same };
+  const mm = mean(dm);
+  const mse = dm.length > 1 ? Math.sqrt(dm.reduce((s, x) => s + (x - mm) ** 2, 0) / (dm.length - 1) / dm.length) : 0;
+  return { spec, n, mean: mean(shares), delta: m, se, first: matches ? first / matches : 0, nakaz: n ? nakaz / n : 0, denials: n ? denials / n : 0, same, margin: mm, marginSe: mse, kinds };
 }
 const range = (from: number, n: number, seed: (i: number) => number): number[] => Array.from({ length: n }, (_, i) => seed(from + i));
 const rungSeeds = (n: number) => range(0, n, searchSeed);
@@ -489,11 +529,17 @@ function hall(): Stat[] {
     .sort((a, b) => b.delta - a.delta);
 }
 function table(rows: readonly Stat[], showOrigin: boolean): string {
-  const head = '| # | стиль | долин | частка | різниця з основою | як основа | 1-ші місця | наказ, тактів | відмов за пакет |' + (showOrigin ? ' звідки |' : '');
-  const sep = '|---|---|---|---|---|---|---|---|---|' + (showOrigin ? '---|' : '');
+  const head = '| # | стиль | долин | частка | різниця з основою | Δ хвилин | як основа | 1-ші місця | наказ, тактів | відмов за пакет | відмови (джерело:команда:код) |' + (showOrigin ? ' звідки |' : '');
+  const sep = '|---|---|---|---|---|---|---|---|---|---|---|' + (showOrigin ? '---|' : '');
+  const kindsText = (k: Record<string, number>) =>
+    Object.entries(k)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([key, v]) => key + ' ×' + v)
+      .join(', ');
   const lines = rows.map(
     (s, i) =>
-      `| ${i + 1} | \`${s.spec}\` | ${s.n} | ${s.mean.toFixed(2)} | ${fmt(s.delta)} ± ${s.se.toFixed(2)} | ${s.same} | ${(s.first * 100).toFixed(0)}% | ${s.nakaz.toFixed(1)} | ${s.denials.toFixed(1)} |` +
+      `| ${i + 1} | \`${s.spec}\` | ${s.n} | ${s.mean.toFixed(2)} | ${fmt(s.delta)} ± ${s.se.toFixed(2)} | ${fmt(s.margin, 1)} ± ${s.marginSe.toFixed(1)} | ${s.same} | ${(s.first * 100).toFixed(0)}% | ${s.nakaz.toFixed(1)} | ${s.denials.toFixed(1)} | ${kindsText(s.kinds)} |` +
       (showOrigin ? ` ${origin.get(s.spec) ?? ''} |` : ''),
   );
   return [head, sep, ...lines].join('\n');
@@ -518,7 +564,7 @@ function report(gen: number): void {
     '',
     `Етап: **${phase}**, покоління ${gen}. Зіграно пакетів: ${packs} за цей запуск (усього в журналі ${[...played.values()].reduce((s, m) => s + m.size, 0)}), ${mins.toFixed(0)} хв, пакет у середньому ${(packs ? packMs / packs / 1000 : 0).toFixed(1)} с на потік, потоків ${workers}.`,
     '',
-    'Частка - середні очки за пакет (3-9). Різниця - парна: частка стилю мінус частка основи на тій самій долині, ± стандартна похибка. Різниця більша за дві похибки - уже не випадок. «Як основа» - пакетів, зіграних точнісінько як основа: якщо їх більшість, різниця - кілька випадкових пакетів.',
+    'Частка - середні очки за пакет (3-9). Різниця - парна: частка стилю мінус частка основи на тій самій долині, ± стандартна похибка. Різниця більша за дві похибки - уже не випадок. «Як основа» - пакетів, зіграних точнісінько як основа: якщо їх більшість, різниця - кілька випадкових пакетів. «Δ хвилин» - парна різниця рахунку мінус середнє двох суперників за столом, хвилини за пакет: тонша за частку, коли частки впираються в стелю. «Відмови» - найчастіші за джерелом (pulse, head, fill, tactic), командою і кодом воротаря.',
     '',
     ...(recheck
       ? ['## Перевірка переможця на другому свіжому наборі', '', 'Переможця вибрано на першому свіжому наборі - його різниця там завищена відбором. Тут - долини, яких не бачили ні пошук, ні вибір.', '', table(recheck, false), '']

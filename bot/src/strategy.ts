@@ -136,6 +136,8 @@ export function pulseOrder(obs: Observe, orders: readonly Order[], focus: Watch 
                          клітину обрізає зайвий круг, прогрів не переривається.
                          Лише коли знахідка на гачку нічого не дасть: уже взята
                          або від схрону під стелею заряду лишиться < 50;
+     surplus:E:B       - динамічний стиль: поки заряд ≥ E, ручка build = B
+                         (заряд на стелі 360 згоряє - нехай іде на щогли й лоти);
      cache:N           - схрон дасть повні 150 (заряд + 150 ≤ стеля): по нього
                          йде найближчий вільний юнит до N клітин - клинок без
                          справи чи ткач без задачі; ткача, що гріє, не знімаємо;
@@ -157,6 +159,7 @@ export interface Tactics {
   yardCap: boolean;
   noHook: boolean;
   cache: number | null;
+  surplus: { at: number; build: number } | null;
   /* ключ SIM_CFG -> значення в дзеркалі голови */
   engine: Readonly<Record<string, number>>;
 }
@@ -169,7 +172,7 @@ export const ENGINE_KNOBS: Readonly<Record<string, { key: string; min: number; m
   rfloor: { key: 'raidFloor', min: 0, max: 2, int: false },
 };
 
-export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, engine: {} };
+export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, surplus: null, engine: {} };
 
 /* здача: ZARIA_TACTICS організатори не задають, тож бій іде з цим рядком.
    Порожня змінна (стек часто так задає) - теж цей рядок; без надбудов - none.
@@ -202,6 +205,13 @@ export function parseTactics(spec: string | readonly string[] | undefined, log: 
     else if (name === 'yardcap' && charter === undefined) out.yardCap = true;
     else if (name === 'nohook' && charter === undefined) out.noHook = true;
     else if (name === 'cache' && after === undefined) out.cache = int(item, charter, 12) ?? out.cache;
+    else if (name === 'surplus' && charter !== undefined && after !== undefined) {
+      const at = Number(charter);
+      const build = Number(after);
+      const ok = /^\d{1,3}$/.test(charter) && at >= 0 && at <= 360 && /^\d+(\.\d+)?$/.test(after) && build <= 3;
+      if (ok) out.surplus = { at, build };
+      else log('надбудова «' + item + '»: E - ціле 0-360, B - 0-3, пропускаю');
+    }
     else if (name && Object.hasOwn(ENGINE_KNOBS, name) && after === undefined) {
       const k = ENGINE_KNOBS[name]!;
       const n = Number(charter);
@@ -265,6 +275,8 @@ export class PulseStrategy implements Strategy {
   private headFaults = 0;
   /* надбудови після голови з пам'яттю кадрів (tactics.ts); null - жодної */
   private after: AfterHead | null = null;
+  /* попередження «nofeed не діє» - раз за партію */
+  private feedWarned = false;
 
   constructor(head: Head, log: (line: string) => void = () => undefined, opts: StrategyOpts = {}) {
     this.head = head;
@@ -284,6 +296,7 @@ export class PulseStrategy implements Strategy {
     this.focus = hearth ? { kind: 'watch', q: hearth.q, r: hearth.r, keep: 0 } : null;
     this.quiet = 0;
     this.headIdle = 0;
+    this.feedWarned = false;
     const t = this.tactics;
     const needAfter = t.ram !== null || t.hunt !== null || t.stay !== null || t.cherta || t.yardCap || t.noHook || t.cache !== null;
     this.after = needAfter && m && this.world ? new AfterHead(t, m, slot, this.world, (at, obs) => this.links(at, obs)) : null;
@@ -323,7 +336,14 @@ export class PulseStrategy implements Strategy {
 
     const quiet = this.quiet;
     this.quiet += 1;
-    const obs = (quiet >= PULSE_AFTER || this.after) && this.world ? decodeObserve(observe) : null;
+    const obs = (quiet >= PULSE_AFTER || this.after || this.tactics.noFeed !== null) && this.world ? decodeObserve(observe) : null;
+    /* nofeed діє, а ткач однаково на підкормці (її поставив наказ вузла чи
+       маска не спрацювала) - раз за партію в журнал: інакше втрату не видно */
+    const nf = this.tactics.noFeed;
+    if (obs && nf !== null && obs.t < nf && !this.feedWarned && obs.mine.units.some((u) => u.task?.feed)) {
+      this.feedWarned = true;
+      this.log('nofeed: ткач на підкормці на такті ' + obs.t + ' - перевірте маску (новий рушій?)');
+    }
     if (obs && this.after && this.slot && this.world) {
       this.after.see(obs);
       entries = this.after.apply(obs, entries);
