@@ -65,10 +65,10 @@ test('the default is світанок with fill:наш:6; an empty ZARIA_TACTICS
   const saved = process.env['ZARIA_TACTICS'];
   try {
     for (const [env, want] of [
-      [undefined, { fill: { charter: 'наш', after: 6 }, noPact: false }],
-      ['', { fill: { charter: 'наш', after: 6 }, noPact: false }],
+      [undefined, { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: null, k0: null, ram: null }],
+      ['', { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: null, k0: null, ram: null }],
       ['none', NO_TACTICS],
-      ['nopact', { fill: null, noPact: true }],
+      ['nopact', { fill: null, noPact: true, noFeed: null, k0: null, ram: null }],
     ]) {
       if (env === undefined) delete process.env['ZARIA_TACTICS'];
       else process.env['ZARIA_TACTICS'] = env;

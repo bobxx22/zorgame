@@ -28,12 +28,14 @@
    report.md (таблиця кращих, оновлюється після кожного кроку). Ctrl+C
    безпечний: кожен пакет пишеться, щойно зіграний. */
 
+import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
+import { ENGINE_HASH } from '@zoria/engine';
 import { ARCHETYPES } from '@zoria/sdk';
-import { DEFAULT_PRESET, DEFAULT_TACTICS } from '../../bot/dist/strategy.js';
+import { DEFAULT_PRESET, DEFAULT_TACTICS, isPreset, parseTactics } from '../../bot/dist/strategy.js';
 import { fullStyle, KNOB_MAX, KNOBS, parseStyle, STYLES, styleSpec } from '../../bot/dist/styles.js';
 import type { Knob, Style } from '../../bot/dist/styles.js';
 import type { SeatSpec } from '../shared/record.ts';
@@ -67,6 +69,11 @@ interface Config {
   pool: 'arch' | 'mixed';
   /* суперники, закріплені на старті: зміна стилю бою не міняє пул продовження */
   opponents: SeatSpec[];
+  /* search - покоління і відсів; eval - лише всі --start і основа на свіжих долинах */
+  mode: 'search' | 'eval';
+  /* що грало: хеш рушія і коміт бота (з git або з build.json розгортання) */
+  engine: string;
+  build: string | null;
 }
 
 const RUNGS = [30, 60, 120];
@@ -90,8 +97,42 @@ function poolOf(pool: Config['pool']): SeatSpec[] {
   ];
 }
 
+/* кандидат: пресет нашого бота (стиль голови або голова-наказ «nakaz:<зразок>»)
+   і, через «|», свої надбудови замість типових: «світанок|fill:наш:6,ram:6» */
+interface Candidate {
+  preset: string;
+  tactics: string[];
+}
+function candidateOf(spec: string): Candidate | null {
+  const [preset, tactics, ...rest] = spec.split('|');
+  if (rest.length || !preset || !isPreset(preset)) return null;
+  if (tactics === undefined) return { preset, tactics: cfg.tactics };
+  const list = tactics
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  let bad = !list.length;
+  parseTactics(list, () => {
+    bad = true;
+  });
+  return bad ? null : { preset, tactics: list };
+}
+
+/* коміт бота: build.json розгортання (worker.sh deploy) або git; ні того, ні того - null */
+function buildOf(): string | null {
+  const file = new URL('../build.json', import.meta.url);
+  try {
+    if (existsSync(file)) return String((JSON.parse(readFileSync(file, 'utf8')) as { commit?: string }).commit ?? null);
+    const head = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const dirty = execSync('git status --porcelain -- ../bot/src ../lab/server', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    return head + (dirty ? '+незакомічене' : '');
+  } catch {
+    return null;
+  }
+}
+
 const f = flags(process.argv.slice(2));
-const known = new Set(['hours', 'workers', 'from', 'validate', 'base', 'ticks', 'resume', 'start', 'pool']);
+const known = new Set(['hours', 'workers', 'from', 'validate', 'base', 'ticks', 'resume', 'start', 'pool', 'eval']);
 for (const k of Object.keys(f)) if (!known.has(k)) throw new Error('прапорця --' + k + ' немає');
 const hours = Number(f['hours'] ?? 8);
 const workers = Number(f['workers'] ?? Math.max(1, availableParallelism() - 1));
@@ -107,6 +148,9 @@ if (f['resume']) {
   cfg.start ??= Object.keys(STYLES);
   cfg.pool ??= 'arch';
   cfg.opponents ??= poolOf('arch');
+  cfg.mode ??= 'search';
+  /* інший світ - інші цифри: продовжувати пошук іншого рушія не можна */
+  if (cfg.engine && cfg.engine !== ENGINE_HASH) throw new Error('пошук грав рушій ' + cfg.engine.slice(0, 12) + ', а тут ' + ENGINE_HASH.slice(0, 12));
 } else {
   cfg = {
     id: newRunId(),
@@ -119,10 +163,14 @@ if (f['resume']) {
     start: f['start'] ? f['start'].split(';').map((x) => x.trim()).filter(Boolean) : Object.keys(STYLES),
     pool: (f['pool'] ?? 'arch') as Config['pool'],
     opponents: [],
+    mode: f['eval'] === '1' ? 'eval' : 'search',
+    engine: ENGINE_HASH,
+    build: buildOf(),
   };
+  if (f['eval'] !== undefined && f['eval'] !== '1') throw new Error('--eval 1');
   if (cfg.pool !== 'arch' && cfg.pool !== 'mixed') throw new Error('--pool: arch або mixed');
   cfg.opponents = poolOf(cfg.pool);
-  for (const spec of cfg.start) if (!parseStyle(spec)) throw new Error('--start: незрозумілий стиль ' + spec);
+  for (const spec of cfg.start) if (!candidateOf(spec)) throw new Error('--start: незрозумілий кандидат ' + spec);
   if (!Object.hasOwn(STYLES, cfg.base)) throw new Error('--base: одне з ' + Object.keys(STYLES).join(', '));
   if (!Number.isInteger(cfg.from) || cfg.from < 0 || cfg.from > 2 ** 30) throw new Error('--from');
   if (!Number.isInteger(cfg.ticks) || cfg.ticks < 10 || cfg.ticks > 1200) throw new Error('--ticks');
@@ -147,7 +195,8 @@ const searchSeed = (i: number): number => cfg.from + i;
 const freshSeed = (i: number): number => cfg.from + FRESH + i;
 function lineupOf(spec: string, seed: number): [SeatSpec, SeatSpec, SeatSpec] {
   const [a, b] = PAIRS[(seed - cfg.from) % PAIRS.length]!;
-  return [{ kind: 'ours', name: spec, tactics: cfg.tactics }, a, b];
+  const c = candidateOf(spec)!;
+  return [{ kind: 'ours', name: c.preset, tactics: c.tactics }, a, b];
 }
 
 /* ===== зігране: спец -> долина -> наше місце ===== */
@@ -316,11 +365,13 @@ function rng(seed: number): () => number {
 const round = (x: number) => Math.round(x * 20) / 20;
 const baseOf = (spec: string) => spec.split('+')[0]!;
 
-/* klinok - поріг частки клинків у рої (верф: клинків/юнитів < klinok). Рій
-   ваги 8 - це 2-8 юнитів, і досяжні частки - 1/6, 1/5, 1/4, 1/3, 2/5, 1/2,
-   3/5, 2/3: будь-які два значення між сусідніми частками грають однаково
-   (klinok 0.35 і 0.5 дали 60 з 60 однакових пакетів). Тож - лише ступені */
-const KLINOK_STEPS = [0.1, 0.18, 0.22, 0.3, 0.37, 0.45, 0.55, 0.63];
+/* klinok - поріг частки клинків у рої (верф: клинків/юнитів на полі < klinok,
+   і лише коли новий юнит влазить у вагу 8: ткач 2, клинок 1). Частки, при
+   яких верф узагалі вирішує: 0, 1/4 (3T1K), 1/3 (2T1K), 1/2, 3/5, 2/3, 3/4.
+   Будь-які два значення в одному проміжку (0, 1/4], (1/4, 1/3], (1/3, 1/2],
+   (1/2, 3/5], (3/5, 2/3], (2/3, 3/4] грають однаково (0.37 і 0.5 дали 60 з 60
+   однакових пакетів). Тож - по ступені на проміжок і нуль: рій без клинків */
+const KLINOK_STEPS = [0, 0.2, 0.3, 0.45, 0.55, 0.63, 0.7];
 /* guard і pact - пороги жеребу: крок 0.05 міняє виліт лише зрідка */
 const LOTS: readonly Knob[] = ['guard', 'pact'];
 const LAND_STEPS = [0.5, 1, 1.5, 2];
@@ -381,7 +432,9 @@ function cross(a: Style, b: Style, r: () => number): Style {
   return out;
 }
 
-function children(gen: number, parents: readonly string[]): string[] {
+function children(gen: number, all: readonly string[]): string[] {
+  /* мутує лише стиль; голова-наказ батьком не буває, надбудови («|...») успадковуються */
+  const parents = all.filter((p) => parseStyle(p.split('|')[0]!));
   /* батьків ще немає (покоління 0 - лише основа або не дійшло до верхньої ступені) */
   if (!parents.length) return [];
   const r = rng(gen * 7919 + 17);
@@ -389,21 +442,23 @@ function children(gen: number, parents: readonly string[]): string[] {
   let tries = 0;
   while (out.length < CHILDREN && tries++ < 500) {
     const p = parents[Math.floor(r() * parents.length)]!;
-    const pst = parseStyle(p)!;
+    const [pStyle, ...pTactics] = p.split('|');
+    const suffix = pTactics.length ? '|' + pTactics.join('|') : '';
+    const pst = parseStyle(pStyle!)!;
     let st: Style;
     let why: string;
     if (r() < 0.33 && parents.length > 1) {
       const q = parents[Math.floor(r() * parents.length)]!;
       if (q === p) continue;
-      st = cross(pst, parseStyle(q)!, r);
+      st = cross(pst, parseStyle(q.split('|')[0]!)!, r);
       if (r() < 0.5) st = mutate(st, r);
       why = 'покоління ' + gen + ': схрещення ' + p + ' × ' + q;
     } else {
       st = mutate(pst, r);
       why = 'покоління ' + gen + ': мутація ' + p;
     }
-    const spec = styleSpec(baseOf(p), st);
-    if (played.has(spec) || out.includes(spec) || !parseStyle(spec)) continue;
+    const spec = styleSpec(baseOf(pStyle!), st) + suffix;
+    if (played.has(spec) || out.includes(spec) || !candidateOf(spec)) continue;
     note(spec, why);
     out.push(spec);
   }
@@ -443,14 +498,14 @@ function report(gen: number): void {
   const text = [
     `# Нічний пошук стилю ${cfg.id}`,
     '',
-    `Основа: \`${cfg.base}\`, надбудови: \`${cfg.tactics.join(',')}\`. Суперники: ${cfg.pool === 'mixed' ? 'змішаний пул (наш бот, рівний, облягач, опортуніст, рейдер, наказ експансія)' : 'пари архетипів SDK'} по черзі. Долини пошуку ${cfg.from}-${cfg.from + TOP - 1}, свіжі - з ${cfg.from + FRESH}.`,
+    `Рушій ${cfg.engine?.slice(0, 12) ?? '?'}, бот ${cfg.build ?? '?'}. Основа: \`${cfg.base}\`, надбудови: \`${cfg.tactics.join(',')}\`. Суперники: ${cfg.pool === 'mixed' ? 'змішаний пул (наш бот, рівний, облягач, опортуніст, рейдер, наказ експансія)' : 'пари архетипів SDK'} по черзі. Долини пошуку ${cfg.from}-${cfg.from + TOP - 1}, свіжі - з ${cfg.from + FRESH}.`,
     '',
     `Етап: **${phase}**, покоління ${gen}. Зіграно пакетів: ${packs} за цей запуск (усього в журналі ${[...played.values()].reduce((s, m) => s + m.size, 0)}), ${mins.toFixed(0)} хв, пакет у середньому ${(packs ? packMs / packs / 1000 : 0).toFixed(1)} с на потік, потоків ${workers}.`,
     '',
     'Частка - середні очки за пакет (3-9). Різниця - парна: частка стилю мінус частка основи на тій самій долині, ± стандартна похибка. Різниця більша за дві похибки - уже не випадок. «Як основа» - пакетів, зіграних точнісінько як основа: якщо їх більшість, різниця - кілька випадкових пакетів.',
     '',
     ...(validation
-      ? ['## Перевірка на свіжих долинах', '', 'Чесна оцінка: ці долини пошук не бачив.', '', table(validation, false), '']
+      ? ['## Перевірка на свіжих долинах', '', 'Чесна оцінка: ці долини пошук не бачив.', '', table(validation, false), '', '### Різниця з основою проти кожного суперника', '', 'Пакети, де цей суперник сидів за столом; у дужках - скільки їх.', '', byOpponent(validation), '']
       : []),
     `## Кращі на ${TOP} долинах пошуку`,
     '',
@@ -465,6 +520,29 @@ function report(gen: number): void {
   ].join('\n');
   writeFileSync(REPORT, text);
   writeFileSync(originFile, JSON.stringify(Object.fromEntries(origin), null, 1));
+}
+
+/* Δ з основою окремо проти кожного суперника пулу: стиль, що виграє за рахунок
+   слабких і програє сильним, - погана ставка на справжніх учасників */
+function byOpponent(rows: readonly Stat[]): string {
+  const label = (o: SeatSpec) => (o.kind === 'nakaz' ? 'наказ ' : o.kind === 'ours' ? 'наш ' : '') + o.name;
+  const head = '| стиль | ' + POOL.map(label).join(' | ') + ' |';
+  const sep = '|---|' + POOL.map(() => '---|').join('');
+  const base = played.get(cfg.base);
+  const lines = rows.map((s) => {
+    const mine = played.get(s.spec);
+    const cells = POOL.map((o) => {
+      const d: number[] = [];
+      for (const [seed, r] of mine ?? []) {
+        const b = base?.get(seed);
+        const [x, y] = PAIRS[(seed - cfg.from) % PAIRS.length]!;
+        if (b && (x === o || y === o) && seed >= cfg.from + FRESH) d.push(r.share - b.share);
+      }
+      return d.length ? `${fmt(d.reduce((a, c) => a + c, 0) / d.length)} (${d.length})` : '-';
+    });
+    return `| \`${s.spec}\` | ${cells.join(' | ')} |`;
+  });
+  return [head, sep, ...lines].join('\n');
 }
 
 /* ===== відсів половинами ===== */
@@ -491,6 +569,18 @@ async function main(): Promise<void> {
   const freshSeeds = range(0, cfg.validate, freshSeed);
   const reserve = () => costMs((FINALISTS + 1) * cfg.validate);
   for (const spec of cfg.start) note(spec, Object.hasOwn(STYLES, spec) ? 'каталог' : 'старт');
+  if (cfg.mode === 'eval') {
+    /* порівняння без відбору: усі кандидати й основа на тих самих свіжих долинах */
+    phase = 'порівняння на свіжих долинах';
+    report(0);
+    await ensure(cfg.start, freshSeeds);
+    validation = [...new Set([cfg.base, ...cfg.start])].map((spec) => stat(spec, freshSeeds)).sort((a, b) => b.delta - a.delta);
+    phase = 'готово';
+    report(0);
+    console.log('готово: ' + REPORT);
+    for (const w of pool) await w.terminate();
+    return;
+  }
   let gen = 0;
   let more = await halving(gen, cfg.start, reserve);
   while (more) {

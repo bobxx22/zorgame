@@ -21,9 +21,12 @@ function readTactics(tactics: readonly string[] | undefined, defaults: readonly 
   return out;
 }
 
+/* надбудови, яких форма не показує (nofeed, k0, ram): переписуючи форму, їх не губимо */
+const keepOthers = (tactics: readonly string[]): string[] => tactics.filter((t) => !['fill', 'nopact', 'none'].includes(t.split(':')[0]!));
+
 /* усе вимкнено - явне none: без поля бот грав би з типовими */
-function writeTactics(f: TacticForm): string[] {
-  const out: string[] = [];
+function writeTactics(f: TacticForm, others: readonly string[]): string[] {
+  const out: string[] = [...others];
   if (f.fill) out.push(f.after > 0 ? `fill:${f.charter}:${f.after}` : `fill:${f.charter}`);
   if (f.noPact) out.push('nopact');
   return out.length ? out : ['none'];
@@ -33,7 +36,7 @@ export function SeatEditor({ options, value, onChange, label }: { options: LabOp
   const encode = (s: SeatSpec) => s.kind + ':' + s.name;
   const tactics = readTactics(value.tactics, options.defaultTactics);
   const setTactics = (next: Partial<TacticForm>) => {
-    const t = writeTactics({ ...tactics, ...next });
+    const t = writeTactics({ ...tactics, ...next }, keepOthers(value.tactics ?? options.defaultTactics));
     /* збіг із типовими - без поля: підпис «типові надбудови», як у бою */
     onChange(t.join(',') === options.defaultTactics.join(',') ? { kind: value.kind, name: value.name } : { ...value, tactics: t });
   };

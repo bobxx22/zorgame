@@ -41,6 +41,7 @@ import {
 import type { ChannelCfg, Hex, Manifest, Observe, Order, SlotName, Verdict } from '@zoria/protocol';
 import { errText } from './errors.js';
 import { parseStyle, STYLES } from './styles.js';
+import { hookHead, NeedleOwners, ramOrder } from './tactics.js';
 
 export interface Strategy extends WireBot {
   /* кадр щоденника віри такту; null - кадру немає */
@@ -113,15 +114,25 @@ export function pulseOrder(obs: Observe, orders: readonly Order[], focus: Watch 
                          коли голова мовчить понад N тактів (типово 0). Слот
                          лишається за ботом: це не епізод наказу вузла;
      nopact            - не пропонувати і не приймати угод: податок угоди -
-                         десята частка доходу кожного такту (правила 19.5). */
+                         десята частка доходу кожного такту (правила 19.5);
+     nofeed:T          - голова не ставить ткачів на підкормку до такту T
+                         (1200 - ніколи): підкормка в її черзі рішень стоїть
+                         раніше за ціль і забирає ткача росту назавжди;
+     k0:T              - без клинків у верфі до такту T, далі - klinok стилю;
+     ram:R             - чистий таран: вільний клинок до R кроків таранить
+                         чужого ткача на голці, що не його (греє - таран чистий,
+                         правила 11.7). Механіка - tactics.ts. */
 export const FILL_CHARTERS = [...Object.keys(NAKAZ_SAMPLES), 'наш'] as const;
 
 export interface Tactics {
   fill: { charter: string; after: number } | null;
   noPact: boolean;
+  noFeed: number | null;
+  k0: number | null;
+  ram: number | null;
 }
 
-export const NO_TACTICS: Tactics = { fill: null, noPact: false };
+export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null };
 
 /* здача: ZARIA_TACTICS організатори не задають, тож бій іде з цим рядком.
    Порожня змінна (стек часто так задає) - теж цей рядок; без надбудов - none */
@@ -130,11 +141,22 @@ export const DEFAULT_TACTICS = 'fill:наш:6';
 /* рядок надбудов; невідоме - у журнал і пропустити */
 export function parseTactics(spec: string | readonly string[] | undefined, log: (line: string) => void = () => undefined): Tactics {
   const items = (typeof spec === 'string' ? spec.split(',') : (spec ?? [])).map((x) => x.trim()).filter(Boolean);
-  const out: Tactics = { fill: null, noPact: false };
+  const out: Tactics = { ...NO_TACTICS };
+  /* такт або радіус: ціле в межах, інакше - у журнал */
+  const int = (item: string, v: string | undefined, max: number): number | null => {
+    const n = Number(v);
+    if (v !== undefined && /^\d{1,4}$/.test(v) && n >= 1 && n <= max) return n;
+    log('надбудова «' + item + '»: N - ціле 1-' + max + ', пропускаю');
+    return null;
+  };
   for (const item of items) {
-    const [name, charter, after] = item.split(':');
-    if (name === 'none' && charter === undefined) continue;
-    if (name === 'nopact' && charter === undefined) out.noPact = true;
+    const [name, charter, after, ...rest] = item.split(':');
+    if (rest.length) log('надбудови «' + item + '» немає, пропускаю');
+    else if (name === 'none' && charter === undefined) continue;
+    else if (name === 'nopact' && charter === undefined) out.noPact = true;
+    else if (name === 'nofeed' && after === undefined) out.noFeed = int(item, charter, 1200) ?? out.noFeed;
+    else if (name === 'k0' && after === undefined) out.k0 = int(item, charter, 1200) ?? out.k0;
+    else if (name === 'ram' && after === undefined) out.ram = int(item, charter, 12) ?? out.ram;
     else if (name === 'fill' && charter && (FILL_CHARTERS as readonly string[]).includes(charter)) {
       const n = after === undefined ? 0 : Number(after);
       if (Number.isInteger(n) && n >= 0 && n <= 1200) out.fill = { charter, after: n };
@@ -155,8 +177,8 @@ export function charterText(name: string): string {
 /* голова, яку обгортає пульс: дзеркало архетипу або підміна в тестах */
 export type Head = Pick<MirrorBot, 'init' | 'tick' | 'feedback' | 'mirror'>;
 
-/* звідки команда кадру: пульс, голова чи наказ-заповнювач, і її місце у своєму джерелі */
-export type Source = 'pulse' | 'head' | 'fill';
+/* звідки команда кадру: пульс, голова, наказ-заповнювач чи надбудова, і її місце у своєму джерелі */
+export type Source = 'pulse' | 'head' | 'fill' | 'tactic';
 interface Entry {
   order: Order;
   from: Source;
@@ -189,6 +211,8 @@ export class PulseStrategy implements Strategy {
   lastPulse: Order | null = null;
   lastSources: Source[] = [];
   private headFaults = 0;
+  /* власники голок для тарану: з маніфесту і того, що видно */
+  private owners: NeedleOwners | null = null;
 
   constructor(head: Head, log: (line: string) => void = () => undefined, opts: StrategyOpts = {}) {
     this.head = head;
@@ -208,6 +232,8 @@ export class PulseStrategy implements Strategy {
     this.focus = hearth ? { kind: 'watch', q: hearth.q, r: hearth.r, keep: 0 } : null;
     this.quiet = 0;
     this.headIdle = 0;
+    this.owners = this.tactics.ram !== null && m ? new NeedleOwners(m.needles) : null;
+    hookHead(this.head.mirror(), slot, this.tactics, this.log);
   }
 
   tick(observe: Uint8Array): Uint8Array {
@@ -243,9 +269,14 @@ export class PulseStrategy implements Strategy {
 
     const quiet = this.quiet;
     this.quiet += 1;
+    const obs = (quiet >= PULSE_AFTER || this.owners) && this.world ? decodeObserve(observe) : null;
+    if (obs && this.owners && this.slot && this.world && this.tactics.ram !== null) {
+      this.owners.see(obs, this.slot);
+      const ram = ramOrder(obs, entries.map((e) => e.order), this.slot, this.owners, this.tactics.ram, this.world);
+      if (ram) entries = [...entries, { order: ram, from: 'tactic', at: 0 }];
+    }
     const orders = entries.map((e) => e.order);
-    const obs = quiet >= PULSE_AFTER && this.world ? decodeObserve(observe) : null;
-    const pulse = obs && this.world ? pulseOrder(obs, orders, this.focus, this.world) : null;
+    const pulse = obs && quiet >= PULSE_AFTER && this.world ? pulseOrder(obs, orders, this.focus, this.world) : null;
     this.lastPulse = pulse;
     this.sent = pulse ? [{ order: pulse, from: 'pulse', at: 0 }, ...entries] : entries;
     this.lastSources = this.sent.map((e) => e.from);
@@ -314,13 +345,38 @@ export function presets(): string[] {
    наказом). Після зсуву світу 05.10 - перемірити */
 export const DEFAULT_PRESET = 'світанок';
 
+/* Голова-наказ: «nakaz:<зразок SDK або наш>» - замість дзеркала думає наказ
+   усередині бота (як заповнювач, але весь час). Пульс і надбудови після голови
+   діють як завжди, тож слот лишається за ботом: голий наказ на місці мовчить у
+   такти без справ, і вузол віддає слот наказу (правила 23.2) */
+export const NAKAZ_HEADS = FILL_CHARTERS.map((name) => 'nakaz:' + name);
+export function nakazHeadOf(preset: string): string | null {
+  return NAKAZ_HEADS.includes(preset) ? preset.slice('nakaz:'.length) : null;
+}
+
+/* пресет - стиль каталогу, рядок «основа+ручка=число» або голова-наказ */
+export function isPreset(preset: string): boolean {
+  return parseStyle(preset) !== null || nakazHeadOf(preset) !== null;
+}
+
 /* невідоме ім'я (одруківка, кодова сторінка cmd) не валить бота до присяги:
-   грає типовий стиль. Рядок «основа+ручка=число» - теж пресет */
+   грає типовий стиль */
 export function presetOrDefault(preset: string | undefined, log: (line: string) => void = () => undefined): string {
   if (!preset) return DEFAULT_PRESET;
-  if (parseStyle(preset)) return preset;
+  if (isPreset(preset)) return preset;
   log('пресета «' + preset + '» немає, граю ' + DEFAULT_PRESET);
   return DEFAULT_PRESET;
+}
+
+/* наказ у ролі голови: віри-дзеркала в нього немає, щоденник віри порожній */
+function nakazHead(text: string): Head {
+  const bot = createNakazSparring(text);
+  return {
+    init: (manifest, slot) => bot.init(manifest, slot),
+    tick: (observe) => bot.tick(observe),
+    feedback: (verdicts) => bot.feedback?.(verdicts),
+    mirror: () => null,
+  };
 }
 
 export function createStrategy(
@@ -328,8 +384,9 @@ export function createStrategy(
   log: (line: string) => void = () => undefined,
   tactics: Tactics = parseTactics(process.env['ZARIA_TACTICS'] || DEFAULT_TACTICS, log),
 ): PulseStrategy {
-  const style = parseStyle(presetOrDefault(preset, log)) ?? STYLES[DEFAULT_PRESET]!;
-  const head = new MirrorBot(createEngine, { ...style });
+  const chosen = presetOrDefault(preset, log);
+  const nakaz = nakazHeadOf(chosen);
+  const head: Head = nakaz ? nakazHead(charterText(nakaz)) : new MirrorBot(createEngine, { ...(parseStyle(chosen) ?? STYLES[DEFAULT_PRESET]!) });
   let filler: WireBot | null = null;
   if (tactics.fill) {
     try {

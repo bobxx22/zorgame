@@ -24,7 +24,7 @@ import { Worker } from 'node:worker_threads';
 import { ENGINE_HASH } from '@zoria/engine';
 import { ARCHETYPES } from '@zoria/sdk';
 import { NAKAZ_SAMPLES } from '@zoria/sdk/nakaz';
-import { DEFAULT_PRESET, DEFAULT_TACTICS, FILL_CHARTERS, presets } from '../../bot/dist/strategy.js';
+import { DEFAULT_PRESET, DEFAULT_TACTICS, FILL_CHARTERS, NAKAZ_HEADS, presets } from '../../bot/dist/strategy.js';
 import type { LabOptions, RunMeta, RunRequest, SeatSpec } from '../shared/record.ts';
 import { deleteRun, listRuns, matchFile, newRunId, parseRequest, readMeta, saveMeta } from './runs.ts';
 import { deleteTournament, listTournaments, parseTournament, planTournament, readTournament, viewTournament } from './tournaments.ts';
@@ -36,7 +36,7 @@ const CPUS = availableParallelism();
 const PARALLEL = Math.max(1, CPUS - 1);
 
 const options: LabOptions = {
-  presets: presets(),
+  presets: [...presets(), ...NAKAZ_HEADS],
   archetypes: Object.keys(ARCHETYPES),
   nakaz: Object.keys(NAKAZ_SAMPLES),
   charters: [...FILL_CHARTERS],

@@ -24,16 +24,20 @@ remote=/opt/zoria
 case "${1:-}" in
   deploy)
     (cd "$root/bot" && npm run build >/dev/null)
+    # який бот розгорнуто: пошук пише це в config.json і шапку звіту
+    commit=$(cd "$root" && git rev-parse --short HEAD)$(cd "$root" && git diff --quiet -- bot/src lab/server || echo '+незакомічене')
+    printf '{"commit":"%s","at":"%s"}\n' "$commit" "$(date -u +%FT%TZ)" > "$root/lab/build.json"
     pack=$(mktemp -d)/zoria-worker.tgz
     # лише те, що потрібно пошуку: бот, сервер лабораторії і чотири пакети @zoria з yaml
     (cd "$root" && tar -czf "$pack" bot/package.json bot/nakaz.yaml bot/dist \
       bot/node_modules/@zoria/{engine,sdk,nakaz,protocol} bot/node_modules/yaml \
-      lab/package.json lab/server lab/shared \
+      lab/package.json lab/build.json lab/server lab/shared \
       lab/node_modules/@zoria/{engine,sdk,nakaz,protocol} lab/node_modules/yaml)
     "${scp_[@]}" "$pack" "$host:/tmp/zoria-worker.tgz"
     # runs/ сервера лишається: розгортання не чіпає зіграного
+    rm -f "$root/lab/build.json"
     "${ssh_[@]}" "mkdir -p $remote && tar -xzf /tmp/zoria-worker.tgz -C $remote && rm /tmp/zoria-worker.tgz && node -v"
-    echo "розгорнуто: $(cd "$root" && git rev-parse --short HEAD)$(cd "$root" && git diff --quiet || echo ' + незакомічене')"
+    echo "розгорнуто: $commit"
     ;;
   start)
     shift
