@@ -84,18 +84,22 @@ const FINALISTS = 5;
 /* свіжі долини - далеко від пошукових */
 const FRESH = 100_000;
 
+/* змішаний пул: копія нашого бою (самогра) - єдине місце, що росте разом із
+   боєм; опортуніст і рейдер у нашій обгортці - з тими надбудовами, з якими їх
+   міряли (fill:наш:6), щоб пул не дрейфував разом із нашими знахідками */
 function poolOf(pool: Config['pool']): SeatSpec[] {
   if (pool === 'arch') return Object.keys(ARCHETYPES).map((name) => ({ kind: 'archetype', name }));
-  const tactics = DEFAULT_TACTICS.split(',');
+  const fixed = ['fill:наш:6'];
   return [
-    { kind: 'ours', name: DEFAULT_PRESET, tactics },
+    { kind: 'ours', name: DEFAULT_PRESET, tactics: DEFAULT_TACTICS.split(',') },
     { kind: 'archetype', name: 'рівний' },
     { kind: 'archetype', name: 'облягач' },
-    { kind: 'ours', name: 'опортуніст', tactics },
-    { kind: 'ours', name: 'рейдер', tactics },
+    { kind: 'ours', name: 'опортуніст', tactics: fixed },
+    { kind: 'ours', name: 'рейдер', tactics: fixed },
     { kind: 'nakaz', name: 'експансія' },
   ];
 }
+const seatLabel = (o: SeatSpec): string => (o.kind === 'nakaz' ? 'наказ ' : o.kind === 'ours' ? 'наш ' : '') + o.name + (o.tactics ? '|' + o.tactics.join(',') : '');
 
 /* кандидат: пресет нашого бота (стиль голови або голова-наказ «nakaz:<зразок>»)
    і, через «|», свої надбудови замість типових: «світанок|fill:наш:6,ram:6» */
@@ -124,7 +128,8 @@ function buildOf(): string | null {
   try {
     if (existsSync(file)) return String((JSON.parse(readFileSync(file, 'utf8')) as { commit?: string }).commit ?? null);
     const head = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
-    const dirty = execSync('git status --porcelain -- ../bot/src ../lab/server', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    /* усе, що їде грати: код бота, наказ, пакети, сервер лабораторії */
+    const dirty = execSync('git status --porcelain -- ../bot/src ../bot/nakaz.yaml ../bot/package.json ../lab/server ../lab/shared', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     return head + (dirty ? '+незакомічене' : '');
   } catch {
     return null;
@@ -494,6 +499,9 @@ function table(rows: readonly Stat[], showOrigin: boolean): string {
   return [head, sep, ...lines].join('\n');
 }
 let validation: Stat[] | null = null;
+let recheck: Stat[] | null = null;
+/* другий свіжий набір: лише для переможця і основи */
+const RECHECK = FRESH + 10_000;
 let phase = 'пошук';
 function report(gen: number): void {
   const mins = (Date.now() - started) / 60_000;
@@ -506,12 +514,15 @@ function report(gen: number): void {
   const text = [
     `# Нічний пошук стилю ${cfg.id}`,
     '',
-    `Рушій ${cfg.engine?.slice(0, 12) ?? '?'}, бот ${cfg.build ?? '?'}. Основа: \`${cfg.base}\`, надбудови: \`${cfg.tactics.join(',')}\`. Суперники: ${cfg.pool === 'mixed' ? 'змішаний пул (наш бот, рівний, облягач, опортуніст, рейдер, наказ експансія)' : 'пари архетипів SDK'} по черзі. Долини пошуку ${cfg.from}-${cfg.from + TOP - 1}, свіжі - з ${cfg.from + FRESH}.`,
+    `Рушій ${cfg.engine?.slice(0, 12) ?? '?'}, бот ${cfg.build ?? '?'}. Основа: \`${cfg.base}\`, надбудови: \`${cfg.tactics.join(',')}\`. Суперники (пари по черзі): ${POOL.map((o) => '`' + seatLabel(o) + '`').join(', ')}. Долини пошуку ${cfg.from}-${cfg.from + TOP - 1}, свіжі - з ${cfg.from + FRESH}.`,
     '',
     `Етап: **${phase}**, покоління ${gen}. Зіграно пакетів: ${packs} за цей запуск (усього в журналі ${[...played.values()].reduce((s, m) => s + m.size, 0)}), ${mins.toFixed(0)} хв, пакет у середньому ${(packs ? packMs / packs / 1000 : 0).toFixed(1)} с на потік, потоків ${workers}.`,
     '',
     'Частка - середні очки за пакет (3-9). Різниця - парна: частка стилю мінус частка основи на тій самій долині, ± стандартна похибка. Різниця більша за дві похибки - уже не випадок. «Як основа» - пакетів, зіграних точнісінько як основа: якщо їх більшість, різниця - кілька випадкових пакетів.',
     '',
+    ...(recheck
+      ? ['## Перевірка переможця на другому свіжому наборі', '', 'Переможця вибрано на першому свіжому наборі - його різниця там завищена відбором. Тут - долини, яких не бачили ні пошук, ні вибір.', '', table(recheck, false), '']
+      : []),
     ...(validation
       ? ['## Перевірка на свіжих долинах', '', 'Чесна оцінка: ці долини пошук не бачив.', '', table(validation, false), '', '### Різниця з основою проти кожного суперника', '', 'Пакети, де цей суперник сидів за столом; у дужках - скільки їх.', '', byOpponent(validation), '']
       : []),
@@ -572,6 +583,17 @@ async function halving(gen: number, candidates: string[], reserveMs: () => numbe
   return true;
 }
 
+/* переможця перевірки (якщо це не основа) - ще раз на другому свіжому наборі */
+async function recheckWinner(rows: readonly Stat[]): Promise<void> {
+  const winner = rows.find((s) => s.spec !== cfg.base);
+  if (!winner || winner.delta <= 0) return;
+  phase = 'перевірка переможця';
+  report(0);
+  const seeds = range(0, cfg.validate, (i) => cfg.from + RECHECK + i);
+  await ensure([winner.spec], seeds);
+  recheck = [winner.spec, cfg.base].map((spec) => stat(spec, seeds)).sort((a, b) => b.delta - a.delta);
+}
+
 async function main(): Promise<void> {
   console.log(`пошук ${cfg.id}: ${hours} год, потоків ${workers}; звіт - ${REPORT}`);
   const freshSeeds = range(0, cfg.validate, freshSeed);
@@ -583,6 +605,7 @@ async function main(): Promise<void> {
     report(0);
     await ensure(cfg.start, freshSeeds);
     validation = [...new Set([cfg.base, ...cfg.start])].map((spec) => stat(spec, freshSeeds)).sort((a, b) => b.delta - a.delta);
+    await recheckWinner(validation);
     phase = 'готово';
     report(0);
     console.log('готово: ' + REPORT);
@@ -608,6 +631,7 @@ async function main(): Promise<void> {
   console.log('перевірка: ' + finalists.join(' | '));
   await ensure(finalists, freshSeeds);
   validation = [...new Set([cfg.base, ...finalists])].map((spec) => stat(spec, freshSeeds)).sort((a, b) => b.delta - a.delta);
+  await recheckWinner(validation);
   phase = 'готово';
   report(gen);
   console.log('готово: ' + REPORT);

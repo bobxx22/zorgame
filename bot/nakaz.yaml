@@ -1,13 +1,15 @@
 # хвилини ("minutes") з двома змінами: the network always pays, the eyes check the way
 #
 # Based on the SDK sample minutes.yaml. A mixed income profile. Keeps the
-# thread, holds four Tkachs, grows to 24 lit needles, feeds the best of them
-# and checks contacts every 80 ticks.
+# thread, holds four Tkachs, grows to 24 lit needles and checks contacts
+# every 80 ticks.
 # Changes against the sample (05-nakaz.md, section 3):
 # - the dawn rule stands above ordinary growth, otherwise the free Tkach is
 #   taken by the growth rule and never reaches the ring;
 # - after tick 600 the swarm is not left empty: with energy above 150 the
-#   nakaz orders a Tkach again while there are fewer than two units.
+#   nakaz orders a Tkach again while there are fewer than two units;
+# - no feeding: a fed needle holds its Tkach for the rest of the match, and
+#   the bot plays without feeding too (nofeed:1200 in bot/README.md).
 # The nakaz runs the slot only when the bot is silent or has crashed.
 nakaz: 1
 name: "хвилини"
@@ -32,8 +34,6 @@ rules:
     do: { take_contract: { prefer: nearest } }
   - when: "my_relays_online < 24"
     do: { extend_to: { target: nearest_cluster } }
-  - when: "tick < 1000"
-    do: { feed_network: { target: richest_online } }
   - when: "every 80"
     do: { scan_at: { target: densest_contacts, every: 80 } }
     priority: drop-on-budget

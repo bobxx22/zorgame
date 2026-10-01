@@ -25,7 +25,7 @@ case "${1:-}" in
   deploy)
     (cd "$root/bot" && npm run build >/dev/null)
     # який бот розгорнуто: пошук пише це в config.json і шапку звіту
-    commit=$(cd "$root" && git rev-parse --short HEAD)$(cd "$root" && git diff --quiet -- bot/src lab/server || echo '+незакомічене')
+    commit=$(cd "$root" && git rev-parse --short HEAD)$(cd "$root" && [ -z "$(git status --porcelain -- bot/src bot/nakaz.yaml bot/package.json lab/server lab/shared)" ] || echo '+незакомічене')
     printf '{"commit":"%s","at":"%s"}\n' "$commit" "$(date -u +%FT%TZ)" > "$root/lab/build.json"
     pack=$(mktemp -d)/zoria-worker.tgz
     # лише те, що потрібно пошуку: бот, сервер лабораторії і чотири пакети @zoria з yaml

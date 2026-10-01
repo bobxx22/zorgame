@@ -41,7 +41,7 @@ import {
 import type { ChannelCfg, Hex, Manifest, Observe, Order, SlotName, Verdict } from '@zoria/protocol';
 import { errText } from './errors.js';
 import { parseStyle, STYLES } from './styles.js';
-import { hookHead, NeedleOwners, ramOrder } from './tactics.js';
+import { AfterHead, hookHead, ramOrder } from './tactics.js';
 
 export interface Strategy extends WireBot {
   /* кадр щоденника віри такту; null - кадру немає */
@@ -121,7 +121,20 @@ export function pulseOrder(obs: Observe, orders: readonly Order[], focus: Watch 
      k0:T              - без клинків у верфі до такту T, далі - klinok стилю;
      ram:R             - чистий таран: вільний клинок до R кроків таранить
                          чужого ткача на голці, що не його (греє - таран чистий,
-                         правила 11.7). Механіка - tactics.ts. */
+                         правила 11.7);
+     hunt:R            - таран v2: охотник і клинок із «порожнім» jam голови,
+                         лише в зоні; здобич стоїть на голці ≥ 3 тактів, не в
+                         паузі нашого захоплення, клинок встигає; погоню, що
+                         втратила сенс, знято;
+     cherta            - до зорі голова не бачить голок за чертою (Ключник
+                         таранить, захоплень майже немає);
+     stay:K            - не відкликати додому ткача, якому до захоплення ≤ K
+                         тактів і повідець витримає;
+     yardcap           - не замовляти юнит понад вагу рою (відмова «вага рою»);
+     gap:N, catch:x,   - числа «вбудованих голів» з маніфесту (правила, A.1)
+     bopen:x, rfloor:x   у власному дзеркалі: guardGap, catchFloor, buildOpen,
+                         raidFloor. Законів світу вони не міняють, лише голову.
+   Механіка - tactics.ts. */
 export const FILL_CHARTERS = [...Object.keys(NAKAZ_SAMPLES), 'наш'] as const;
 
 export interface Tactics {
@@ -130,9 +143,23 @@ export interface Tactics {
   noFeed: number | null;
   k0: number | null;
   ram: number | null;
+  hunt: number | null;
+  cherta: boolean;
+  stay: number | null;
+  yardCap: boolean;
+  /* ключ SIM_CFG -> значення в дзеркалі голови */
+  engine: Readonly<Record<string, number>>;
 }
 
-export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null };
+/* токен -> ключ SIM_CFG і межі; gap - ціле */
+export const ENGINE_KNOBS: Readonly<Record<string, { key: string; min: number; max: number; int: boolean }>> = {
+  gap: { key: 'guardGap', min: 1, max: 600, int: true },
+  catch: { key: 'catchFloor', min: 0, max: 1, int: false },
+  bopen: { key: 'buildOpen', min: 0, max: 5, int: false },
+  rfloor: { key: 'raidFloor', min: 0, max: 2, int: false },
+};
+
+export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, engine: {} };
 
 /* здача: ZARIA_TACTICS організатори не задають, тож бій іде з цим рядком.
    Порожня змінна (стек часто так задає) - теж цей рядок; без надбудов - none.
@@ -158,6 +185,17 @@ export function parseTactics(spec: string | readonly string[] | undefined, log: 
     else if (name === 'nofeed' && after === undefined) out.noFeed = int(item, charter, 1200) ?? out.noFeed;
     else if (name === 'k0' && after === undefined) out.k0 = int(item, charter, 1200) ?? out.k0;
     else if (name === 'ram' && after === undefined) out.ram = int(item, charter, 12) ?? out.ram;
+    else if (name === 'hunt' && after === undefined) out.hunt = int(item, charter, 12) ?? out.hunt;
+    else if (name === 'stay' && after === undefined) out.stay = int(item, charter, 24) ?? out.stay;
+    else if (name === 'cherta' && charter === undefined) out.cherta = true;
+    else if (name === 'yardcap' && charter === undefined) out.yardCap = true;
+    else if (name && Object.hasOwn(ENGINE_KNOBS, name) && after === undefined) {
+      const k = ENGINE_KNOBS[name]!;
+      const n = Number(charter);
+      const ok = charter !== undefined && (k.int ? /^\d{1,4}$/ : /^\d+(\.\d+)?$/).test(charter) && n >= k.min && n <= k.max;
+      if (ok) out.engine = { ...out.engine, [k.key]: n };
+      else log('надбудова «' + item + '»: N - ' + (k.int ? 'ціле ' : '') + k.min + '-' + k.max + ', пропускаю');
+    }
     else if (name === 'fill' && charter && (FILL_CHARTERS as readonly string[]).includes(charter)) {
       const n = after === undefined ? 0 : Number(after);
       if (Number.isInteger(n) && n >= 0 && n <= 1200) out.fill = { charter, after: n };
@@ -212,8 +250,8 @@ export class PulseStrategy implements Strategy {
   lastPulse: Order | null = null;
   lastSources: Source[] = [];
   private headFaults = 0;
-  /* власники голок для тарану: з маніфесту і того, що видно */
-  private owners: NeedleOwners | null = null;
+  /* надбудови після голови з пам'яттю кадрів (tactics.ts); null - жодної */
+  private after: AfterHead | null = null;
 
   constructor(head: Head, log: (line: string) => void = () => undefined, opts: StrategyOpts = {}) {
     this.head = head;
@@ -233,7 +271,9 @@ export class PulseStrategy implements Strategy {
     this.focus = hearth ? { kind: 'watch', q: hearth.q, r: hearth.r, keep: 0 } : null;
     this.quiet = 0;
     this.headIdle = 0;
-    this.owners = this.tactics.ram !== null && m ? new NeedleOwners(m.needles) : null;
+    const t = this.tactics;
+    const needAfter = t.ram !== null || t.hunt !== null || t.stay !== null || t.cherta || t.yardCap;
+    this.after = needAfter && m && this.world ? new AfterHead(t, m, slot, this.world, (at, obs) => this.links(at, obs)) : null;
     hookHead(this.head.mirror(), slot, this.tactics, this.log);
   }
 
@@ -270,11 +310,14 @@ export class PulseStrategy implements Strategy {
 
     const quiet = this.quiet;
     this.quiet += 1;
-    const obs = (quiet >= PULSE_AFTER || this.owners) && this.world ? decodeObserve(observe) : null;
-    if (obs && this.owners && this.slot && this.world && this.tactics.ram !== null) {
-      this.owners.see(obs, this.slot);
-      const ram = ramOrder(obs, entries.map((e) => e.order), this.slot, this.owners, this.tactics.ram, this.world);
-      if (ram) entries = [...entries, { order: ram, from: 'tactic', at: 0 }];
+    const obs = (quiet >= PULSE_AFTER || this.after) && this.world ? decodeObserve(observe) : null;
+    if (obs && this.after && this.slot && this.world) {
+      this.after.see(obs);
+      entries = this.after.apply(obs, entries);
+      if (this.tactics.ram !== null) {
+        const ram = ramOrder(obs, entries.map((e) => e.order), this.slot, this.after.owners, this.tactics.ram, this.world, this.after.refused);
+        if (ram) entries = [...entries, { order: ram, from: 'tactic', at: 0 }];
+      }
     }
     const orders = entries.map((e) => e.order);
     const pulse = obs && quiet >= PULSE_AFTER && this.world ? pulseOrder(obs, orders, this.focus, this.world) : null;
@@ -290,6 +333,7 @@ export class PulseStrategy implements Strategy {
   feedback(verdicts: Uint8Array): void {
     const list = decodeVerdicts(verdicts);
     if (list?.some(([, ok]) => ok)) this.quiet = 0;
+    if (list) this.after?.verdicts(this.sent, list);
     const head: Verdict[] = [];
     const filler: Verdict[] = [];
     for (const [i, ok, code] of list ?? []) {
@@ -312,6 +356,15 @@ export class PulseStrategy implements Strategy {
         this.fail('fill feedback', e);
       }
     }
+  }
+
+  /* чи дотягнеться нитка з клітини до своєї горящої голки чи вогнища: питаємо
+     рушій дзеркала (гори, пагорби - правила 7.2); голова-наказ - ні (обережно) */
+  private links(at: Hex, obs: Observe): boolean {
+    const E = this.head.mirror() as { linkOk?: (aq: number, ar: number, bq: number, br: number) => boolean } | null;
+    if (!E || typeof E.linkOk !== 'function' || !this.world) return false;
+    const to = [this.world.hearth, ...obs.mine.needles.filter((n) => !n.dark)];
+    return to.some((n) => E.linkOk!(at.q, at.r, n.q, n.r));
   }
 
   /* віра дзеркала: світ дзеркальної голови і є те, у що вона вірить */
