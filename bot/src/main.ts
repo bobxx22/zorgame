@@ -14,9 +14,9 @@
      ZARIA_PRESET  стиль голови (styles.ts): ім'я каталогу або основа+ручка=число,...;
                    типово і для невідомого - полудень
      ZARIA_TACTICS надбудови над головою через кому (strategy.ts): fill:<наказ>[:N],
-                   nopact, nofeed:T, k0:T, ram:R, hunt:R, cherta, stay:K, yardcap;
+                   nopact, nofeed:T, k0:T, ram:R, hunt:R, cherta, stay:K, yardcap, nohook;
                    none - без надбудов;
-                   не задано чи порожньо - fill:наш:6,nofeed:1200,ram:6
+                   не задано чи порожньо - fill:наш:6,nofeed:1200,ram:6,nohook
      ZARIA_FREEZE  1 - здачу заморожено: зміна пресета відповідає відмовою
      ZARIA_AGENT   ім'я агента в присязі (zaria-bot)
      STATUS_PORT   внутрішній службовий порт (status.ts); порожньо - без нього

@@ -10,7 +10,41 @@
        знаходить, кого підживити);
      - дописати команду після голови (ram: чистий таран).
    Рушій дзеркала - свій у кожній партії (MirrorBot.init), тож між партіями
-   нічого не тече. */
+   нічого не тече.
+
+   ===== покажчик надбудов: що, навіщо, як, чи в бою =====
+   Токен задає ZARIA_TACTICS (розбір - parseTactics у strategy.ts), бій без
+   змінної - DEFAULT_TACTICS. Цифри - --eval лабораторії, 60 свіжих долин,
+   змішаний пул, парна різниця частки за пакет до тодішнього бою.
+
+   Усередині голови (hookHead):
+     nofeed:T  БІЙ (1200). Голова ставить ткача на підкормку раніше за ціль і
+               тримає назавжди - мінус ткач росту. Маска w.fed на час
+               рішення: botTryFeed не знаходить, кого живити. +1.05 ± 0.19.
+     k0:T      вимкнено. Без клинків у верфі до T: ручка klinok = 0. +0.28 ± 0.17.
+     cherta    вимкнено (перевіряє сервер). До зорі голки за чертою зникають
+               із віри на час рішення: Ключник таранить ткачів, що їх гріють,
+               а захоплень там майже немає. +0.18 ± 0.12.
+     gap, catch, bopen, rfloor  вимкнено, не міряно. Числа вбудованих голів
+               (guardGap, catchFloor, buildOpen, raidFloor) у своєму дзеркалі.
+
+   Після голови (ramOrder, AfterHead):
+     ram:R     БІЙ (6). Клинок таранить чужого ткача на голці, що не його
+               (гріє - таран чистий, правила 11.7). +0.17 ± 0.09.
+     hunt:R    вимкнено (перевіряє сервер). Таран v2: ширше коло мисливців,
+               без розмінів (пауза захоплення, транзит, не встигне). +0.17 ± 0.11.
+     stay:K    вимкнено. Не відкликати ткача за K тактів до захоплення. ≈ 0.
+     nohook    БІЙ. Гачок знахідки (правила 16.8) веде ткача до схрону і назад
+               у точку, де він звернув, навіть коли той уже стоїть на голці
+               цілі. Коли знахідка вже нічого не дасть (взята або згорить під
+               стелею), move на ту саму клітину обрізає зворотний слід: ткач
+               лишається гріти. Схрон, що ще платить, гачок довозить. ±0.03 -
+               копійка без ризику: менше зайвих кроків, заряд не губиться.
+     cache:N   вимкнено. Схрон дасть повні 150 - по нього йде найближчий вільний
+               юнит до N клітин (клинок без справи чи ткач без задачі). +0.02 ±
+               0.04, але ~0.1 відмови на пакет - поки не в бою.
+     yardcap   вимкнено. Не замовляти юнит понад вагу рою (для голови-наказу).
+               −0.02 ± 0.02. */
 
 import { orderCap, orderCost } from '@zoria/protocol';
 import type { ActorName, ClsName, Hex, Manifest, NeedleSpec, Observe, Order, SlotName, Verdict } from '@zoria/protocol';
@@ -199,6 +233,11 @@ export class AfterHead {
   private readonly refusedUntil = new Map<string, number>();
   /* погоні hunt: мисливець -> ціль */
   private readonly hunts = new Map<string, string>();
+  /* схрони і спалахи долини (маніфест) і вже взяті (подія find видна всім) */
+  private readonly finds: { q: number; r: number; kind: string }[];
+  private readonly taken = new Set<string>();
+  /* схрон -> юнит, якого надбудова cache по нього послала */
+  private readonly seekers = new Map<string, string>();
   private t = 0;
 
   constructor(
@@ -214,6 +253,7 @@ export class AfterHead {
     this.citadel = man.citadel;
     this.cherta = man.cherta;
     for (const n of man.needles) if (n.start) this.start.add(cell(n));
+    this.finds = man.finds.filter((f) => f.kind === 'cache' || f.kind === 'flare');
   }
 
   private num(key: string, fallback: number): number {
@@ -227,6 +267,7 @@ export class AfterHead {
   see(obs: Observe): void {
     this.t = obs.t;
     this.owners.see(obs, this.slot);
+    for (const e of obs.events) if (e.type === 'find') this.taken.add(cell(e));
     for (const n of obs.mine.needles) {
       const k = cell(n);
       if (!this.ours.has(k)) this.ours.set(k, this.known ? obs.t : -1e9);
@@ -297,6 +338,30 @@ export class AfterHead {
       });
     }
 
+    if (this.tactics.noHook) {
+      /* Ткач стоїть на клітині своєї цілі, а шлях ще не порожній - це лише
+         слід гачка знахідки (правила 16.8): гачок веде юнит до знахідки, вертає
+         туди, де він звернув, і лише тоді доводить старий шлях до цілі. move
+         на ту саму клітину дає порожній шлях і ту саму ціль: юнит стоїть і
+         гріє (simHeat дивиться на клітину, не на задачу), а на порожньому
+         шляху гачок не чіпляється. Обрізаємо лише той слід, де знахідка вже
+         нічого не дасть (hookWorth): тоді ткач не втрачає ні тактів, ні
+         заряду. Ціна - звичайна команда (32 байти) */
+      for (const u of obs.mine.units) {
+        const task = u.task;
+        const goal = task?.goal;
+        if (u.cls !== 'ткач' || !task || !goal || goal.q !== u.q || goal.r !== u.r || task.path <= 0) continue;
+        if (task.home || task.ram || u.wait > 0 || u.stuck || commanded(u.id) || this.owners.at(u) === undefined) continue;
+        if (this.hookWorth(u, obs)) continue;
+        const orders = out.map((e) => e.order);
+        if (orders.length + 1 > orderCap(this.world.cfg, obs.pulse.chanAt)) break;
+        if (channelLeft(obs, orders, this.world) < orderCost(this.world.cfg, 'move', u, obs.t, this.world.storms)) break;
+        out.push({ order: { kind: 'move', unit: u.id, q: u.q, r: u.r, goal: { q: u.q, r: u.r }, home: false }, from: 'tactic', at: 0 });
+      }
+    }
+
+    if (this.tactics.cache !== null) out = this.seekCache(obs, out, this.tactics.cache);
+
     const extra: Order[] = [];
     if (this.tactics.cherta && !obs.pub.dawn && !obs.pulse.mercy) {
       /* хто вже йде за черту за старим планом - зупинити; клинок, що глушить
@@ -346,6 +411,70 @@ export class AfterHead {
     }
 
     if (this.tactics.yardCap) out = this.capYard(obs, out);
+    return out;
+  }
+
+  /* скільки заряду дасть схрон зараз: понад стелю згоряє (правила 16.3) */
+  private cacheGain(obs: Observe): number {
+    return Math.max(0, Math.min(this.num('cacheEnergy', 150), this.num('energyCap', 360) - obs.pulse.energy));
+  }
+
+  /* чи є біля юнита (у межах гачка, findHook) невзята знахідка, заради якої
+     варто дати гачку дійти: спалах - завжди (безкоштовний скан, гачок - кілька
+     тактів), схрон - коли від нього лишиться ≥ 50 заряду. Нічого такого - слід
+     гачка порожній: або знахідку вже взято, або вона згорить під стелею */
+  private hookWorth(u: Hex, obs: Observe): boolean {
+    const reach = this.num('findHook', 2);
+    return this.finds.some(
+      (f) => !this.taken.has(cell(f)) && hexDist(u, f) <= reach && (f.kind === 'flare' || this.cacheGain(obs) >= 50),
+    );
+  }
+
+  /* cache:N - схрон дасть повні 150, тож по нього варто сходити: найближчий
+     за часом вільний юнит до N клітин (клинок крокує вдвічі швидше за
+     ткача). Вільний - у зоні (away 0), без тарану, дороги додому й облоги;
+     клинку голова дала нічого або лише «порожній» jam (його місце займе
+     move), ткач без задачі і без команди голови. Ткача, що гріє чи йде до
+     цілі, не знімаємо. По одному юниту на схрон; гачок і сама дорога
+     підберуть його кроком (16.2), після чого голова дасть юниту нову справу */
+  private seekCache(obs: Observe, entries: readonly Tagged[], N: number): Tagged[] {
+    if (this.cacheGain(obs) < this.num('cacheEnergy', 150)) return [...entries];
+    const units = new Map(obs.mine.units.map((u) => [u.id, u]));
+    let out = [...entries];
+    for (const f of this.finds) {
+      const key = cell(f);
+      if (f.kind !== 'cache' || this.taken.has(key)) continue;
+      const sent = this.seekers.get(key);
+      const seeker = sent ? units.get(sent) : undefined;
+      if (seeker && seeker.task && seeker.task.path > 0 && !seeker.task.goal) continue;
+      this.seekers.delete(key);
+      let best: { unit: string; at: Hex; time: number; replaces: number | null } | null = null;
+      for (const u of obs.mine.units) {
+        if (u.stuck || u.wait > 0 || u.away > 0) continue;
+        if (u.task && (u.task.ram || u.task.home)) continue;
+        const mine = out.flatMap((e, i) => ('unit' in e.order && e.order.unit === u.id ? [i] : []));
+        let replaces: number | null = null;
+        if (u.cls === 'клинок') {
+          if (u.task && u.task.jam && u.task.path === 0) continue;
+          if (mine.length) {
+            const only = out[mine[0]!]!.order;
+            if (mine.length !== 1 || only.kind !== 'jam' || only.target !== null || only.hold) continue;
+            replaces = mine[0]!;
+          }
+        } else if (u.task !== null || mine.length) continue;
+        const d = hexDist(u, f);
+        if (d > N) continue;
+        const time = d * (u.cls === 'клинок' ? this.num('stepKlinok', 1) : this.num('stepTkach', 2));
+        if (!best || time < best.time) best = { unit: u.id, at: u, time, replaces };
+      }
+      if (!best) continue;
+      const rest = out.filter((_, i) => i !== best!.replaces);
+      const orders = rest.map((e) => e.order);
+      if (orders.length + 1 > orderCap(this.world.cfg, obs.pulse.chanAt)) continue;
+      if (channelLeft(obs, orders, this.world) < orderCost(this.world.cfg, 'move', best.at, obs.t, this.world.storms)) continue;
+      out = [...rest, { order: { kind: 'move', unit: best.unit, q: f.q, r: f.r, goal: null, home: false }, from: 'tactic', at: 0 }];
+      this.seekers.set(key, best.unit);
+    }
     return out;
   }
 

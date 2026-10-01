@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { seatText } from '../../shared/record.ts';
-import type { LabOptions, RunMeta, RunRequest } from '../../shared/record.ts';
+import type { LabOptions, RunMeta, RunRequest, SeatSpec } from '../../shared/record.ts';
 import { api } from '../lib/api.ts';
 import { SeatEditor } from './SeatEditor.tsx';
 
@@ -11,6 +11,19 @@ const DEFAULT_LINEUP: RunRequest['lineup'] = [
   { kind: 'archetype', name: 'обхідник' },
   { kind: 'archetype', name: 'рівний' },
 ];
+
+/* суперники для випадкового старту: стилі каталогу в нашій обгортці (з
+   типовими надбудовами), архетипи SDK і зразки наказу; голови-накази - ні,
+   це наш бот, а не суперник */
+function opponentPool(options: LabOptions): SeatSpec[] {
+  return [
+    ...options.presets.filter((name) => !name.startsWith('nakaz:')).map((name): SeatSpec => ({ kind: 'ours', name })),
+    ...options.archetypes.map((name): SeatSpec => ({ kind: 'archetype', name })),
+    ...options.nakaz.map((name): SeatSpec => ({ kind: 'nakaz', name })),
+  ];
+}
+
+const pick = <T,>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)]!;
 
 export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => void }) {
   const [options, setOptions] = useState<LabOptions | null>(null);
@@ -41,14 +54,28 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
     };
   }, [busy]);
 
-  const start = async () => {
+  const start = async (request: RunRequest = { seed, ticks, matches, lineup }) => {
     setError(null);
     try {
-      const run = await api.start({ seed, ticks, matches, lineup });
+      const run = await api.start(request);
       setRuns((list) => [run, ...list]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  };
+
+  /* учасник 1 - як вибрано; двоє інших різні й випадкові, долина теж */
+  const startRandom = async () => {
+    if (!options) return;
+    const pool = opponentPool(options);
+    const a = pick(pool);
+    const rest = pool.filter((s) => s.kind !== a.kind || s.name !== a.name);
+    const b = rest.length ? pick(rest) : a;
+    const next: RunRequest['lineup'] = [lineup[0], a, b];
+    const s = Math.floor(Math.random() * 100000);
+    setLineup(next);
+    setSeed(s);
+    await start({ seed: s, ticks, matches, lineup: next });
   };
 
   const remove = async (id: string) => {
@@ -103,6 +130,13 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
             ))}
             <button className="primary" onClick={() => void start()}>
               Зіграти
+            </button>
+            <button
+              className="primary"
+              onClick={() => void startRandom()}
+              title="учасник 1 - як вибрано; двоє інших - випадкові з усіх стилів каталогу (наш бот із типовими надбудовами), архетипів SDK і зразків наказу; долина теж випадкова"
+            >
+              Зіграти з випадковими
             </button>
           </div>
         )}

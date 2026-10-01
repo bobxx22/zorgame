@@ -131,6 +131,14 @@ export function pulseOrder(obs: Observe, orders: readonly Order[], focus: Watch 
      stay:K            - не відкликати додому ткача, якому до захоплення ≤ K
                          тактів і повідець витримає;
      yardcap           - не замовляти юнит понад вагу рою (відмова «вага рою»);
+     nohook            - ткач уже на голці своєї цілі, а сервер веде його ще
+                         слідом гачка знахідки (правила 16.8) - move на ту саму
+                         клітину обрізає зайвий круг, прогрів не переривається.
+                         Лише коли знахідка на гачку нічого не дасть: уже взята
+                         або від схрону під стелею заряду лишиться < 50;
+     cache:N           - схрон дасть повні 150 (заряд + 150 ≤ стеля): по нього
+                         йде найближчий вільний юнит до N клітин - клинок без
+                         справи чи ткач без задачі; ткача, що гріє, не знімаємо;
      gap:N, catch:x,   - числа «вбудованих голів» з маніфесту (правила, A.1)
      bopen:x, rfloor:x   у власному дзеркалі: guardGap, catchFloor, buildOpen,
                          raidFloor. Законів світу вони не міняють, лише голову.
@@ -147,6 +155,8 @@ export interface Tactics {
   cherta: boolean;
   stay: number | null;
   yardCap: boolean;
+  noHook: boolean;
+  cache: number | null;
   /* ключ SIM_CFG -> значення в дзеркалі голови */
   engine: Readonly<Record<string, number>>;
 }
@@ -159,12 +169,13 @@ export const ENGINE_KNOBS: Readonly<Record<string, { key: string; min: number; m
   rfloor: { key: 'raidFloor', min: 0, max: 2, int: false },
 };
 
-export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, engine: {} };
+export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, engine: {} };
 
 /* здача: ZARIA_TACTICS організатори не задають, тож бій іде з цим рядком.
    Порожня змінна (стек часто так задає) - теж цей рядок; без надбудов - none.
-   nofeed:1200 і ram:6 - з пошуку 01.10 разом зі стилем полудень (DEFAULT_PRESET) */
-export const DEFAULT_TACTICS = 'fill:наш:6,nofeed:1200,ram:6';
+   nofeed:1200 і ram:6 - з пошуку 01.10 разом зі стилем полудень (DEFAULT_PRESET);
+   nohook - лише скорочує шлях після гачка знахідки (захоплення на 6 тактів раніше) */
+export const DEFAULT_TACTICS = 'fill:наш:6,nofeed:1200,ram:6,nohook';
 
 /* рядок надбудов; невідоме - у журнал і пропустити */
 export function parseTactics(spec: string | readonly string[] | undefined, log: (line: string) => void = () => undefined): Tactics {
@@ -189,6 +200,8 @@ export function parseTactics(spec: string | readonly string[] | undefined, log: 
     else if (name === 'stay' && after === undefined) out.stay = int(item, charter, 24) ?? out.stay;
     else if (name === 'cherta' && charter === undefined) out.cherta = true;
     else if (name === 'yardcap' && charter === undefined) out.yardCap = true;
+    else if (name === 'nohook' && charter === undefined) out.noHook = true;
+    else if (name === 'cache' && after === undefined) out.cache = int(item, charter, 12) ?? out.cache;
     else if (name && Object.hasOwn(ENGINE_KNOBS, name) && after === undefined) {
       const k = ENGINE_KNOBS[name]!;
       const n = Number(charter);
@@ -272,7 +285,7 @@ export class PulseStrategy implements Strategy {
     this.quiet = 0;
     this.headIdle = 0;
     const t = this.tactics;
-    const needAfter = t.ram !== null || t.hunt !== null || t.stay !== null || t.cherta || t.yardCap;
+    const needAfter = t.ram !== null || t.hunt !== null || t.stay !== null || t.cherta || t.yardCap || t.noHook || t.cache !== null;
     this.after = needAfter && m && this.world ? new AfterHead(t, m, slot, this.world, (at, obs) => this.links(at, obs)) : null;
     hookHead(this.head.mirror(), slot, this.tactics, this.log);
   }

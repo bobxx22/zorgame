@@ -22,19 +22,26 @@ const needles = [
   { q: 3, r: 0, start: null, ring: true, spoke: false },
   { q: 0, r: 4, start: null, ring: false, spoke: false },
 ];
-const man = { needles, cfg, citadel: { q: 0, r: 0 }, cherta: 6 };
+// finds: a cache next to B's needle (10,4) and one far east, a flare by the ruin (14,0), a dead cell that is not pickable
+const finds = [
+  { kind: 'cache', q: 11, r: 4 },
+  { kind: 'cache', q: 18, r: 0 },
+  { kind: 'flare', q: 14, r: 2 },
+  { kind: 'dead', q: 9, r: 4 },
+];
+const man = { needles, cfg, citadel: { q: 0, r: 0 }, cherta: 6, finds };
 const task = { goal: null, site: null, feed: null, jam: null, ram: null, home: false, path: 3 };
 const unit = (id, cls, q, r, extra = {}) => ({ id, cls, q, r, mute: false, stuck: false, wait: 0, work: 0, away: 0, task: null, ...extra });
 const foe = (id, p, q, r, cls = 'ткач') => ({ id, p, cls, q, r });
-const observe = (t, { units = [], foes = [], mine = [], own = [], pact = [], dawn = false, mercy = false, chan = 141 } = {}) => ({
+const observe = (t, { units = [], foes = [], mine = [], own = [], pact = [], dawn = false, mercy = false, chan = 141, energy = 100, events = [] } = {}) => ({
   t,
-  pulse: { energy: 100, chan, chanAt: chan, ear: 1400, earAt: 1400, minutes: 0, needles: 2, mercy },
+  pulse: { energy, chan, chanAt: chan, ear: 1400, earAt: 1400, minutes: 0, needles: 2, mercy },
   mine: { needles: mine.map(([q, r]) => ({ q, r, dark: false, fed: false, weight: 1 })), units, jams: [], losts: [], order: null, pact: {}, ledger: {} },
   own: own.map(([q, r, owner, dark = false]) => ({ q, r, owner, dark })),
   foe: foes,
   noisy: [],
   pub: { pact: { active: pact }, dawn },
-  events: [],
+  events,
 });
 const after = (spec, links = () => false) => new AfterHead({ ...NO_TACTICS, ...parseTactics(spec) }, man, 'A', world, links);
 const head = (order, at = 0) => ({ order, from: 'head', at });
@@ -240,4 +247,90 @@ test('engine knobs parse with bounds and land in the mirror SIM_CFG only', () =>
   assert.deepEqual(E.SIM_CFG, { guardGap: 45, catchFloor: 0.03 });
   // knobs alone do not wrap the head
   assert.equal(E.botOrders, botOrders);
+});
+
+test('nohook cuts the trail of a find hook: a Tkach on its goal needle with path left gets a move onto its own cell', () => {
+  const run = (spec, extra = {}, entries = [], chan = 141) => {
+    const a = after(spec);
+    const units = [unit('T-A1', 'ткач', 10, 4, { task: { ...task, goal: { q: 10, r: 4 }, path: 4 }, ...extra })];
+    const obs = observe(300, { units, own: [[10, 4, 'B']], chan, energy: 340 });
+    a.see(obs);
+    return a.apply(obs, entries).map((e) => [e.order, e.from]);
+  };
+  const cut = [{ kind: 'move', unit: 'T-A1', q: 10, r: 4, goal: { q: 10, r: 4 }, home: false }, 'tactic'];
+  assert.deepEqual(run('nohook'), [cut]);
+  assert.deepEqual(parseTactics('nohook'), { ...NO_TACTICS, noHook: true });
+  assert.deepEqual(parseTactics('cache:6'), { ...NO_TACTICS, cache: 6 });
+  // nothing to cut: the path is spent, the goal is elsewhere, the cell is not a needle, the tactic is off
+  assert.deepEqual(run('nohook', { task: { ...task, goal: { q: 10, r: 4 }, path: 0 } }), []);
+  assert.deepEqual(run('nohook', { task: { ...task, goal: { q: 14, r: 0 }, path: 4 } }), []);
+  assert.deepEqual(run('nohook', { q: 11, r: 4, task: { ...task, goal: { q: 11, r: 4 }, path: 4 } }), []);
+  assert.deepEqual(run('cherta'), []);
+  // a unit mid-step, on its way home, or commanded by the head is left alone
+  for (const extra of [{ wait: 1 }, { stuck: true }, { task: { ...task, goal: { q: 10, r: 4 }, path: 4, home: true } }]) {
+    assert.deepEqual(run('nohook', extra), [], JSON.stringify(extra));
+  }
+  const halt = head({ kind: 'halt', unit: 'T-A1' });
+  assert.deepEqual(run('nohook', {}, [halt]), [[halt.order, 'head']]);
+  // the move costs 32 bytes: 31 left is not enough
+  const three = [0, 1, 2].map((i) => head({ kind: 'yard', cls: 'ткач' }, i));
+  assert.equal(run('nohook', {}, three, 128).length, 4);
+  assert.equal(run('nohook', {}, three, 127).length, 3);
+});
+
+test('nohook lets the hook take a cache that still pays, and cuts the trail once it is taken or would burn', () => {
+  const units = [unit('T-A1', 'ткач', 10, 4, { task: { ...task, goal: { q: 10, r: 4 }, path: 4 } })];
+  const cut = (energy, events = []) => {
+    const a = after('nohook');
+    const obs = observe(300, { units, own: [[10, 4, 'B']], energy, events });
+    a.see(obs);
+    return a.apply(obs, []).length;
+  };
+  assert.equal(cut(100), 0, 'all 150 land: the hook goes on');
+  assert.equal(cut(300), 0, '60 land: still worth it');
+  assert.equal(cut(320), 1, '40 land: not worth 4 ticks');
+  assert.equal(cut(100, [{ type: 'find', p: 'C', q: 11, r: 4, find: 'cache' }]), 1, 'taken: the trail is empty');
+  // a flare within reach always lets the hook go
+  const a = after('nohook');
+  const obs = observe(300, { units: [unit('T-A1', 'ткач', 14, 0, { task: { ...task, goal: { q: 14, r: 0 }, path: 4 } })], energy: 360 });
+  a.see(obs);
+  assert.deepEqual(a.apply(obs, []), []);
+});
+
+test('cache:N sends the fastest free unit for a cache that pays in full, one per cache', () => {
+  const run = (units, energy = 100, entries = [], N = 6) => {
+    const a = after('cache:' + N);
+    const obs = observe(300, { units, energy });
+    a.see(obs);
+    return a.apply(obs, entries).map((e) => e.order);
+  };
+  const go = (id, q, r) => ({ kind: 'move', unit: id, q, r, goal: null, home: false });
+  // a Klinok 3 away (3 ticks) beats a Tkach 2 away (4 ticks)
+  assert.deepEqual(run([unit('K-A1', 'клинок', 14, 4), unit('T-A2', 'ткач', 11, 6)]), [go('K-A1', 11, 4)]);
+  // the empty jam of the head gives way to the move
+  assert.deepEqual(run([unit('K-A1', 'клинок', 14, 4)], 100, [head({ kind: 'jam', unit: 'K-A1', target: null, hold: false })]), [go('K-A1', 11, 4)]);
+  // not when the cache would not land in full, nor beyond N, nor with a busy unit
+  assert.deepEqual(run([unit('K-A1', 'клинок', 14, 4)], 211), []);
+  assert.deepEqual(run([unit('K-A1', 'клинок', 14, 4)], 100, [], 2), []);
+  for (const extra of [{ away: 1 }, { wait: 1 }, { task: { ...task, ram: 'T-B1' } }, { task: { ...task, jam: { q: 1, r: 1 }, path: 0 } }]) {
+    assert.deepEqual(run([unit('K-A1', 'клинок', 14, 4, extra)]), [], JSON.stringify(extra));
+  }
+  assert.deepEqual(run([unit('T-A2', 'ткач', 11, 6, { task: { ...task, goal: { q: 10, r: 4 } } })]), [], 'a Tkach at work stays');
+  assert.deepEqual(run([unit('K-A1', 'клинок', 14, 4)], 100, [head({ kind: 'jam', unit: 'K-A1', target: { q: 10, r: 4 }, hold: false })]), [{ kind: 'jam', unit: 'K-A1', target: { q: 10, r: 4 }, hold: false }]);
+  // one seeker per cache: while it walks, nobody else is sent
+  const a = after('cache:6');
+  let obs = observe(300, { units: [unit('K-A1', 'клинок', 14, 4), unit('K-A2', 'клинок', 13, 4)] });
+  a.see(obs);
+  // the nearer one takes the near cache, the other goes for the second one (18,0), 4 away
+  assert.deepEqual(a.apply(obs, []).map((e) => e.order), [go('K-A2', 11, 4), go('K-A1', 18, 0)]);
+  obs = observe(301, { units: [unit('K-A1', 'клинок', 15, 3, { task: { ...task, path: 3 } }), unit('K-A2', 'клинок', 12, 4, { task: { ...task, path: 1 } }), unit('K-A3', 'клинок', 13, 4)] });
+  a.see(obs);
+  assert.deepEqual(a.apply(obs, []), [], 'both seekers still walk: nobody else is sent');
+  // taken by anyone: nobody is sent there any more; a free Klinok goes for the cache still lying
+  obs = observe(302, { units: [unit('K-A1', 'клинок', 12, 5)], events: [{ type: 'find', p: 'B', q: 11, r: 4, find: 'cache' }] });
+  a.see(obs);
+  assert.deepEqual(a.apply(obs, []).map((e) => e.order), [go('K-A1', 18, 0)]);
+  obs = observe(303, { units: [unit('K-A1', 'клинок', 12, 5)], events: [{ type: 'find', p: 'C', q: 18, r: 0, find: 'cache' }] });
+  a.see(obs);
+  assert.deepEqual(a.apply(obs, []), []);
 });
