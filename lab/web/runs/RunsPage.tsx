@@ -7,7 +7,7 @@ import { api } from '../lib/api.ts';
 import { SeatEditor } from './SeatEditor.tsx';
 
 const DEFAULT_LINEUP: RunRequest['lineup'] = [
-  { kind: 'ours', name: 'світанок' },
+  { kind: 'ours', name: 'полудень' },
   { kind: 'archetype', name: 'обхідник' },
   { kind: 'archetype', name: 'рівний' },
 ];

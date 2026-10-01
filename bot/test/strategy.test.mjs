@@ -137,7 +137,7 @@ test('an unknown preset falls back to the default instead of crashing before the
   assert.equal(presetOrDefault(''), DEFAULT_PRESET);
   assert.equal(presetOrDefault('ÑˆÐ¸Ñ€', (line) => lines.push(line)), DEFAULT_PRESET);
   assert.equal(lines.length, 1);
-  assert.equal(DEFAULT_PRESET, 'світанок');
+  assert.equal(DEFAULT_PRESET, 'полудень');
   for (const name of ['облягач', 'обхідник', 'проривник', 'рівний', 'шир']) assert.ok(presets().includes(name), name);
 });
 
@@ -277,7 +277,7 @@ test('tactics: fill with a charter and a delay, no pacts; unknown ones are logge
   assert.deepEqual(parseTactics('fill:наш:6, nopact'), { fill: { charter: 'наш', after: 6 }, noPact: true, noFeed: null, k0: null, ram: null });
   assert.deepEqual(parseTactics(['nopact']), { fill: null, noPact: true, noFeed: null, k0: null, ram: null });
   assert.deepEqual(parseTactics('none'), NO_TACTICS);
-  assert.deepEqual(parseTactics(DEFAULT_TACTICS), { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: null, k0: null, ram: null });
+  assert.deepEqual(parseTactics(DEFAULT_TACTICS), { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: 6 });
   const lines = [];
   assert.deepEqual(parseTactics('fill:нема,fill:тиск:-1,dance,nopact:1', (l) => lines.push(l)), NO_TACTICS);
   assert.equal(lines.length, 4);
