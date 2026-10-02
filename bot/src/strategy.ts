@@ -177,11 +177,11 @@ export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0
 /* здача: ZARIA_TACTICS організатори не задають, тож бій іде з цим рядком.
    Порожня змінна (стек часто так задає) - теж цей рядок; без надбудов - none.
    nofeed:1200 - з пошуку 01.10 разом зі стилем полудень (DEFAULT_PRESET);
-   nohook - лише скорочує шлях після гачка знахідки; cherta і hunt:6 (таран v2
-   замість ram:6) - див. покажчик у tactics.ts: на змішаному пулі cherta +0.10 ±
-   0.05, hunt ≈ 0; на сильному пулі пара +0.30 / +0.27, переважно проти наших
-   копій. Після правок 02.10 - перемір 2×2 (ram/hunt × з cherta / без) */
-export const DEFAULT_TACTICS = 'fill:наш:6,nofeed:1200,nohook,cherta,hunt:6';
+   nohook - лише скорочує шлях після гачка знахідки; cherta і hunt:12 (таран v2
+   замість ram:6) - див. покажчик у tactics.ts: без cherta мінус 55-90 хвилин за
+   пакет на чужому і змішаному пулах; hunt:12 проти hunt:6 - плюс на всіх трьох
+   пулах (+0.13…+0.39 частки, +51…+72 хвилини) */
+export const DEFAULT_TACTICS = 'fill:наш:6,nofeed:1200,nohook,cherta,hunt:12';
 
 /* рядок надбудов; невідоме - у журнал і пропустити */
 export function parseTactics(spec: string | readonly string[] | undefined, log: (line: string) => void = () => undefined): Tactics {
