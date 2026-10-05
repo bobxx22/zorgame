@@ -1,8 +1,8 @@
 /* lab :: tournaments
-   Турнір - кілька варіантів на місці учасника 1 на тих самих долинах і з
-   тими самими парами суперників. Кожен варіант × долина - звичайний запуск
-   (пакет із трьох партій). Порівняння парне: різниця часток варіанта з
-   варіантом 1 на кожній долині, тож шум долини і суперників віднімається. */
+   A tournament - several variants in participant 1's seat on the same valleys
+   and with the same opponent pairs. Each variant × valley is an ordinary run
+   (a pack of three matches). The comparison is paired: the share difference
+   of a variant vs variant 1 on each valley, so the noise of the valley and the opponents cancels out. */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -29,12 +29,12 @@ export function parseTournament(body: unknown, known: Known): TournamentRequest 
   if (!Number.isInteger(seedFrom) || seedFrom < 0 || seedFrom > 2 ** 31 - 1000) throw new Error('seedFrom');
   if (!Number.isInteger(seeds) || seeds < 1 || seeds > 200) throw new Error('seeds: 1-200');
   if (!Number.isInteger(ticks) || ticks < 10 || ticks > 1200) throw new Error('ticks');
-  if (variants.length * seeds > MAX_PACKS) throw new Error(`не більше ${MAX_PACKS} пакетів за турнір`);
+  if (variants.length * seeds > MAX_PACKS) throw new Error(`no more than ${MAX_PACKS} packs per tournament`);
   const name = String(b.name ?? '').slice(0, 80);
   return { name, variants, opponents, seedFrom, seeds, ticks };
 }
 
-/* пари суперників: усі невпорядковані пари пулу, а з одного суперника - пара з нього самого */
+/* opponent pairs: all unordered pairs of the pool, and from a single opponent - a pair of itself */
 export function opponentPairs(pool: readonly SeatSpec[]): [SeatSpec, SeatSpec][] {
   if (pool.length === 1) return [[pool[0]!, pool[0]!]];
   const pairs: [SeatSpec, SeatSpec][] = [];
@@ -66,13 +66,13 @@ export function deleteTournament(id: string): void {
   if (ID.test(id)) rmSync(join(DIR, id + '.json'), { force: true });
 }
 
-/* новий турнір: запуски створює startRun сервера, тут - розклад */
+/* a new tournament: runs are created by the server's startRun, here - the schedule */
 export function planTournament(request: TournamentRequest, startRun: (seed: number, lineup: [SeatSpec, SeatSpec, SeatSpec], tag: RunMeta['tournament']) => string): Tournament {
   const id = newRunId();
   const pairs = opponentPairs(request.opponents);
   const schedule = Array.from({ length: request.seeds }, (_, i) => pairs[i % pairs.length]!);
   const runs: string[][] = request.variants.map(() => []);
-  /* долина за долиною, усі варіанти поруч: частковий турнір уже порівнянний */
+  /* valley by valley, all variants side by side: a partial tournament is already comparable */
   for (let i = 0; i < request.seeds; i++) {
     for (const [v, variant] of request.variants.entries()) {
       const [a, b] = schedule[i]!;
@@ -91,7 +91,7 @@ const se = (a: readonly number[]): number => {
   return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1) / a.length);
 };
 
-/* зведення: частки за пакет, парна різниця з варіантом 1, місця і складники рахунку */
+/* summary: shares per pack, paired difference vs variant 1, places and score components */
 export function viewTournament(t: Tournament, meta: (id: string) => RunMeta | null): TournamentView {
   const status = { queued: 0, running: 0, done: 0, failed: 0 };
   const metas = t.runs.map((row) => row.map((id) => meta(id)));

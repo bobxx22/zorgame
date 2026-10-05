@@ -1,8 +1,8 @@
 /* lab :: recorder
-   Партія в процесі тим самим рушієм, що й у вузлі, з кадром на кожен такт.
-   Нашого бота бере зібраний bot/dist (та сама стратегія, що грає на вузлі),
-   суперників - дзеркала архетипів SDK або зразки наказу. Запис - формат
-   shared/record.ts. */
+   A match in process by the same engine as in the node, with a frame per tick.
+   Our bot is taken from the built bot/dist (the same strategy that plays on
+   the node), opponents - SDK archetype mirrors or nakaz samples. The record is
+   in the shared/record.ts format. */
 
 import { readFileSync } from 'node:fs';
 import { createEngine } from '@zoria/engine';
@@ -15,6 +15,8 @@ import type { Order } from '@zoria/protocol';
 import { createStrategy, DEFAULT_TACTICS, parseTactics } from '../../bot/dist/strategy.js';
 import type { PulseStrategy } from '../../bot/dist/strategy.js';
 import { seatText, SLOTS, TASKS } from '../shared/record.ts';
+import { makeExtBot } from './ext.ts';
+import { makeMixBot } from './mix.ts';
 import type {
   Actor,
   Contract,
@@ -33,14 +35,14 @@ import type {
 const OUR_NAKAZ = new URL('../../bot/nakaz.yaml', import.meta.url);
 const ACTORS: readonly Actor[] = ['A', 'B', 'C', 'K'];
 
-/* наш бот: WireBot, що запам'ятовує останній кадр спостереження */
+/* our bot: a WireBot that remembers the last observe frame */
 interface Ours extends WireBot {
   strategy: PulseStrategy;
   lastObserve: Uint8Array | null;
 }
 
-/* наказ місця, як його бере вузол: наш бот - bot/nakaz.yaml, архетип - «черепаха»
-   (kit/src/rival.mjs), наказ - він сам */
+/* a seat's nakaz, as the node takes it: our bot - bot/nakaz.yaml, an archetype - "черепаха"
+   (kit/src/rival.mjs), a nakaz - itself */
 export function seatNakaz(spec: SeatSpec): string {
   if (spec.kind === 'ours' || spec.kind === 'our-nakaz') return readFileSync(OUR_NAKAZ, 'utf8');
   if (spec.kind === 'nakaz') return NAKAZ_SAMPLES[spec.name as SampleName];
@@ -49,9 +51,11 @@ export function seatNakaz(spec: SeatSpec): string {
 
 export function makeBot(spec: SeatSpec): WireBot | Ours {
   if (spec.kind === 'archetype') return sampleBot(createEngine, spec.name);
+  if (spec.kind === 'ext') return makeExtBot(spec.name);
+  if (spec.kind === 'mix') return makeMixBot(spec.name);
   if (spec.kind === 'nakaz') return createNakazSparring(NAKAZ_SAMPLES[spec.name as SampleName]);
   if (spec.kind === 'our-nakaz') return createNakazSparring(readFileSync(OUR_NAKAZ, 'utf8'));
-  /* без поля tactics - як у бою; голу голову задає явне none */
+  /* without the tactics field - as in battle; a bare head is set by an explicit none */
   const strategy = createStrategy(spec.name, () => undefined, parseTactics(spec.tactics ?? DEFAULT_TACTICS));
   const ours: Ours = {
     strategy,
@@ -211,7 +215,7 @@ export interface MatchProgress {
   (t: number): void;
 }
 
-/* одна партія: учасники пакета сидять на місцях за пересадкою правил 25.1 */
+/* one match: the pack's participants sit in seats by the rotation of rules 25.1 */
 export function recordMatch(
   index: number,
   seed: number,
@@ -230,7 +234,7 @@ export function recordMatch(
     const bot = makeBot(spec);
     seating[slot] = k;
     labels[slot] = seatText(spec);
-    /* як на вузлі: шість тактів мовчання - і слот веде наказ місця (правила 23.2) */
+    /* as on the node: six ticks of silence - and the seat's nakaz runs the slot (rules 23.2) */
     const guard = new NakazGuard(bot, seatNakaz(spec));
     guards.set(slot, guard);
     bots[slot] = guard;

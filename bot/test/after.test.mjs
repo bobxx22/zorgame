@@ -50,7 +50,7 @@ const home = (id) => head({ kind: 'move', unit: id, q: 12, r: 0, goal: null, hom
 test('the new tokens parse with bounds', () => {
   assert.deepEqual(parseTactics('cherta,stay:6,hunt:5,yardcap'), { ...NO_TACTICS, cherta: true, stay: 6, hunt: 5, yardCap: true });
   const lines = [];
-  assert.deepEqual(parseTactics('cherta:1,stay,stay:25,hunt:13,yardcap:2', (l) => lines.push(l)), NO_TACTICS);
+  assert.deepEqual(parseTactics('cherta:1,stay,stay:25,hunt:25,yardcap:2', (l) => lines.push(l)), NO_TACTICS);
   assert.equal(lines.length, 5);
 });
 
@@ -83,7 +83,7 @@ test('cherta after the head: a Tkach heading inside the line is halted, a Klinok
     out.map((e) => e.order),
     [{ kind: 'jam', unit: 'K-A2', target: null, hold: false }, { kind: 'halt', unit: 'T-A1' }],
   );
-  // a Tkach mid-step is not halted: the gatekeeper would refuse it (code 4, «поворот»)
+  // a Tkach mid-step is not halted: the gatekeeper would refuse it (code 4, "turn")
   const stepping = observe(501, { units: [unit('T-A1', 'ткач', 5, 0, { wait: 1, task: { ...task, goal: { q: 3, r: 0 } } })] });
   a.see(stepping);
   assert.deepEqual(a.apply(stepping, []), []);
@@ -213,7 +213,7 @@ test('yardcap drops an order over the swarm weight, counting hulls in the yard q
 });
 
 test('in a match the full set brings no refusals, no goal inside the line before dawn, and the hunt does ram', () => {
-  const bot = createStrategy('полудень', () => undefined, parseTactics('fill:наш:6,nofeed:1200,cherta,stay:6,hunt:6,yardcap'));
+  const bot = createStrategy('полудень', () => undefined, parseTactics('fill:own:6,nofeed:1200,cherta,stay:6,hunt:6,yardcap'));
   let refused = 0;
   let inside = 0;
   let hunts = 0;
@@ -370,5 +370,5 @@ test('a feeder while nofeed is on is logged once per match', () => {
   const lines = [];
   const bot = createStrategy('полудень', (l) => lines.push(l), parseTactics('nofeed:1200'));
   runMatch(createEngine, { seed: 2026, ticks: 300, bots: { A: bot } });
-  assert.equal(lines.filter((l) => /ткач на підкормці/.test(l)).length, 0, 'the mask works: no feeder at all');
+  assert.equal(lines.filter((l) => /a Tkach is feeding/.test(l)).length, 0, 'the mask works: no feeder at all');
 });

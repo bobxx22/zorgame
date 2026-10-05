@@ -83,7 +83,7 @@ test('hookHead: nofeed marks every own lit needle fed only while the head decide
 test('hookHead leaves the head alone without these tactics, and only logs without an engine', () => {
   const botOrders = () => undefined;
   const E = { BOT_STYLE: { A: { klinok: 0.5 } }, SIM: { t: 0 }, botOrders };
-  hookHead(E, 'A', parseTactics('fill:наш:6,ram:6'), () => undefined);
+  hookHead(E, 'A', parseTactics('fill:own:6,ram:6'), () => undefined);
   assert.equal(E.botOrders, botOrders);
   const lines = [];
   hookHead(null, 'A', { ...NO_TACTICS, noFeed: 600 }, (l) => lines.push(l));
@@ -163,10 +163,10 @@ test('in a match the head obeys nofeed and k0, and the ram brings no refusals', 
     });
     return { ...kinds, refused };
   };
-  const base = run('fill:наш:6');
+  const base = run('fill:own:6');
   assert.ok(base.feed > 0, 'the head feeds without nofeed');
   assert.ok(base.klinokEarly > 0, 'the head buys an early Klinok without k0');
-  const tuned = run('fill:наш:6,nofeed:1200,k0:300,ram:6');
+  const tuned = run('fill:own:6,nofeed:1200,k0:300,ram:6');
   assert.equal(tuned.feed, 0);
   assert.equal(tuned.klinokEarly, 0);
   assert.equal(tuned.refused, 0);
@@ -174,7 +174,8 @@ test('in a match the head obeys nofeed and k0, and the ram brings no refusals', 
 
 test('a nakaz head plays the slot with the pulse: no 6-tick silence, no refusals', () => {
   assert.equal(isPreset('nakaz:експансія'), true);
-  assert.equal(isPreset('nakaz:наш'), true);
+  assert.equal(isPreset('nakaz:own'), true);
+  assert.equal(isPreset('nakaz:наш'), true, 'the old name still works');
   assert.equal(isPreset('nakaz:нема'), false);
   assert.equal(presetOrDefault('nakaz:експансія'), 'nakaz:експансія');
   const bot = createStrategy('nakaz:експансія', () => undefined, parseTactics('none'));

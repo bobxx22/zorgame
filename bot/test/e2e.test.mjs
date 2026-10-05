@@ -40,7 +40,7 @@ test('the bot takes the oath, plays every match to the end and keeps its slot', 
     [false, false, false],
     [false, false, false],
   ]);
-  assert.equal(bot(text).filter((line) => line.includes('партію закінчено (end)')).length, 3, text);
+  assert.equal(bot(text).filter((line) => line.includes('match over (end)')).length, 3, text);
   assert.doesNotMatch(text, /ваш слот вів наказ/);
   for (const n of [1, 2, 3]) {
     const lines = read(`belief-${n}.ndjson`).trim().split('\n');
@@ -55,14 +55,14 @@ test('a node with another engine hash gets no oath from the bot (P2-03)', () => 
   const command = process.platform === 'win32' ? `set ZARIA_ENGINE=${wrong}&& node dist/main.js` : `ZARIA_ENGINE=${wrong} node dist/main.js`;
   // the node waits for the oath the whole lobby: 2 s instead of 10 keep the test short
   const { text } = pack(['--ticks', '30', '--lobby', '2000', '--bot', command]);
-  assert.equal(bot(text).filter((line) => line.includes('у партію не ввійшов')).length, 3, text);
+  assert.equal(bot(text).filter((line) => line.includes('did not enter the match')).length, 3, text);
   assert.equal((text.match(/без присяги/g) ?? []).length, 3, text);
 });
 
 test('a wire broken for 1.5 s mid-match is resumed, and the nakaz never takes the slot', () => {
   const { text, json } = pack(['--ticks', '600', '--bot', 'node test/drop-bot.mjs'], { DROP_AFTER_MS: '1000', DROP_OUTAGE_MS: '1500' });
-  assert.equal(bot(text).filter((line) => line.includes('партію закінчено (end)')).length, 3, text);
-  assert.ok(bot(text).some((line) => /повернень [1-9]/.test(line)), text);
+  assert.equal(bot(text).filter((line) => line.includes('match over (end)')).length, 3, text);
+  assert.ok(bot(text).some((line) => /reconnects [1-9]/.test(line)), text);
   assert.doesNotMatch(text, /ваш слот вів наказ/, text);
   assert.deepEqual(json.absent.flat(), Array(9).fill(false));
 });

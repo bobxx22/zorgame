@@ -1,12 +1,14 @@
-# Лабораторія бота
+# Bot lab
 
-Локальна панель для розбору і порівняння тактик бота частини 2. Партії грає той самий рушій `@zoria/engine`, що й вузол, у процесі без мережі; кожне місце обгорнуте вартою наказу SDK (`NakazGuard`), як на вузлі: шість тактів мовчання - і слот веде наказ місця. Тож пакет лабораторії збігається з `zaria-kit pack` на тому самому жеребі до десятих у рахунку.
+A local panel for analysing and comparing the part 2 bot's tactics. Matches are played by the same `@zoria/engine` as the node, in process without a network; every seat is wrapped in the SDK nakaz guard (`NakazGuard`), as on the node: six ticks of silence - and the seat's nakaz runs the slot. So a lab pack matches `zaria-kit pack` on the same lot to tenths of the score.
 
-Наш бот - зібраний `bot/dist` (голова архетипу і пульс), суперники - дзеркала архетипів SDK або зразки наказу; на вузлі архетип у тиші веде «черепаха», як у `zaria-kit pack`.
+Our bot is the built `bot/dist` (archetype head and pulse), opponents - SDK archetype mirrors, nakaz samples or external bots (`lab/ext`); on the node an archetype in silence is run by "черепаха", as in `zaria-kit pack`.
 
-## Запуск
+Style names (`полудень`, `світанок`, `рівний`, ...) and the engine's words (`ткач`, `клинок`, nakaz sample names) stay in Ukrainian: they are names and values of the game.
 
-Потрібні Node.js 24 і `ZORIA_NPM_AUTH` для встановлення пакетів `@zoria/*` (корінь репозиторію, розділ «Бот»).
+## Running
+
+You need Node.js 24 and `ZORIA_NPM_AUTH` to install the `@zoria/*` packages (repository root, the "Bot" section).
 
 ```bash
 cd lab
@@ -14,21 +16,21 @@ npm install
 npm start
 ```
 
-`npm start` збирає бота (`bot/dist`) і панель (`dist-web`) і запускає сервер на http://127.0.0.1:4747 (порт - `LAB_PORT`). Сервер слухає лише локальну адресу. Для розробки панелі: `npm run serve` в одному терміналі і `npm run dev` в іншому (Vite з проксі `/api`).
+`npm start` builds the bot (`bot/dist`) and the panel (`dist-web`) and starts the server at http://127.0.0.1:4747 (port - `LAB_PORT`). The server listens on the local address only. For panel development: `npm run serve` in one terminal and `npm run dev` in another (Vite with an `/api` proxy).
 
-## Що є
+## What's there
 
-- **Запуски.** Жереб долини, довжина партії, пакет із трьох партій з пересадкою (правила 25.1) або одна партія, три учасники: наш бот із будь-яким пресетом голови, архетип SDK, зразок наказу або наш `nakaz.yaml`. Партії грають потоки, до кількості ядер мінус одне одночасно; записи лягають у `lab/runs/` (не комітиться).
-- **Перегляд партії.** Карта долини такт за тактом: місцевість і рівні, покриття (хто тягне соту), нитки, голки (горить, темна, заглушена, корона, підживлення, кільце), нагрів із прогресом, юнити і їхні цілі, бурі, лоти до розкриття, контракт, знахідки, фокус і скан місця. Шкала часу з відтворенням (2 такти за секунду - темп вузла), позначки захоплень, втрат, лотів, контрактів, зорі й епізодів наказу. Клавіші: пробіл, ← →, Shift - 25 тактів.
-- **Журнал.** Усі події рушія з фільтрами за типом і гравцем; команди кожного місця на кожному такті з вердиктами воротаря (відмови червоним, пульс нашого бота - пунктиром).
-- **Наш бот** без змін у формі грає бойовою конфігурацією: стиль за замовчуванням позначено «(бій)», надбудови - типові (`fill:наш:6`); голу голову задає вимкнення всіх надбудов (`none`).
-- **Надбудови нашого бота** - при виборі учасника: заповнення простою голови наказом (зразок SDK або наш, після N тактів мовчання) і відмова від угод (`bot/README.md`, «Надбудови»). У журналі команд команди наказу-заповнювача - зелені.
-- **Турніри.** До восьми варіантів на місці учасника 1 (наш бот із різними надбудовами або будь-хто як еталон) грають пакети на тих самих долинах проти тих самих пар суперників із пулу. Зведення: середня частка за пакет зі стандартною похибкою, парна різниця з варіантом 1 (зелене - більше двох похибок, тобто не випадковість), місця, складники рахунку, відмови, такти заповнення і такти під наказом; сітка часток по долинах, клік відкриває пакет на карті.
-- **Підсумок.** Місця й частки, рахунок і з чого він складений (мережа, контракти, здобич глушіння, податок угоди), голки, заряд, команди, відмови, пульси і такти, коли слот вів наказ.
+- **Runs.** Valley lot, match length, a pack of three matches with seat rotation (rules 25.1) or a single match, three participants: our bot with any head preset, an SDK archetype, a nakaz sample, our `nakaz.yaml` or an external bot. Matches are played by threads, up to the number of cores minus one at a time; records go to `lab/runs/` (not committed).
+- **Match viewer.** The valley map tick by tick: terrain and levels, coverage (who pulls a cell), threads, needles (lit, dark, jammed, crown, feeding, ring), heating with progress, units and their targets, storms, lots before opening, contract, finds, the seat's focus and scan. A timeline with playback (2 ticks per second - the node's tempo), marks of captures, losses, lots, contracts, dawn and nakaz episodes. Keys: space, ← →, Shift - 25 ticks.
+- **Journal.** All engine events with filters by type and player; every seat's orders on every tick with the gatekeeper's verdicts (rejections in red, our bot's pulse - dashed).
+- **Our bot** unchanged in the form plays the battle configuration: the default style is marked "(battle)", tactics - the defaults (`fill:own:6,...`); a bare head is set by turning all tactics off (`none`).
+- **Our bot's tactics** - when choosing a participant: filling the head's idle time with a nakaz (an SDK sample or ours, after N ticks of silence) and refusing pacts (`bot/README.md`, "Tactics"). In the orders journal the filler nakaz's orders are green.
+- **Tournaments.** Up to eight variants in participant 1's seat (our bot with different tactics or anyone as a reference) play packs on the same valleys against the same opponent pairs from the pool. Summary: average share per pack with standard error, paired difference vs variant 1 (green - more than two errors, i.e. not chance), places, score components, rejections, filled ticks and ticks under the nakaz; a grid of shares by valley, a click opens the pack on the map.
+- **Summary.** Places and shares, the score and what it's made of (network, contracts, jamming loot, pact tax), needles, charge, orders, rejections, pulses and ticks when the nakaz ran the slot.
 
-## Нічний пошук
+## Night search
 
-Пошук стилю голови нашого бота (`bot/src/styles.ts`) без панелі, на всіх ядрах мінус одне:
+A search for our bot's head style (`bot/src/styles.ts`) without the panel, on all cores minus one:
 
 ```bash
 cd lab
@@ -36,23 +38,28 @@ npm run search -- --hours 8
 npm run search -- --hours 5 --start "широблог;зоряний;різчик"
 ```
 
-- Наш бот із типовими надбудовами грає кожним стилем на тих самих долинах (5000-5119) проти пар архетипів SDK по черзі; мірило - парна різниця часток за пакет зі стилем бою (`DEFAULT_PRESET`, зараз `полудень`).
-- Покоління - відсів половинами: усі кандидати на 30 долинах, краща половина - на 60, далі 120. На 10 долинах відсів був би жеребом: шум парної різниці - 1.1-1.8 частки за пакет. Покоління 0 - `--start` (стилі через `;`) або весь каталог; далі - 8 мутацій і схрещень чотирьох кращих за весь час.
-- `klinok` мутує ступенями (досяжні частки клинків у малому рої), `guard` і `pact` - кроком 0.1 (це пороги жеребу), `land` з'являється і зникає.
-- Коли часу лишається лише на перевірку, п'ятеро кращих і основа грають 60 свіжих долин, яких пошук не бачив: відбір на тих самих долинах завищує різницю переможця.
-- Пакет - 22-40 с на потік, залежно від навантаження.
-- Звіт - `runs/search/<id>/report.md`, оновлюється після кожного кроку; кожен пакет - рядок у `results.ndjson`. Стовпець «як основа» - скільки пакетів стиль зіграв точнісінько як основа. Ctrl+C безпечний, `--resume <id> --hours N` продовжує без повторів.
-- `--pool strong` - сильний пул: наш бій і `світанок` / `зоряний` / `широблог` без підкормки, `облягач`, наказ `експансія`. `--pool foreign` - жодної нашої голови без підкормки: архетипи `рівний`, `облягач`, `проривник`, `опортуніст` і `рейдер` лише з `fill:наш:6`, наказ `експансія` - перевіряє, чи надбудова працює не лише проти наших копій.
-- `--pool mixed` - змішаний пул суперників замість архетипів SDK: наш бот у бойовій конфігурації, архетипи `рівний` і `облягач`, стилі рушія `опортуніст` і `рейдер` і бот, чий слот веде наказ `експансія`. Стиль, сильний лише проти архетипів SDK, тут це покаже. Пул закріплюється в `config.json` на старті.
-- Кандидат у `--start` - пресет нашого бота (стиль, рядок стилю або голова-наказ `nakaz:<наказ>`) і, через `|`, свої надбудови замість типових: `світанок|fill:наш:6,ram:6`, `nakaz:експансія|none`. Мутує лише стиль, надбудови успадковуються.
-- Переможця перевірки (і в пошуку, і в `--eval`) ще раз грають на другому свіжому наборі разом з основою: на першому його вибрали, тож там його різниця завищена.
-- Змішаний пул: копія нашого бою (`DEFAULT_PRESET` з `DEFAULT_TACTICS`), `рівний`, `облягач`, `опортуніст` і `рейдер` у нашій обгортці з `fill:наш:6` (закріплено, щоб пул не дрейфував разом із нашими знахідками), бот під наказом `експансія`. Склад пулу з надбудовами - у шапці звіту.
-- `--eval 1` - порівняння без відбору: усі `--start` і основа на `--validate` свіжих долинах, з різницею проти кожного суперника пулу. Для перевірки гіпотез, коли поколінь не треба.
-- Рушій і коміт бота пишуться в `config.json` і шапку звіту; `--resume` на іншому рушії відмовляє.
-- Прапорці: `--hours`, `--workers`, `--from` (перша долина), `--validate` (свіжих долин), `--base`, `--ticks`, `--start`, `--pool`, `--eval`.
+- Our bot with the default tactics plays every style on the same valleys (5000-5119) against pairs of SDK archetypes in turn; the measure is the paired share difference per pack vs the battle style (`DEFAULT_PRESET`, now `полудень`).
+- A generation is halving: all candidates on 30 valleys, the better half on 60, then 120. On 10 valleys the halving would be a lottery: the noise of the paired difference is 1.1-1.8 share per pack. Generation 0 - `--start` (styles separated by `;`) or the whole catalogue; after that - 8 mutations and crossings of the four best of all time.
+- `klinok` mutates in steps (reachable Klinok shares in a small swarm), `guard` and `pact` - in steps of 0.1 (these are lot thresholds), `land` appears and disappears.
+- When time is left only for the check, the five best and the base play 60 fresh valleys the search hasn't seen: selection on the same valleys inflates the winner's difference.
+- A pack takes 22-40 s per thread, depending on the load.
+- The report is `runs/search/<id>/report.md`, updated after every step; every pack is a line in `results.ndjson`. The "as base" column - how many packs the style played exactly like the base. Ctrl+C is safe, `--resume <id> --hours N` continues without repeats.
+- `--pool strong` - the strong pool: our battle bot and `світанок` / `зоряний` / `широблог` without feeding, `облягач`, the `експансія` nakaz. `--pool foreign` - not a single head of ours without feeding: the archetypes `рівний`, `облягач`, `проривник`, `опортуніст` and `рейдер` with `fill:own:6` only, the `експансія` nakaz - checks whether a tactic works not only against copies of ours. `--pool ext` - all external bots from `lab/ext`.
+- `--pool mixed` - a mixed pool of opponents instead of SDK archetypes: our bot in battle configuration, the archetypes `рівний` and `облягач`, the engine styles `опортуніст` and `рейдер` and a bot whose slot is run by the `експансія` nakaz. A style strong only against SDK archetypes will show it here. The pool is fixed in `config.json` at start.
+- A `--start` candidate is a preset of our bot (a style, a style string or a nakaz head `nakaz:<nakaz>`) and, after `|`, its own tactics instead of the defaults: `світанок|fill:own:6,ram:6`, `nakaz:експансія|none`. Only the style mutates, tactics are inherited. With `--eval` a candidate can also be an external bot `ext:<name>` (`ext:a3@order=TTKKK` - with a preset) or a mixed bot `mix:e=<source>,k=<source>` (`server/mix.ts`: the economy of one source, the Klinoks of another; sources - external bots, `ours` or `ours@duck+dawn:40`).
+- The check's winner (both in the search and in `--eval`) plays once more on a second fresh set together with the base: it was chosen on the first one, so its difference there is inflated.
+- The mixed pool: a copy of our battle bot (`DEFAULT_PRESET` with `DEFAULT_TACTICS`), `рівний`, `облягач`, `опортуніст` and `рейдер` in our wrapper with `fill:own:6` (fixed so the pool doesn't drift with our finds), a bot under the `експансія` nakaz. The pool's composition with tactics is in the report header.
+- `--eval 1` - a comparison without selection: all of `--start` and the base on `--validate` fresh valleys, with the difference against each opponent of the pool. For checking hypotheses when generations aren't needed.
+- The engine and the bot commit are written into `config.json` and the report header; `--resume` on another engine refuses.
+- Flags: `--hours`, `--workers`, `--from` (first valley), `--validate` (fresh valleys), `--base`, `--ticks`, `--start`, `--pool`, `--eval`.
+- On a remote server: `scripts/worker.sh` (deploy, start, queue, status, report, pull, stop; see the header of the script).
 
-Рядок стилю з звіту (`широблог+raid=1.5,...`) можна дати боту як `ZARIA_PRESET` або дописати в каталог під іменем.
+A style string from the report (`широблог+raid=1.5,...`) can be given to the bot as `ZARIA_PRESET` or added to the catalogue under a name.
 
-## Формат запису
+## External bots
 
-`shared/record.ts`: статична долина з маніфесту і кадр на кожен такт - гравці, власні голки, юнити, нагрів, події, команди й відмови всіх місць, очі, контракт, а для нашого місця - що бот бачив і коли стріляв пульс. Запис партії - `runs/<запуск>/match-<n>.json.gz`, близько 160 КБ.
+`lab/ext/<name>/strategy.ts` - opponents built by the kit template contract (`createStrategy`, `presets`), compiled next to it into `strategy.js` by `node scripts/ext-build.mjs <name>=<path to strategy.ts>`. They appear in the seat choice, the random opponents, the tournament pool and `--pool ext`.
+
+## Record format
+
+`shared/record.ts`: the static valley from the manifest and a frame per tick - players, owned needles, units, heating, events, orders and rejections of all seats, eyes, contract, and for our seat - what the bot saw and when the pulse fired. A match record is `runs/<run>/match-<n>.json.gz`, about 160 KB.

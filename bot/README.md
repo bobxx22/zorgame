@@ -1,107 +1,112 @@
-# Бот Зорі
+# Zorya bot
 
-Шаблон бота частини 2. Документи частини 2 - у пакеті `@zoria/kit`:
-`npx zaria-kit docs` друкує, де вони лежать.
+The part 2 bot template. The part 2 documents are in the `@zoria/kit` package:
+`npx zaria-kit docs` prints where they are.
 
-## Команди
+## Commands
 
-| Команда | Що робить |
+| Command | What it does |
 |---|---|
-| `npm install` | ставить пакети `@zoria/*` з реєстру (потрібна змінна `ZORIA_NPM_AUTH`, `02-path.md`) |
-| `npm run build` | збирає бота в `dist/` |
-| `npm run play -- --fast` | збирає і грає локальний пакет: три партії, ваш бот у вершинах A, B, C |
-| `npm run play` | те саме в темпі 500 мс на такт, як у заліку |
-| `npm run lint:nakaz` | три ступені лінтера наказу |
-| `npm test` | збирає бота і запускає тести `test/` (вбудований `node --test`, без мережі): пульс, провід, щоденник, службовий порт і три наскрізні пакети локального вузла - звичайний, з чужим рушієм (P2-03) і з обривом проводу на 1,5 с |
-| `npm run play:win -- --fast` | те саме, що `play`, на Windows (див. нижче) |
-| `npx zaria-kit replay records/<пакет>` | відтворити запис і звірити рахунок |
-| `npx zaria-kit version` | хеш рушія і версії пакетів |
+| `npm install` | installs the `@zoria/*` packages from the registry (needs the `ZORIA_NPM_AUTH` variable, `02-path.md`) |
+| `npm run build` | builds the bot into `dist/` |
+| `npm run play -- --fast` | builds and plays a local pack: three matches, your bot at vertices A, B, C |
+| `npm run play` | the same at 500 ms per tick, as in the scoring |
+| `npm run lint:nakaz` | the three stages of the nakaz linter |
+| `npm test` | builds the bot and runs the `test/` tests (built-in `node --test`, no network): pulse, wire, diary, service port and three end-to-end packs on a local node - a normal one, one with a foreign engine (P2-03) and one with a 1.5 s wire drop |
+| `npm run play:win -- --fast` | the same as `play`, on Windows (see below) |
+| `npx zaria-kit replay records/<pack>` | replay a record and check the score |
+| `npx zaria-kit version` | engine hash and package versions |
 
-Прапорці пакета: `--seed`, `--packs`, `--ticks`, `--vs`, `--bot`; усі -
+Pack flags: `--seed`, `--packs`, `--ticks`, `--vs`, `--bot`; all of them -
 `npx zaria-kit help`.
 
-Мова виводу команд - українська: її задає поле `zaria.lang` у `package.json`
-(`uk` або `en`). Разово - прапорець `--lang` або змінна `ZARIA_LANG`.
+The commands' output language is Ukrainian: it is set by the `zaria.lang` field in `package.json`
+(`uk` or `en`). For a single run - the `--lang` flag or the `ZARIA_LANG` variable. The end-to-end
+tests match the node's Ukrainian log lines, so switching it to `en` needs the tests updated too.
 
-## Файли
+## Files
 
-| Файл | Що в ньому |
+| File | What's in it |
 |---|---|
-| `src/strategy.ts` | стратегія: голова-дзеркало зі стилем (`ZARIA_PRESET`, типово `світанок`) і пульс - безпечна команда першою в кадрі після 2 тактів без прийнятої команди (голова мовчить або їй відмовили), щоб слот не переходив до наказу (P2-04) |
-| `src/styles.ts` | стилі голови: каталог (5 архетипів SDK, 3 стилі рушія, 13 наших сумішей) і рядок `основа+ручка=число,...` |
-| `src/wire.ts` | усе навколо стратегії: параметри з'єднання й повернення після обриву, щоденник віри, знімок голови для службового порту |
-| `src/main.ts` | запуск: оточення, присяга з повтором входу, службовий порт; решта - у `wire.ts` |
-| `src/jitter.ts` | пауза повтору першого входу |
-| `src/status.ts` | внутрішній службовий порт голови (`STATUS_PORT`); його читає стек |
-| `nakaz.yaml` | ваша грамота; зразок - `minutes.yaml` SDK |
-| `.npmrc` | реєстр `@zoria` і посилання на змінну `ZORIA_NPM_AUTH`; секрету у файлі немає |
+| `src/strategy.ts` | strategy: a mirror head with a style (`ZARIA_PRESET`, `полудень` by default) and a pulse - a safe order first in the frame after 2 ticks without an accepted order (the head is silent or was rejected), so the slot doesn't pass to the nakaz (P2-04) |
+| `src/tactics.ts` | tactics inside the head and after it (see the index at the top of the file) |
+| `src/styles.ts` | head styles: the catalogue (5 SDK archetypes, 3 engine styles, our mixes) and the string `base+knob=number,...` |
+| `src/wire.ts` | everything around the strategy: connection and reconnect options, belief diary, head snapshot for the service port |
+| `src/main.ts` | startup: environment, oath with entry retries, service port; the rest is in `wire.ts` |
+| `src/jitter.ts` | the pause before retrying the first entry |
+| `src/status.ts` | the head's internal service port (`STATUS_PORT`); the stack reads it |
+| `nakaz.yaml` | our charter; sample - the SDK's `minutes.yaml` |
+| `.npmrc` | the `@zoria` registry and a reference to the `ZORIA_NPM_AUTH` variable; there is no secret in the file |
 
-`records/` - записи локальних пакетів; у репозиторій не комітиться.
+`records/` - local pack records; not committed to the repository.
 
-## Стилі голови
+Style names (`полудень`, `світанок`, `рівний`, ...) and the engine's words (`ткач`, `клинок`, `різчик`, nakaz sample names) stay in Ukrainian: they are names and values of the game, not text.
 
-Голова одна - дзеркало рушія (`MirrorBot`); стиль - лише ваги її оцінок: що скільки коштує (руїна, чужа голка, глушіння, контракт, будівництво, запасний шлях, облога, угода). `ZARIA_PRESET` - ім'я з каталогу `src/styles.ts` або рядок `основа+ручка=число,...`, наприклад `рівний+raid=1.5,pact=1` чи `облягач+mind=`. Межі ручок - `KNOB_MAX`, ручка `land` (0-2) - лише задана явно; неправильний рядок - граємо стиль за замовчуванням.
+## Head styles
 
-Типово - `полудень` з надбудовами `nofeed:1200` і `ram:6`: переможець пошуку 01.10, де стиль шукали разом із цими надбудовами (`світанок` із `grow 2.25`, `order 1.55`, `raid 1.35`, `scout 1.35`, `siege 1.2`, `build 0.25`, `land 1`). До `світанок` з `fill:наш:6`, що грав у бою до того: **+1.55 ± 0.21** частки за пакет на 60 свіжих долинах проти змішаного пулу, 84 % перших місць, 0.2 відмови за пакет; кращий проти кожного суперника пулу (+1.1…+2.75). Це кращий із п'яти фіналістів на тих самих 60 долинах (решта +1.27…+1.50), тож відбір його трохи завищує. Із чого складається: `nofeed:1200` - близько +1.05, `ram:6` - +0.17, сам стиль - близько +0.2 (до `світанок` з тими самими надбудовами: +0.23 ± 0.10 на 120 долинах пошуку).
+There is one head - the engine mirror (`MirrorBot`); a style is only the weights of its estimates: what costs how much (ruin, foreign needle, jamming, contract, building, spare path, siege, pact). `ZARIA_PRESET` is a name from the `src/styles.ts` catalogue or a string `base+knob=number,...`, for example `рівний+raid=1.5,pact=1` or `облягач+mind=`. Knob bounds - `KNOB_MAX`, the `land` knob (0-2) - only when set explicitly; an invalid string - we play the default style.
 
-Попередні кроки, парна різниця часток за пакет на долинах, яких відбір не бачив:
+Default - `полудень` with the tactics `nofeed:1200` and `ram:6`: the winner of the 01.10 search, where the style was searched together with these tactics (`світанок` with `grow 2.25`, `order 1.55`, `raid 1.35`, `scout 1.35`, `siege 1.2`, `build 0.25`, `land 1`). Vs `світанок` with `fill:own:6`, which played in battle before: **+1.55 ± 0.21** share per pack on 60 fresh valleys vs the mixed pool, 84 % first places, 0.2 rejections per pack; better against every opponent in the pool (+1.1…+2.75). It's the best of five finalists on the same 60 valleys (the rest +1.27…+1.50), so the selection inflates it a little. What it's made of: `nofeed:1200` - about +1.05, `ram:6` - +0.17, the style itself - about +0.2 (vs `світанок` with the same tactics: +0.23 ± 0.10 on 120 search valleys).
 
-| стиль | проти пар архетипів SDK | проти змішаного пулу | 1-ші місця |
+Earlier steps, paired share difference per pack on valleys the selection didn't see:
+
+| style | vs pairs of SDK archetypes | vs the mixed pool | 1st places |
 |---|---|---|---|
-| `світанок` | +0.83 ± 0.15 до `широблог` (60 долин) | +1.06 ± 0.12 до `широблог` (120 долин) | 54-60% |
-| `широблог` | +0.53 ± 0.17 до `рівний` (80 долин) | 0 | 35-43% |
+| `світанок` | +0.83 ± 0.15 vs `широблог` (60 valleys) | +1.06 ± 0.12 vs `широблог` (120 valleys) | 54-60% |
+| `широблог` | +0.53 ± 0.17 vs `рівний` (80 valleys) | 0 | 35-43% |
 | `рівний` | 0 | - | 30% |
 
-Змішаний пул - наш бот у бойовій конфігурації, архетипи `рівний` і `облягач`, стилі рушія `опортуніст` і `рейдер`, бот під наказом `експансія`. Проти кожного суперника пулу `світанок` кращий за `широблог` на +0.8…+1.3 частки за пакет. +1.06 ± 0.12 - це 120 долин пошуку, де `світанок` був стартовим стилем, а не відібраним, тож відбір цю цифру не завищує. Найсильніший у пулі все ж не голова, а бот під наказом `експансія` (4 ткачі, без клинків, угод і підкормки): на 30 пакетах перевірки 30.09-01.10 він набирав 7.6 частки за пакет. Після зсуву світу 05.10 перемірити. Кращий стиль шукає нічний пошук лабораторії (`lab/README.md`, «Нічний пошук»).
+The mixed pool - our bot in battle configuration, the archetypes `рівний` and `облягач`, the engine styles `опортуніст` and `рейдер`, a bot under the `експансія` nakaz. Against every opponent in the pool `світанок` beats `широблог` by +0.8…+1.3 share per pack. +1.06 ± 0.12 is 120 search valleys where `світанок` was the starting style, not a selected one, so the selection doesn't inflate this number. The strongest in the pool is still not a head, but the bot under the `експансія` nakaz (4 Tkachs, no Klinoks, pacts or feeding): on 30 check packs on 30.09-01.10 it scored 7.6 share per pack. Re-measure after the 05.10 world shift. The best style is searched by the lab's night search (`lab/README.md`, "Night search").
 
-## Надбудови
+## Tactics
 
-Над головою - надбудови. Типово (змінна `ZARIA_TACTICS` не задана або порожня) бот грає з `fill:наш:6,nofeed:1200,nohook,cherta,hunt:12`. Із 02.10 `cherta` і таран v2 `hunt` (замість `ram:6`). Три пули: сильний (наш бій, `світанок` / `зоряний` / `широблог` без підкормки, `облягач`, наказ `експансія`), чужий (архетипи `рівний` / `облягач` / `проривник`, стилі `опортуніст` / `рейдер` лише з заповнювачем, наказ `експансія` - жодної нашої копії) і змішаний. Перемір 2×2 після правок 02.10 (120-150 свіжих долин на пул): без `cherta` бій втрачає 13-35 хвилин за пакет на сильному, 77-90 на чужому і 55-60 на змішаному; при `cherta` таран `hunt:6` і `ram:6` рівні. Радіус мисливця 12 замість 6: чужий пул +0.13 ± 0.04 частки (+57 хвилин) і +0.13 ± 0.04 (+51) на другому наборі, сильний +0.23 ± 0.08 і +0.39 ± 0.09, змішаний +0.16 ± 0.06 - плюс проти кожного суперника, відмов не більше. Заповнювач спрацьовує рідко, близько такту за партію: на 60 свіжих долинах бот без надбудов проти `fill:наш:6` - −0.10 ± 0.15 частки за пакет, у межах похибки. Його лишено, бо шкоди немає, а в довгий простій він дає ткача. Інший набір задається `ZARIA_TACTICS` через кому, `none` - без надбудов:
+On top of the head - tactics. By default (the `ZARIA_TACTICS` variable is unset or empty) the bot plays with `fill:own:6,nofeed:1200,nohook,cherta,hunt:12`. Since 02.10 - `cherta` and ram v2 `hunt` (instead of `ram:6`). Three pools: strong (our battle bot, `світанок` / `зоряний` / `широблог` without feeding, `облягач`, the `експансія` nakaz), foreign (archetypes `рівний` / `облягач` / `проривник`, styles `опортуніст` / `рейдер` with the filler only, the `експансія` nakaz - no copy of ours) and mixed. Re-measure 2×2 after the 02.10 fixes (120-150 fresh valleys per pool): without `cherta` the battle bot loses 13-35 minutes per pack on the strong pool, 77-90 on the foreign one and 55-60 on the mixed one; with `cherta` the rams `hunt:6` and `ram:6` are equal. Hunter radius 12 instead of 6: foreign pool +0.13 ± 0.04 share (+57 minutes) and +0.13 ± 0.04 (+51) on the second set, strong +0.23 ± 0.08 and +0.39 ± 0.09, mixed +0.16 ± 0.06 - a plus against every opponent, no more rejections. The filler fires rarely, about one tick per match: on 60 fresh valleys the bot without tactics vs `fill:own:6` - −0.10 ± 0.15 share per pack, within the error. It is kept because it does no harm, and in a long idle stretch it gives a Tkach. Another set is given by `ZARIA_TACTICS`, comma separated, `none` - no tactics:
 
-| Надбудова | Що робить |
+| Tactic | What it does |
 |---|---|
-| `fill:<наказ>[:N]` | простій голови заповнює наказ: зразок SDK (`черепаха`, `експансія`, `економка`, `хвилини`, `замовлення`, `тиск`) або `наш` (`nakaz.yaml`). Наказ іде всередині бота кожен такт; його команди йдуть у кадр, коли голова мовчить понад N тактів (типово 0). Слот лишається за ботом - це не епізод наказу вузла |
-| `nopact` | не пропонувати і не приймати угод: податок угоди - десята частка доходу кожного такту (правила 19.5). Шкодить: −0.55 ± 0.23 частки за пакет на 40 свіжих долинах |
-| `nofeed:T` | голова не ставить ткачів на підкормку до такту T (1200 - ніколи). У її черзі рішень підкормка стоїть раніше за ціль, і перший вільний ткач після 4 горящих голок іде годувати назавжди. Надбудова на час рішення голови позначає всі свої горящі голки як уже підживлені (`src/tactics.ts`) |
-| `k0:T` | без клинків у верфі до такту T: голова читає ручку `klinok` щотакту, надбудова тримає її нулем |
-| `ram:R` | таран: вільний клинок до R кроків таранить чужого ткача, що стоїть на голці, яка не його. Таран чистий (клинок живе, правила 11.7), лише якщо ткач у мить удару гріє чи будує; інакше - розмін клинка (50) на ткача (90). Спершу ткачі на наших голках; не Ключник і не партнер угоди; канал і стелю кадру перевірено; відмовлену пару «мисливець - ціль» 15 тактів не повторює |
-| `hunt:R` | таран v2 (бій - `hunt:12`, R - найбільша відстань мисливець-здобич): мисливець - клинок у зоні, якому голова нічого не дала або дала лише «порожній» `jam` (його місце займає таран); тримач облоги - лише на нашу голку до 3 кроків. Здобич стоїть на клітині ≥ 3 тактів, не на стартовій, не на голці партнера своєї угоди, не на нашій голці в паузі після захоплення; клинок встигає до кінця прогріву. Погоню, що втратила сенс (здобич зійшла, голка стала її), знято безкоштовним `halt` |
-| `cherta` | до зорі й без милості голова на час рішення не бачить голок за чертою: Ключник таранить ткачів, що їх гріють, а захоплень там майже немає. Ткача, що вже йде за черту, зупинено; клинок, що глушив би кільце зсередини черти, - без цілі |
-| `stay:K` | не відкликати додому ткача, якому до захоплення чужої чи нічиєї голки ≤ K тактів, якщо повідець витримає (`away` + залишок + дорога назад + 4 ≤ `autonomy`); за чертою до зорі - не тримати |
-| `nohook` | гачок знахідки (правила 16.8) веде юнит до тайника чи спалаху і назад у точку, де він звернув, навіть коли ткач уже стоїть на голці своєї цілі. Тоді надбудова дає `move` на ту саму клітину: шлях порожній, ціль та сама, прогрів не переривається (`simHeat` дивиться на клітину, а не на задачу). На долині 45092 захоплення на 3 такти раніше, схрон підібрано там само. Обрізає лише слід, де знахідка вже нічого не дасть (взята, або від схрону під стелею лишиться < 50); схрон, що ще платить, гачок довозить. На двох наборах по 60 долин ±0.03 - вплив у межах шуму, ризику немає. Увімкнено в бою |
-| `cache:N` | схрон дасть повні 150 (заряд + 150 ≤ 360) - по нього йде найближчий за часом вільний юнит до N клітин: клинок без справи (крокує вдвічі швидше) чи ткач без задачі; ткача, що гріє чи йде до цілі, не знімаємо; по одному юниту на схрон. Вимкнено: +0.02 ± 0.04 і +0.03 ± 0.06 на двох наборах по 60 долин, але ~0.1 відмови на пакет |
-| `yardcap` | не замовляти юнит понад вагу рою: юнити на полі й корпуси в черзі верфі плюс новий ≤ `squadWeight` (відмова «вага рою», найчастіша в голови-наказу) |
+| `fill:<nakaz>[:N]` | the head's idle time is filled by a nakaz: an SDK sample (`черепаха`, `експансія`, `економка`, `хвилини`, `замовлення`, `тиск`) or `own` (`nakaz.yaml`; the old name `наш` still works). The nakaz runs inside the bot every tick; its orders go into the frame when the head is silent for more than N ticks (0 by default). The slot stays with the bot - this is not the node's nakaz episode |
+| `nopact` | never offer or accept pacts: the pact tax is a tenth of the income of every tick (rules 19.5). Harmful: −0.55 ± 0.23 share per pack on 40 fresh valleys |
+| `nofeed:T` | the head doesn't put Tkachs on feeding before tick T (1200 - never). In its decision queue feeding comes before the target, and the first free Tkach after 4 lit needles goes feeding for good. For the time of the head's decision the tactic marks all our lit needles as already fed (`src/tactics.ts`) |
+| `k0:T` | no Klinoks from the yard before tick T: the head reads the `klinok` knob every tick, the tactic keeps it at zero |
+| `ram:R` | ram: a free Klinok within R steps rams an enemy Tkach standing on a needle that isn't his. The ram is clean (the Klinok lives, rules 11.7) only if the Tkach is heating or building at the moment of impact; otherwise it's a trade of a Klinok (50) for a Tkach (90). Tkachs on our needles first; not the Keeper and not a pact partner; channel and frame cap are checked; a rejected "hunter - target" pair isn't repeated for 15 ticks |
+| `hunt:R` | ram v2 (battle - `hunt:12`, R - the largest hunter-prey distance): the hunter is a Klinok in the zone that the head gave nothing or only an "empty" `jam` (the ram takes its place); a siege holder - only for our needle within 3 steps. The prey has stood on the cell ≥ 3 ticks, not on a start needle, not on its pact partner's needle, not on our needle in the pause after a capture; the Klinok makes it before the heating ends. A chase that lost its point (the prey stepped off, the needle became its own) is dropped with a free `halt` |
+| `cherta` | before dawn and without mercy the head, for the time of the decision, doesn't see needles inside the cherta: the Keeper rams the Tkachs that heat them, and there are almost no captures there. A Tkach already heading inside the line is stopped; a Klinok that would jam the ring from inside the line - without a target |
+| `stay:K` | don't recall home a Tkach that is ≤ K ticks from capturing a foreign or unowned needle if the leash holds (`away` + remainder + way back + 4 ≤ `autonomy`); inside the line before dawn - don't hold |
+| `nohook` | a find's hook (rules 16.8) leads a unit to a cache or flare and back to the point where it turned, even when the Tkach already stands on its target needle. Then the tactic gives a `move` to the same cell: the path is empty, the target is the same, heating isn't interrupted (`simHeat` looks at the cell, not the task). On valley 45092 the capture is 3 ticks earlier, the cache is picked up all the same. Cuts only the trail where the find gives nothing any more (taken, or a cache under the cap would leave < 50); a cache that still pays is delivered by the hook. On two sets of 60 valleys ±0.03 - within the noise, no risk. On in battle |
+| `cache:N` | a cache gives the full 150 (charge + 150 ≤ 360) - the nearest-in-time free unit within N cells goes for it: an idle Klinok (steps twice as fast) or a Tkach without a task; a Tkach that heats or walks to its target is never taken off; one unit per cache. Off: +0.02 ± 0.04 and +0.03 ± 0.06 on two sets of 60 valleys, but ~0.1 rejections per pack |
+| `yardcap` | don't order a unit above the swarm weight: units in the field and hulls in the yard queue plus the new one ≤ `squadWeight` (the "swarm weight" rejection, the most frequent for a nakaz head) |
+| `dawn:N`, `loot:K`, `duck` | experimental (ideas from external bots, 03-04.10): a Tkach waits for dawn next to a ring needle; Klinoks jam a lit ring needle from beyond the line for loot; a working Tkach steps aside from an enemy Klinok. Not in battle: `duck` measured 0…+0.2 ± 0.17 |
 
-Перевірка 01.10 (`--eval`, 60 свіжих долин, змішаний пул, до `світанок` з `fill:наш:6`): `nofeed:1200` +1.05 ± 0.19, `nofeed:600` +0.78 ± 0.20, `k0:400` +0.28 ± 0.17, `ram:6` +0.17 ± 0.09. У бою - `nofeed:1200` і `ram:6`; `k0` вимкнено.
+The 01.10 check (`--eval`, 60 fresh valleys, mixed pool, vs `світанок` with `fill:own:6`): `nofeed:1200` +1.05 ± 0.19, `nofeed:600` +0.78 ± 0.20, `k0:400` +0.28 ± 0.17, `ram:6` +0.17 ± 0.09. In battle at that time - `nofeed:1200` and `ram:6`; `k0` off.
 
-### Голова-наказ
+### Nakaz head
 
-`ZARIA_PRESET=nakaz:<наказ>` (зразок SDK або `наш`) - замість дзеркала рушія думає наказ усередині бота. Пульс і надбудови після голови діють як завжди, тож слот лишається за ботом: голий наказ на місці мовчить у такти без справ, і вузол віддає слот наказу (правила 23.2). Щоденник віри в такої голови порожній.
+`ZARIA_PRESET=nakaz:<nakaz>` (an SDK sample or `own`) - instead of the engine mirror, a nakaz thinks inside the bot. The pulse and the tactics after the head work as always, so the slot stays with the bot: a bare nakaz in its place is silent in ticks without business, and the node gives the slot to the nakaz (rules 23.2). Such a head's belief diary is empty.
 
-Яка надбудова сильніша, вирішує турнір лабораторії (`lab/`): ті самі долини й суперники, парне порівняння з еталоном.
+Which tactic is stronger is decided by the lab's tournament (`lab/`): the same valleys and opponents, a paired comparison with the reference.
 
 ## Windows
 
-- `@zoria/server` після кожного запису синхронізує каталог (`fsync`), а Windows цього не вміє (`EPERM`), і пакет зупиняється після першої партії. `npm run play:win` запускає пакет із `scripts/win-fsync.mjs`: на Windows синхронізація каталогу стає порожньою, файли синхронізуються як і раніше; на Linux і macOS нічого не змінюється. Прапорець діє лише на процес пакета, тож `node` і `npm` в інших каталогах він не зачіпає:
+- `@zoria/server` syncs the directory (`fsync`) after every write, and Windows can't do that (`EPERM`), so the pack stops after the first match. `npm run play:win` runs the pack with `scripts/win-fsync.mjs`: on Windows the directory sync becomes a no-op, files are synced as before; on Linux and macOS nothing changes. The flag applies only to the pack process, so it doesn't touch `node` and `npm` in other directories:
 
   ```powershell
   npm run play:win -- --fast
   ```
 
-- Команда `--bot` іде через `cmd`, тож змінну середовища задають так (перевірка P2-03):
+- The `--bot` command goes through `cmd`, so an environment variable is set like this (the P2-03 check):
 
   ```powershell
   npm run play:win -- --fast --ticks 60 --bot "set ZARIA_ENGINE=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&& node dist/main.js"
   ```
 
-- Провокатор рівня 3 (`--provoke 3`) на Windows нічого не перевіряє: кит запускає бота через оболонку, і `SIGKILL` вбиває `cmd.exe`, а не `node`. Рівень 3 - у WSL або Linux; на Windows показові лише рівні 1 і 2.
+- The level 3 provocateur (`--provoke 3`) checks nothing on Windows: the kit starts the bot through a shell, and `SIGKILL` kills `cmd.exe`, not `node`. Level 3 - in WSL or Linux; on Windows only levels 1 and 2 are meaningful.
 
-## Службовий порт
+## Service port
 
-`STATUS_PORT` вмикає внутрішній порт голови: `GET /state` віддає знімок
-проводу (такт, кадри, лічильники, щоденник), `POST /preset` змінює пресет
-між партіями. Локальному пакету він не потрібен і типово вимкнений;
-вмикає його стек частини 4 (`npx zaria-kit init stack`), і з цього знімка
-його control-plane збирає `/health` і `/metrics` службового контракту.
-З увімкненим портом голова не виходить після партії, а лишається жива і
-відповідає про її кінець.
+`STATUS_PORT` turns on the head's internal port: `GET /state` returns a snapshot
+of the wire (tick, frames, counters, diary), `POST /preset` changes the preset
+between matches. The local pack doesn't need it and it is off by default;
+the part 4 stack turns it on (`npx zaria-kit init stack`), and from this snapshot
+its control-plane builds `/health` and `/metrics` of the service contract.
+With the port on, the head doesn't exit after a match but stays alive and
+reports its end.

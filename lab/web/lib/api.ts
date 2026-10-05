@@ -1,4 +1,4 @@
-/* Звернення панелі до сервера лабораторії. */
+/* The panel's calls to the lab server. */
 
 import type { LabOptions, MatchRecord, RunMeta, RunRequest, TournamentRequest, TournamentView } from '../../shared/record.ts';
 

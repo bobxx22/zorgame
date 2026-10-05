@@ -1,6 +1,6 @@
 /* lab :: search-worker
-   Потік нічного пошуку: бере пакети по одному з головного потоку і віддає
-   підсумок. Живе весь пошук - рушій і бот завантажуються один раз. */
+   A night search thread: takes packs one by one from the main thread and
+   returns the result. Lives for the whole search - the engine and the bot are loaded once. */
 
 import { parentPort } from 'node:worker_threads';
 import type { SeatSpec } from '../shared/record.ts';

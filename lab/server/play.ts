@@ -1,6 +1,6 @@
 /* lab :: play
-   Пакет без запису кадрів: ті самі місця, пересадка і вартовий наказу, що й
-   у recordMatch, але лише підсумок - для нічного пошуку, де пакетів тисячі. */
+   A pack without recording frames: the same seats, rotation and nakaz guard as
+   in recordMatch, but only the result - for the night search, where packs number in thousands. */
 
 import { createEngine } from '@zoria/engine';
 import { openMatch, placementShares } from '@zoria/sdk';
@@ -11,16 +11,16 @@ import { SLOTS } from '../shared/record.ts';
 import type { SeatSpec, Slot } from '../shared/record.ts';
 import { makeBot, seatNakaz } from './recorder.ts';
 
-/* підсумок учасника за пакет */
+/* a participant's result per pack */
 export interface PackSeat {
   share: number;
   places: number[];
   score: number;
-  /* середній рахунок двох суперників за столом, сума за пакет: різниця в
-     хвилинах тонша за місця, коли частки впираються в стелю шкали */
+  /* the average score of the two opponents at the table, sum per pack: the
+     difference in minutes is finer than places when shares hit the scale's ceiling */
   oppScore: number;
   denials: number;
-  /* відмови за джерелом, командою і кодом: «head:needle:11» (лише наш бот) */
+  /* rejections by source, order and code: "head:needle:11" (our bot only) */
   denialKinds: Record<string, number>;
   nakazTicks: number;
 }
@@ -31,7 +31,7 @@ export function playPack(seed: number, ticks: number, lineup: readonly [SeatSpec
     const seatOf = {} as Record<Slot, number>;
     const bots: Partial<Record<Slot, WireBot>> = {};
     const guards = new Map<Slot, NakazGuard>();
-    /* наш бот (його strategy знає джерела команд кадру) і останній кадр команд місць */
+    /* our bot (its strategy knows the sources of the frame's orders) and the seats' last order frame */
     const ours = new Map<Slot, { strategy: { lastSources: readonly string[] } }>();
     const sent = new Map<Slot, { kind: string }[]>();
     for (let k = 0; k < 3; k++) {

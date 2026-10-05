@@ -1,4 +1,4 @@
-/* Кольори й підписи панелі: місця, місцевість, події, відмови воротаря. */
+/* Panel colours and labels: seats, terrain, events, gatekeeper rejections. */
 
 import type { Actor } from '../../shared/record.ts';
 
@@ -21,157 +21,157 @@ export const TERRAIN_COLOR: Record<string, string> = {
 };
 
 export const TERRAIN_NAME: Record<string, string> = {
-  bare: 'пустка',
-  meadow: 'луг',
-  wood: 'ліс',
-  sand: 'пісок',
-  marsh: 'болото',
-  hill: 'пагорб',
-  water: 'вода',
-  mount: 'гора',
+  bare: 'wasteland',
+  meadow: 'meadow',
+  wood: 'forest',
+  sand: 'sand',
+  marsh: 'marsh',
+  hill: 'hill',
+  water: 'water',
+  mount: 'mountain',
 };
 
 export const FIND_NAME: Record<string, string> = {
-  cache: 'схованка (+150 заряду)',
-  flare: 'спалах (безкоштовний скан)',
-  still: 'тиха заводь',
-  dead: 'мертва сота',
-  echo: 'гніздо відлуння',
+  cache: 'cache (+150 charge)',
+  flare: 'flare (free scan)',
+  still: 'still backwater',
+  dead: 'dead cell',
+  echo: 'echo nest',
 };
 
 export const FIND_GLYPH: Record<string, string> = { cache: '⚡', flare: '✦', still: '◌', dead: '✕', echo: '≈' };
 
-/* коди відмов воротаря (протокол 6.6) */
+/* gatekeeper rejection codes (protocol 6.6) */
 export const DENY = [
-  'прийнято',
-  'сміття',
-  'стеля',
-  'машина',
-  'поворот',
-  'тариф',
-  'канал',
-  'вуха',
-  'верф',
-  'заряд',
-  'вага рою',
-  'земля',
-  'немає шляху',
-  'не своя голка',
-  'спалах',
-  'погляд',
-  'таран',
-  'ціль',
-  'глушіння',
-  'угода',
-  'клич',
-  'відмова',
-  'торги',
+  'accepted',
+  'garbage',
+  'cap',
+  'machine',
+  'turn',
+  'tariff',
+  'channel',
+  'ears',
+  'yard',
+  'charge',
+  'swarm weight',
+  'ground',
+  'no path',
+  'not own needle',
+  'flare',
+  'view',
+  'ram',
+  'target',
+  'jamming',
+  'pact',
+  'cry',
+  'refusal',
+  'bidding',
 ] as const;
 
 export const CRIES = [
-  'йду в кільце',
-  'тримаю своє',
-  'шукаю угоди',
-  'шукаю миру',
-  'йду на лідера',
-  'йду на слабшого',
-  'пережидаю бурю',
-  'добра гра',
+  'going for the ring',
+  'holding my own',
+  'looking for a pact',
+  'looking for peace',
+  'going for the leader',
+  'going for the weaker',
+  'waiting out the storm',
+  'good game',
 ];
 
 export const EVENT_NAME: Record<string, string> = {
-  build: 'вихід із двору',
-  raise: 'нова голка',
-  cap: 'захоплення',
-  lost: 'втрата',
-  jam: 'глушіння',
-  ram: 'таран',
-  cut: 'розрив нитки',
-  find: 'знахідка',
-  lot: 'лот',
-  order: 'контракт',
-  orderDone: 'контракт виконано',
-  pact: 'угода',
-  pactBreak: 'розрив угоди',
-  pactGone: 'угода скінчилась',
-  cry: 'клич',
-  dawn: 'зоря',
-  mercy: 'милість',
-  out: 'вибув',
-  scan: 'скан',
-  deny: 'відмова',
-  note: 'нотатка',
+  build: 'left the yard',
+  raise: 'new needle',
+  cap: 'capture',
+  lost: 'loss',
+  jam: 'jamming',
+  ram: 'ram',
+  cut: 'thread cut',
+  find: 'find',
+  lot: 'lot',
+  order: 'contract',
+  orderDone: 'contract done',
+  pact: 'pact',
+  pactBreak: 'pact broken',
+  pactGone: 'pact ended',
+  cry: 'cry',
+  dawn: 'dawn',
+  mercy: 'mercy',
+  out: 'out',
+  scan: 'scan',
+  deny: 'rejection',
+  note: 'note',
 };
 
 const cell = (e: Record<string, unknown>): string => (typeof e['q'] === 'number' ? ` (${String(e['q'])}, ${String(e['r'])})` : '');
 
-/* подія журналу рушія одним рядком */
+/* an engine journal event as one line */
 export function eventText(e: Record<string, unknown>): string {
   const type = String(e['type']);
   const name = EVENT_NAME[type] ?? type;
   const p = e['p'] ? String(e['p']) : '';
   switch (type) {
     case 'cap':
-      return `${p} захопив голку${cell(e)}${e['from'] ? ' у ' + String(e['from']) : ''}${e['ring'] ? ' · кільце' : ''}`;
+      return `${p} captured a needle${cell(e)}${e['from'] ? ' from ' + String(e['from']) : ''}${e['ring'] ? ' · ring' : ''}`;
     case 'raise':
-      return `${p} звів голку${cell(e)}`;
+      return `${p} raised a needle${cell(e)}`;
     case 'lost':
-      return `${p} втратив ${String(e['cls'] ?? 'юнит')}${e['why'] ? ' (' + String(e['why']) + ')' : ''}${cell(e)}`;
+      return `${p} lost ${String(e['cls'] ?? 'a unit')}${e['why'] ? ' (' + String(e['why']) + ')' : ''}${cell(e)}`;
     case 'jam':
-      return `${p} глушить голку${cell(e)}${e['own'] ? ' гравця ' + String(e['own']) : ''}`;
+      return `${p} jams a needle${cell(e)}${e['own'] ? ' of player ' + String(e['own']) : ''}`;
     case 'ram':
-      return `${p} таранить${cell(e)}${e['tgt'] ? ' юнит ' + String(e['tgt']) : ''}`;
+      return `${p} rams${cell(e)}${e['tgt'] ? ' unit ' + String(e['tgt']) : ''}`;
     case 'build':
-      return `${p}: ${String(e['cls'] ?? 'юнит')} вийшов із двору`;
+      return `${p}: ${String(e['cls'] ?? 'a unit')} left the yard`;
     case 'lot':
-      return `лот ${String(e['lot'])}: ${e['p'] ? 'купив ' + String(e['p']) : 'не продано'}`;
+      return `lot ${String(e['lot'])}: ${e['p'] ? 'bought by ' + String(e['p']) : 'not sold'}`;
     case 'order':
-      return `контракт відкрито${cell(e)}, до такту ${String(e['to'])}`;
+      return `contract opened${cell(e)}, until tick ${String(e['to'])}`;
     case 'find':
-      return `${p} підібрав: ${FIND_NAME[String(e['find'])] ?? String(e['find'])}${cell(e)}`;
+      return `${p} picked up: ${FIND_NAME[String(e['find'])] ?? String(e['find'])}${cell(e)}`;
     case 'cry':
-      return `${p}: «${CRIES[Number(e['n'])] ?? String(e['n'])}»`;
+      return `${p}: "${CRIES[Number(e['n'])] ?? String(e['n'])}"`;
     case 'deny':
-      return `${p}: відмова «${String(e['why'] ?? '')}»${cell(e)}`;
+      return `${p}: rejection "${String(e['why'] ?? '')}"${cell(e)}`;
     case 'pact':
-      return `угода ${String(e['a'] ?? p)}-${String(e['b'] ?? '')}`;
+      return `pact ${String(e['a'] ?? p)}-${String(e['b'] ?? '')}`;
     case 'scan':
-      return `${p} сканує${cell(e)}`;
+      return `${p} scans${cell(e)}`;
     default:
       return `${name}${p ? ' · ' + p : ''}${cell(e)}`;
   }
 }
 
-/* команда одним рядком */
+/* an order as one line */
 export function orderText(o: Record<string, unknown>): string {
   const at = typeof o['q'] === 'number' ? ` → (${String(o['q'])}, ${String(o['r'])})` : '';
   switch (o['kind']) {
     case 'yard':
-      return `двір: ${String(o['cls'])}`;
+      return `yard: ${String(o['cls'])}`;
     case 'move':
-      return `${String(o['unit'])} іде${at}${o['home'] ? ' додому' : ''}`;
+      return `${String(o['unit'])} goes${at}${o['home'] ? ' home' : ''}`;
     case 'needle':
-      return `${String(o['unit'])} будує${at}`;
+      return `${String(o['unit'])} builds${at}`;
     case 'feed':
-      return `${String(o['unit'])} живить${at}`;
+      return `${String(o['unit'])} feeds${at}`;
     case 'jam': {
       const target = o['target'] as { q: number; r: number } | null;
-      return `${String(o['unit'])} глушить ${target ? `(${target.q}, ${target.r})` : '—'}${o['hold'] ? ' стоячи' : ''}`;
+      return `${String(o['unit'])} jams ${target ? `(${target.q}, ${target.r})` : '—'}${o['hold'] ? ' holding' : ''}`;
     }
     case 'ram':
-      return `${String(o['unit'])} таранить ${String(o['target'])}`;
+      return `${String(o['unit'])} rams ${String(o['target'])}`;
     case 'halt':
-      return `${String(o['unit'])} стоп`;
+      return `${String(o['unit'])} halt`;
     case 'scan':
-      return `скан${at} r${String(o['rad'])}`;
+      return `scan${at} r${String(o['rad'])}`;
     case 'watch':
-      return `фокус${at}`;
+      return `focus${at}`;
     case 'bid':
-      return `ставка на лот ${String(o['lot'])}: ${String(o['amount'])}`;
+      return `bid on lot ${String(o['lot'])}: ${String(o['amount'])}`;
     case 'pact':
-      return `угода ${({ offer: 'пропозиція', accept: 'згода', break: 'розрив' } as Record<string, string>)[String(o['op'])] ?? String(o['op'])} → ${String(o['to'])}`;
+      return `pact ${({ offer: 'offer', accept: 'accept', break: 'break' } as Record<string, string>)[String(o['op'])] ?? String(o['op'])} → ${String(o['to'])}`;
     case 'cry':
-      return `клич «${CRIES[Number(o['phrase'])] ?? String(o['phrase'])}»`;
+      return `cry "${CRIES[Number(o['phrase'])] ?? String(o['phrase'])}"`;
     default:
       return JSON.stringify(o);
   }

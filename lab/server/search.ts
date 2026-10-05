@@ -1,32 +1,36 @@
 /* lab :: search
-   Нічний пошук стилю голови. Наш бот (з типовими надбудовами) грає різними
-   стилями (bot/src/styles.ts) на тих самих долинах проти тих самих пар
-   архетипів SDK; мірило - парна різниця часток за пакет зі стилем-основою.
+   Night search for a head style. Our bot (with the default tactics) plays
+   different styles (bot/src/styles.ts) on the same valleys against the same
+   pairs of SDK archetypes; the measure is the paired share difference per
+   pack vs the base style.
 
-   Покоління - відсів половинами: усі кандидати на 30 долинах, краща половина
-   ще на 30, далі на 120 (шум парної різниці - 1.1-1.8 частки за пакет, на 10
-   долинах відсів був би жеребом). Покоління 0 - --start або весь каталог;
-   далі кращі за весь час стають батьками: наступне покоління - їхні мутації і
-   схрещення. Коли часу лишається лише на перевірку, п'ятеро кращих і основа
-   грають на свіжих долинах, яких пошук не бачив: відбір на тих самих долинах
-   завищує різницю переможця, свіжі долини показують чесну.
+   A generation is halving: all candidates on 30 valleys, the better half on
+   30 more, then on 120 (the noise of the paired difference is 1.1-1.8 share
+   per pack, on 10 valleys the halving would be a lottery). Generation 0 -
+   --start or the whole catalogue; after that the best of all time become
+   parents: the next generation is their mutations and crossings. When time is
+   left only for the check, the five best and the base play on fresh valleys
+   the search hasn't seen: selection on the same valleys inflates the winner's
+   difference, fresh valleys show the honest one.
 
-   Запуск (з каталогу lab/):
+   Run (from the lab/ directory):
      npm run search -- --hours 8
-     npm run search -- --resume <id> --hours 3   продовжити; зігране не повторюється
-   Прапорці: --hours 8, --workers <ядра-1>, --from 5000 (перша долина),
-   --validate 60 (свіжих долин), --base <стиль бою>, --ticks 1200,
-   --start стиль;стиль;... (покоління 0; типово - весь каталог),
-   --pool arch|mixed (суперники: пари архетипів SDK або змішаний пул).
+     npm run search -- --resume <id> --hours 3   continue; what's played isn't replayed
+   Flags: --hours 8, --workers <cores-1>, --from 5000 (first valley),
+   --validate 60 (fresh valleys), --base <battle style>, --ticks 1200,
+   --start style;style;... (generation 0; default - the whole catalogue),
+   --pool arch|mixed|strong|foreign|ext (opponents), --eval 1 (no search:
+   only --start and the base on fresh valleys).
 
-   Змішаний пул - на випадок, коли стиль «заточився» під архетипи SDK: наш
-   бот у бойовій конфігурації (самогра), архетипи рівний і облягач (шаблон
-   учасника), стилі рушія опортуніст і рейдер у нашій обгортці і бот, чий
-   слот увесь матч веде наказ експансія (учасник, чий бот не запустився).
+   The mixed pool - in case a style got "tuned" to the SDK archetypes: our bot
+   in battle configuration (self-play), the archetypes рівний and облягач (the
+   participant template), the engine styles опортуніст and рейдер in our
+   wrapper, and a bot whose slot is run by the експансія nakaz the whole match
+   (a participant whose bot didn't start).
 
-   Результати: runs/search/<id>/results.ndjson (пакет на рядок),
-   report.md (таблиця кращих, оновлюється після кожного кроку). Ctrl+C
-   безпечний: кожен пакет пишеться, щойно зіграний. */
+   Results: runs/search/<id>/results.ndjson (one pack per line), report.md
+   (the table of the best, updated after every step). Ctrl+C is safe: every
+   pack is written as soon as it's played. */
 
 import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -39,19 +43,21 @@ import { DEFAULT_PRESET, DEFAULT_TACTICS, isPreset, parseTactics } from '../../b
 import { fullStyle, KNOB_MAX, KNOBS, parseStyle, STYLES, styleSpec } from '../../bot/dist/styles.js';
 import type { Knob, Style } from '../../bot/dist/styles.js';
 import type { SeatSpec } from '../shared/record.ts';
+import { EXT_BOTS, isExtBot } from './ext.ts';
+import { isMix } from './mix.ts';
 import type { PackSeat } from './play.ts';
 import { newRunId, RUNS } from './runs.ts';
 import type { SearchJob, SearchReply } from './search-worker.ts';
 
-/* ===== прапорці ===== */
+/* ===== flags ===== */
 
 function flags(argv: readonly string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (!a.startsWith('--')) throw new Error('незрозумілий аргумент ' + a);
+    if (!a.startsWith('--')) throw new Error('unclear argument ' + a);
     const v = argv[i + 1];
-    if (v === undefined || v.startsWith('--')) throw new Error('прапорцю ' + a + ' бракує значення');
+    if (v === undefined || v.startsWith('--')) throw new Error('flag ' + a + ' is missing a value');
     out[a.slice(2)] = v;
     i++;
   }
@@ -66,12 +72,12 @@ interface Config {
   validate: number;
   tactics: string[];
   start: string[];
-  pool: 'arch' | 'mixed' | 'strong' | 'foreign';
-  /* суперники, закріплені на старті: зміна стилю бою не міняє пул продовження */
+  pool: 'arch' | 'mixed' | 'strong' | 'foreign' | 'ext';
+  /* opponents fixed at start: a change of the battle style doesn't change the pool of a resume */
   opponents: SeatSpec[];
-  /* search - покоління і відсів; eval - лише всі --start і основа на свіжих долинах */
+  /* search - generations and halving; eval - only all of --start and the base on fresh valleys */
   mode: 'search' | 'eval';
-  /* що грало: хеш рушія і коміт бота (з git або з build.json розгортання) */
+  /* what played: engine hash and bot commit (from git or from the deployment's build.json) */
   engine: string;
   build: string | null;
 }
@@ -81,23 +87,26 @@ const TOP = RUNGS[RUNGS.length - 1]!;
 const PARENTS = 4;
 const CHILDREN = 8;
 const FINALISTS = 5;
-/* свіжі долини - далеко від пошукових */
+/* fresh valleys - far from the search ones */
 const FRESH = 100_000;
 
-/* змішаний пул: копія нашого бою (самогра) - єдине місце, що росте разом із
-   боєм; опортуніст і рейдер у нашій обгортці - з тими надбудовами, з якими їх
-   міряли (fill:наш:6), щоб пул не дрейфував разом із нашими знахідками */
+/* mixed pool: a copy of our battle bot (self-play) - the only seat that grows
+   with the battle bot; опортуніст and рейдер in our wrapper - with the tactics
+   they were measured with (fill:own:6), so the pool doesn't drift with our finds */
 function poolOf(pool: Config['pool']): SeatSpec[] {
   if (pool === 'arch') return Object.keys(ARCHETYPES).map((name) => ({ kind: 'archetype', name }));
-  /* сильний пул: наш бій і його найближчі сильні сусіди (усі без підкормки) -
-     нейтральний результат тут ~6 частки, і дрібні покращення не впираються в
-     стелю шкали; плюс облягач і наказ експансія - інша манера гри */
-  /* чужий пул: жодної нашої голови без підкормки - лише те, чим, найімовірніше,
-     грають інші учасники (архетипи SDK, стилі рушія в обгортці лише з
-     заповнювачем, бот під наказом). Перевіряє, чи надбудова працює не лише
-     проти наших копій */
+  /* external bots pool: all lab/ext bots (scripts/ext-build.mjs) - written from the same documents other participants have */
+  if (pool === 'ext') return EXT_BOTS.map((name) => ({ kind: 'ext', name }));
+  /* strong pool: our battle bot and its closest strong neighbours (all without
+     feeding) - a neutral result here is ~6 share, and small improvements don't
+     hit the scale's ceiling; plus облягач and the експансія nakaz - a different
+     manner of play */
+  /* foreign pool: not a single head of ours without feeding - only what other
+     participants most likely play (SDK archetypes, engine styles in the
+     wrapper with the filler only, a bot under a nakaz). Checks whether a tactic
+     works not only against copies of ours */
   if (pool === 'foreign') {
-    const fixed = ['fill:наш:6'];
+    const fixed = ['fill:own:6'];
     return [
       { kind: 'archetype', name: 'рівний' },
       { kind: 'archetype', name: 'облягач' },
@@ -109,7 +118,7 @@ function poolOf(pool: Config['pool']): SeatSpec[] {
   }
   if (pool === 'strong') {
     const own = DEFAULT_TACTICS.split(',');
-    const nf = ['fill:наш:6', 'nofeed:1200', 'ram:6'];
+    const nf = ['fill:own:6', 'nofeed:1200', 'ram:6'];
     return [
       { kind: 'ours', name: DEFAULT_PRESET, tactics: own },
       { kind: 'ours', name: 'світанок', tactics: nf },
@@ -119,7 +128,7 @@ function poolOf(pool: Config['pool']): SeatSpec[] {
       { kind: 'nakaz', name: 'експансія' },
     ];
   }
-  const fixed = ['fill:наш:6'];
+  const fixed = ['fill:own:6'];
   return [
     { kind: 'ours', name: DEFAULT_PRESET, tactics: DEFAULT_TACTICS.split(',') },
     { kind: 'archetype', name: 'рівний' },
@@ -129,15 +138,21 @@ function poolOf(pool: Config['pool']): SeatSpec[] {
     { kind: 'nakaz', name: 'експансія' },
   ];
 }
-const seatLabel = (o: SeatSpec): string => (o.kind === 'nakaz' ? 'наказ ' : o.kind === 'ours' ? 'наш ' : '') + o.name + (o.tactics ? '|' + o.tactics.join(',') : '');
+const seatLabel = (o: SeatSpec): string => (o.kind === 'nakaz' ? 'nakaz ' : o.kind === 'ours' ? 'ours ' : o.kind === 'ext' ? 'ext ' : o.kind === 'mix' ? 'mix ' : '') + o.name + (o.tactics ? '|' + o.tactics.join(',') : '');
 
-/* кандидат: пресет нашого бота (стиль голови або голова-наказ «nakaz:<зразок>»)
-   і, через «|», свої надбудови замість типових: «світанок|fill:наш:6,ram:6» */
+/* candidate: a preset of our bot (a head style or a nakaz head "nakaz:<sample>")
+   and, after "|", its own tactics instead of the defaults: "світанок|fill:own:6,ram:6" */
 interface Candidate {
   preset: string;
   tactics: string[];
+  /* "ext:<name>" - an external bot from lab/ext in the candidate's seat (--eval only) */
+  ext?: string;
+  /* "mix:e=<source>,k=<source>" - a mixed bot (server/mix.ts, --eval only) */
+  mix?: string;
 }
 function candidateOf(spec: string): Candidate | null {
+  if (spec.startsWith('mix:')) return isMix(spec.slice(4)) ? { preset: spec, tactics: [], mix: spec.slice(4) } : null;
+  if (spec.startsWith('ext:')) return isExtBot(spec.slice(4)) ? { preset: spec, tactics: [], ext: spec.slice(4) } : null;
   const [preset, tactics, ...rest] = spec.split('|');
   if (rest.length || !preset || !isPreset(preset)) return null;
   if (tactics === undefined) return { preset, tactics: cfg.tactics };
@@ -152,15 +167,15 @@ function candidateOf(spec: string): Candidate | null {
   return bad ? null : { preset, tactics: list };
 }
 
-/* коміт бота: build.json розгортання (worker.sh deploy) або git; ні того, ні того - null */
+/* bot commit: the deployment's build.json (worker.sh deploy) or git; neither - null */
 function buildOf(): string | null {
   const file = new URL('../build.json', import.meta.url);
   try {
     if (existsSync(file)) return String((JSON.parse(readFileSync(file, 'utf8')) as { commit?: string }).commit ?? null);
     const head = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
-    /* усе, що їде грати: код бота, наказ, пакети, сервер лабораторії */
+    /* everything that goes to play: bot code, nakaz, packages, lab server */
     const dirty = execSync('git status --porcelain -- ../bot/src ../bot/nakaz.yaml ../bot/package.json ../lab/server ../lab/shared', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
-    return head + (dirty ? '+незакомічене' : '');
+    return head + (dirty ? '+uncommitted' : '');
   } catch {
     return null;
   }
@@ -168,7 +183,7 @@ function buildOf(): string | null {
 
 const f = flags(process.argv.slice(2));
 const known = new Set(['hours', 'workers', 'from', 'validate', 'base', 'ticks', 'resume', 'start', 'pool', 'eval']);
-for (const k of Object.keys(f)) if (!known.has(k)) throw new Error('прапорця --' + k + ' немає');
+for (const k of Object.keys(f)) if (!known.has(k)) throw new Error('no flag --' + k);
 const hours = Number(f['hours'] ?? 8);
 const workers = Number(f['workers'] ?? Math.max(1, availableParallelism() - 1));
 if (!(hours > 0 && hours <= 240)) throw new Error('--hours: 0-240');
@@ -178,14 +193,14 @@ const DIR = join(RUNS, 'search');
 let cfg: Config;
 if (f['resume']) {
   const path = join(DIR, f['resume'], 'config.json');
-  if (!/^[a-z0-9-]{8,40}$/.test(f['resume']) || !existsSync(path)) throw new Error('пошуку ' + f['resume'] + ' немає');
+  if (!/^[a-z0-9-]{8,40}$/.test(f['resume']) || !existsSync(path)) throw new Error('no search ' + f['resume']);
   cfg = JSON.parse(readFileSync(path, 'utf8')) as Config;
   cfg.start ??= Object.keys(STYLES);
   cfg.pool ??= 'arch';
   cfg.opponents ??= poolOf('arch');
   cfg.mode ??= 'search';
-  /* інший світ - інші цифри: продовжувати пошук іншого рушія не можна */
-  if (cfg.engine && cfg.engine !== ENGINE_HASH) throw new Error('пошук грав рушій ' + cfg.engine.slice(0, 12) + ', а тут ' + ENGINE_HASH.slice(0, 12));
+  /* a different world - different numbers: a search by another engine can't be continued */
+  if (cfg.engine && cfg.engine !== ENGINE_HASH) throw new Error('the search was played by engine ' + cfg.engine.slice(0, 12) + ', and here it is ' + ENGINE_HASH.slice(0, 12));
 } else {
   cfg = {
     id: newRunId(),
@@ -194,7 +209,7 @@ if (f['resume']) {
     ticks: Number(f['ticks'] ?? 1200),
     validate: Number(f['validate'] ?? 60),
     tactics: DEFAULT_TACTICS.split(','),
-    /* стилі-рядки мають коми, тож список - через крапку з комою */
+    /* style strings contain commas, so the list is semicolon separated */
     start: f['start'] ? f['start'].split(';').map((x) => x.trim()).filter(Boolean) : Object.keys(STYLES),
     pool: (f['pool'] ?? 'arch') as Config['pool'],
     opponents: [],
@@ -203,10 +218,12 @@ if (f['resume']) {
     build: buildOf(),
   };
   if (f['eval'] !== undefined && f['eval'] !== '1') throw new Error('--eval 1');
-  if (!['arch', 'mixed', 'strong', 'foreign'].includes(cfg.pool)) throw new Error('--pool: arch, mixed, strong або foreign');
+  if (!['arch', 'mixed', 'strong', 'foreign', 'ext'].includes(cfg.pool)) throw new Error('--pool: arch, mixed, strong, foreign or ext');
+  if (cfg.pool === 'ext' && EXT_BOTS.length < 2) throw new Error('--pool ext: fewer than two bots in lab/ext');
+  if (cfg.mode === 'search' && cfg.start.some((x) => (x.startsWith('ext:') || x.startsWith('mix:')))) throw new Error('--start ext:<name> / mix:<name> - only with --eval: an external bot is not mutated');
   cfg.opponents = poolOf(cfg.pool);
-  for (const spec of cfg.start) if (!candidateOf(spec)) throw new Error('--start: незрозумілий кандидат ' + spec);
-  if (!Object.hasOwn(STYLES, cfg.base)) throw new Error('--base: одне з ' + Object.keys(STYLES).join(', '));
+  for (const spec of cfg.start) if (!candidateOf(spec)) throw new Error('--start: unclear candidate ' + spec);
+  if (!Object.hasOwn(STYLES, cfg.base)) throw new Error('--base: one of ' + Object.keys(STYLES).join(', '));
   if (!Number.isInteger(cfg.from) || cfg.from < 0 || cfg.from > 2 ** 30) throw new Error('--from');
   if (!Number.isInteger(cfg.ticks) || cfg.ticks < 10 || cfg.ticks > 1200) throw new Error('--ticks');
   if (!Number.isInteger(cfg.validate) || cfg.validate < 10 || cfg.validate > 400) throw new Error('--validate: 10-400');
@@ -219,7 +236,7 @@ const REPORT = join(HOME, 'report.md');
 const started = Date.now();
 const deadline = started + hours * 3600_000;
 
-/* ===== суперники: усі пари пулу, пара долини - за її номером ===== */
+/* ===== opponents: all pairs of the pool, a valley's pair - by its number ===== */
 
 const POOL: SeatSpec[] = cfg.opponents;
 
@@ -231,10 +248,10 @@ const freshSeed = (i: number): number => cfg.from + FRESH + i;
 function lineupOf(spec: string, seed: number): [SeatSpec, SeatSpec, SeatSpec] {
   const [a, b] = PAIRS[(seed - cfg.from) % PAIRS.length]!;
   const c = candidateOf(spec)!;
-  return [{ kind: 'ours', name: c.preset, tactics: c.tactics }, a, b];
+  return [c.mix ? { kind: 'mix', name: c.mix } : c.ext ? { kind: 'ext', name: c.ext } : { kind: 'ours', name: c.preset, tactics: c.tactics }, a, b];
 }
 
-/* ===== зігране: спец -> долина -> наше місце ===== */
+/* ===== played: spec -> valley -> our seat ===== */
 
 interface Row {
   spec: string;
@@ -242,7 +259,7 @@ interface Row {
   share: number;
   places: number[];
   score: number;
-  /* середній рахунок суперників за столом (сума за пакет) */
+  /* average score of the opponents at the table (sum per pack) */
   oppScore?: number;
   denials: number;
   denialKinds?: Record<string, number>;
@@ -256,12 +273,12 @@ function remember(row: Row): void {
   if (!m) played.set(row.spec, (m = new Map()));
   m.set(row.seed, row);
 }
-/* зігране раніше (--resume); обірваний рядок наприкінці - пакет, що не дописався при зупинці */
+/* played earlier (--resume); a broken line at the end - a pack that wasn't fully written at a stop */
 let pastPacks = 0;
 let pastMs = 0;
 if (existsSync(RESULTS)) {
   const text = readFileSync(RESULTS, 'utf8');
-  /* обірваний хвіст закрити, інакше наступний пакет доклеїться до нього і загубиться */
+  /* close a broken tail, otherwise the next pack is glued to it and lost */
   if (text && !text.endsWith('\n')) appendFileSync(RESULTS, '\n');
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -271,7 +288,7 @@ if (existsSync(RESULTS)) {
       pastPacks++;
       pastMs += row.ms;
     } catch {
-      console.log('пропускаю обірваний рядок журналу');
+      console.log('skipping a broken journal line');
     }
   }
 }
@@ -281,7 +298,7 @@ function note(spec: string, why: string): void {
   if (!origin.has(spec)) origin.set(spec, why);
 }
 
-/* ===== пул потоків ===== */
+/* ===== thread pool ===== */
 
 const pool: Worker[] = [];
 const idle: Worker[] = [];
@@ -304,7 +321,7 @@ for (let i = 0; i < workers; i++) {
     dispatch();
   });
   w.on('error', (e) => {
-    console.error('потік упав: ' + (e.stack ?? e.message));
+    console.error('thread crashed: ' + (e.stack ?? e.message));
     process.exit(1);
   });
   pool.push(w);
@@ -340,21 +357,21 @@ function play(spec: string, seed: number): Promise<Row> {
   });
 }
 
-/* усі пари (спец, долина), яких ще немає; основа - завжди */
+/* all (spec, valley) pairs not played yet; the base - always */
 async function ensure(specs: readonly string[], seeds: readonly number[]): Promise<void> {
   const todo: Promise<Row>[] = [];
   for (const spec of new Set([cfg.base, ...specs])) for (const seed of seeds) if (!played.get(spec)?.has(seed)) todo.push(play(spec, seed));
   await Promise.all(todo);
 }
 
-/* скільки мс займе цей обсяг пакетів на всіх потоках; мірило - і зігране до --resume;
-   до першого пакета взагалі - невідомо, нуль */
+/* how many ms this many packs takes on all threads; the measure includes what
+   was played before --resume; before the very first pack - unknown, zero */
 function costMs(n: number): number {
   const count = packs + pastPacks;
   return count ? (n * (packMs + pastMs)) / count / workers : 0;
 }
 
-/* ===== мірило ===== */
+/* ===== measure ===== */
 
 interface Stat {
   spec: string;
@@ -365,12 +382,12 @@ interface Stat {
   first: number;
   nakaz: number;
   denials: number;
-  /* пакетів, зіграних точнісінько як основа: стиль нічого не змінив */
+  /* packs played exactly like the base: the style changed nothing */
   same: number;
-  /* парна різниця «рахунок мінус середнє суперників» у хвилинах за пакет */
+  /* paired difference "score minus the opponents' average" in minutes per pack */
   margin: number;
   marginSe: number;
-  /* відмови за джерелом:командою:кодом, сума */
+  /* rejections by source:order:code, total */
   kinds: Record<string, number>;
 }
 function stat(spec: string, seeds: readonly number[]): Stat {
@@ -410,9 +427,9 @@ function stat(spec: string, seeds: readonly number[]): Stat {
 const range = (from: number, n: number, seed: (i: number) => number): number[] => Array.from({ length: n }, (_, i) => seed(from + i));
 const rungSeeds = (n: number) => range(0, n, searchSeed);
 
-/* ===== потомство ===== */
+/* ===== offspring ===== */
 
-/* рядок -> 32 біти (FNV-1a) */
+/* string -> 32 bits (FNV-1a) */
 function seedOf(text: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
@@ -431,14 +448,14 @@ function rng(seed: number): () => number {
 const round = (x: number) => Math.round(x * 20) / 20;
 const baseOf = (spec: string) => spec.split('+')[0]!;
 
-/* klinok - поріг частки клинків у рої (верф: клинків/юнитів на полі < klinok,
-   і лише коли новий юнит влазить у вагу 8: ткач 2, клинок 1). Частки, при
-   яких верф узагалі вирішує: 0, 1/4 (3T1K), 1/3 (2T1K), 1/2, 3/5, 2/3, 3/4.
-   Будь-які два значення в одному проміжку (0, 1/4], (1/4, 1/3], (1/3, 1/2],
-   (1/2, 3/5], (3/5, 2/3], (2/3, 3/4] грають однаково (0.37 і 0.5 дали 60 з 60
-   однакових пакетів). Тож - по ступені на проміжок і нуль: рій без клинків */
+/* klinok - the threshold of the Klinok share in the swarm (yard: Klinoks/units
+   in the field < klinok, and only when the new unit fits in weight 8: Tkach 2,
+   Klinok 1). Shares at which the yard decides at all: 0, 1/4 (3T1K), 1/3
+   (2T1K), 1/2, 3/5, 2/3, 3/4. Any two values in one interval (0, 1/4], (1/4,
+   1/3], (1/3, 1/2], (1/2, 3/5], (3/5, 2/3], (2/3, 3/4] play the same (0.37 and
+   0.5 gave 60 of 60 identical packs). So - one step per interval and zero: a swarm without Klinoks */
 const KLINOK_STEPS = [0, 0.2, 0.3, 0.45, 0.55, 0.63, 0.7];
-/* guard і pact - пороги жеребу: крок 0.05 міняє виліт лише зрідка */
+/* guard and pact are lot thresholds: a 0.05 step changes the outcome only rarely */
 const LOTS: readonly Knob[] = ['guard', 'pact'];
 const LAND_STEPS = [0.5, 1, 1.5, 2];
 
@@ -463,7 +480,7 @@ function mutate(st: Style, r: () => number): Style {
       } else if (LOTS.includes(k)) {
         next = Math.round(Math.min(max, Math.max(0, v + (r() < 0.5 ? -1 : 1) * (1 + Math.floor(r() * 3)) * 0.1)) * 10) / 10;
       } else if (v === 0) {
-        /* нуль множенням не зрушиш: спляча ручка прокидається з імовірністю */
+        /* zero can't be moved by multiplication: a sleeping knob wakes up with a probability */
         next = r() < 0.3 ? round(r() * max * 0.5) : 0;
       } else {
         next = round(Math.min(max, Math.max(0, v * Math.exp((r() * 2 - 1) * 0.6))));
@@ -478,7 +495,7 @@ function mutate(st: Style, r: () => number): Style {
       changed = true;
     }
     if (r() < 0.1) {
-      /* land - необов'язкова: з'являється, крокує або зникає */
+      /* land is optional: it appears, steps or disappears */
       if (out.land === undefined) out.land = LAND_STEPS[Math.floor(r() * LAND_STEPS.length)]!;
       else if (r() < 0.3) delete out.land;
       else out.land = LAND_STEPS[Math.max(0, Math.min(LAND_STEPS.length - 1, nearest(LAND_STEPS, out.land) + (r() < 0.5 ? -1 : 1)))]!;
@@ -499,12 +516,12 @@ function cross(a: Style, b: Style, r: () => number): Style {
 }
 
 function children(gen: number, all: readonly string[]): string[] {
-  /* мутує лише стиль; голова-наказ батьком не буває, надбудови («|...») успадковуються */
+  /* only the style mutates; a nakaz head is never a parent, tactics ("|...") are inherited */
   const parents = all.filter((p) => parseStyle(p.split('|')[0]!));
-  /* батьків ще немає (покоління 0 - лише основа або не дійшло до верхньої ступені) */
+  /* no parents yet (generation 0 - only the base, or it didn't reach the top rung) */
   if (!parents.length) return [];
-  /* зерно - з id пошуку: різні пошуки пробують різних нащадків, а продовження
-     (--resume) того самого пошуку - тих самих */
+  /* the seed comes from the search id: different searches try different
+     offspring, and a continuation (--resume) of the same search - the same ones */
   const r = rng(seedOf(cfg.id) ^ Math.imul(gen, 7919));
   const out: string[] = [];
   let tries = 0;
@@ -520,10 +537,10 @@ function children(gen: number, all: readonly string[]): string[] {
       if (q === p) continue;
       st = cross(pst, parseStyle(q.split('|')[0]!)!, r);
       if (r() < 0.5) st = mutate(st, r);
-      why = 'покоління ' + gen + ': схрещення ' + p + ' × ' + q;
+      why = 'generation ' + gen + ': crossing ' + p + ' × ' + q;
     } else {
       st = mutate(pst, r);
-      why = 'покоління ' + gen + ': мутація ' + p;
+      why = 'generation ' + gen + ': mutation ' + p;
     }
     const spec = styleSpec(baseOf(pStyle!), st) + suffix;
     if (played.has(spec) || out.includes(spec) || !candidateOf(spec)) continue;
@@ -533,7 +550,7 @@ function children(gen: number, all: readonly string[]): string[] {
   return out;
 }
 
-/* ===== звіт ===== */
+/* ===== report ===== */
 
 const fmt = (x: number, d = 2) => (x >= 0 ? '+' : '') + x.toFixed(d);
 function hall(): Stat[] {
@@ -544,7 +561,7 @@ function hall(): Stat[] {
     .sort((a, b) => b.delta - a.delta);
 }
 function table(rows: readonly Stat[], showOrigin: boolean): string {
-  const head = '| # | стиль | долин | частка | різниця з основою | Δ хвилин | як основа | 1-ші місця | наказ, тактів | відмов за пакет | відмови (джерело:команда:код) |' + (showOrigin ? ' звідки |' : '');
+  const head = '| # | style | valleys | share | diff vs base | Δ minutes | as base | 1st places | nakaz, ticks | rejections per pack | rejections (source:order:code) |' + (showOrigin ? ' origin |' : '');
   const sep = '|---|---|---|---|---|---|---|---|---|---|---|' + (showOrigin ? '---|' : '');
   const kindsText = (k: Record<string, number>) =>
     Object.entries(k)
@@ -561,9 +578,9 @@ function table(rows: readonly Stat[], showOrigin: boolean): string {
 }
 let validation: Stat[] | null = null;
 let recheck: Stat[] | null = null;
-/* другий свіжий набір: лише для переможця і основи */
+/* the second fresh set: only for the winner and the base */
 const RECHECK = FRESH + 10_000;
-let phase = 'пошук';
+let phase = 'search';
 function report(gen: number): void {
   const mins = (Date.now() - started) / 60_000;
   const all = hall();
@@ -573,27 +590,27 @@ function report(gen: number): void {
     .sort((a, b) => b.delta - a.delta)
     .slice(0, 15);
   const text = [
-    `# Нічний пошук стилю ${cfg.id}`,
+    `# Night style search ${cfg.id}`,
     '',
-    `Рушій ${cfg.engine?.slice(0, 12) ?? '?'}, бот ${cfg.build ?? '?'}. Основа: \`${cfg.base}\`, надбудови: \`${cfg.tactics.join(',')}\`. Суперники (пари по черзі): ${POOL.map((o) => '`' + seatLabel(o) + '`').join(', ')}. Долини пошуку ${cfg.from}-${cfg.from + TOP - 1}, свіжі - з ${cfg.from + FRESH}.`,
+    `Engine ${cfg.engine?.slice(0, 12) ?? '?'}, bot ${cfg.build ?? '?'}. Base: \`${cfg.base}\`, tactics: \`${cfg.tactics.join(',')}\`. Opponents (pairs in turn): ${POOL.map((o) => '`' + seatLabel(o) + '`').join(', ')}. Search valleys ${cfg.from}-${cfg.from + TOP - 1}, fresh ones - from ${cfg.from + FRESH}.`,
     '',
-    `Етап: **${phase}**, покоління ${gen}. Зіграно пакетів: ${packs} за цей запуск (усього в журналі ${[...played.values()].reduce((s, m) => s + m.size, 0)}), ${mins.toFixed(0)} хв, пакет у середньому ${(packs ? packMs / packs / 1000 : 0).toFixed(1)} с на потік, потоків ${workers}.`,
+    `Stage: **${phase}**, generation ${gen}. Packs played: ${packs} in this run (${[...played.values()].reduce((s, m) => s + m.size, 0)} in the journal in total), ${mins.toFixed(0)} min, ${(packs ? packMs / packs / 1000 : 0).toFixed(1)} s per pack per thread on average, ${workers} threads.`,
     '',
-    'Частка - середні очки за пакет (3-9). Різниця - парна: частка стилю мінус частка основи на тій самій долині, ± стандартна похибка. Різниця більша за дві похибки - уже не випадок. «Як основа» - пакетів, зіграних точнісінько як основа: якщо їх більшість, різниця - кілька випадкових пакетів. «Δ хвилин» - парна різниця рахунку мінус середнє двох суперників за столом, хвилини за пакет: тонша за частку, коли частки впираються в стелю. «Відмови» - найчастіші за джерелом (pulse, head, fill, tactic), командою і кодом воротаря.',
+    'Share - average points per pack (3-9). Difference - paired: the style\'s share minus the base\'s share on the same valley, ± standard error. A difference larger than two errors is no longer chance. "As base" - packs played exactly like the base: if they are the majority, the difference is a few random packs. "Δ minutes" - the paired difference of the score minus the average of the two opponents at the table, minutes per pack: finer than the share when shares hit the ceiling. "Rejections" - the most frequent ones by source (pulse, head, fill, tactic), order and gatekeeper code.',
     '',
     ...(recheck
-      ? ['## Перевірка переможця на другому свіжому наборі', '', 'Переможця вибрано на першому свіжому наборі - його різниця там завищена відбором. Тут - долини, яких не бачили ні пошук, ні вибір.', '', table(recheck, false), '']
+      ? ['## Recheck of the winner on a second fresh set', '', 'The winner was chosen on the first fresh set - its difference there is inflated by the selection. Here - valleys neither the search nor the choice has seen.', '', table(recheck, false), '']
       : []),
     ...(validation
-      ? ['## Перевірка на свіжих долинах', '', 'Чесна оцінка: ці долини пошук не бачив.', '', table(validation, false), '', '### Різниця з основою проти кожного суперника', '', 'Пакети, де цей суперник сидів за столом; у дужках - скільки їх.', '', byOpponent(validation), '']
+      ? ['## Check on fresh valleys', '', 'The honest estimate: the search hasn\'t seen these valleys.', '', table(validation, false), '', '### Difference vs the base against each opponent', '', 'Packs where this opponent sat at the table; in brackets - how many.', '', byOpponent(validation), '']
       : []),
-    `## Кращі на ${TOP} долинах пошуку`,
+    `## Best on ${TOP} search valleys`,
     '',
-    'Відбір на тих самих долинах завищує різницю переможців; вирішує перевірка на свіжих.',
+    'Selection on the same valleys inflates the winners\' difference; the check on fresh ones decides.',
     '',
     table(all.slice(0, 30), true),
     '',
-    `## У відсіві (менше ${TOP} долин)`,
+    `## In the halving (fewer than ${TOP} valleys)`,
     '',
     table(partial, true),
     '',
@@ -602,11 +619,11 @@ function report(gen: number): void {
   writeFileSync(originFile, JSON.stringify(Object.fromEntries(origin), null, 1));
 }
 
-/* Δ з основою окремо проти кожного суперника пулу: стиль, що виграє за рахунок
-   слабких і програє сильним, - погана ставка на справжніх учасників */
+/* Δ vs the base separately against each opponent of the pool: a style that
+   wins at the expense of the weak and loses to the strong is a bad bet on real participants */
 function byOpponent(rows: readonly Stat[]): string {
-  const label = (o: SeatSpec) => (o.kind === 'nakaz' ? 'наказ ' : o.kind === 'ours' ? 'наш ' : '') + o.name;
-  const head = '| стиль | ' + POOL.map(label).join(' | ') + ' |';
+  const label = (o: SeatSpec) => (o.kind === 'nakaz' ? 'nakaz ' : o.kind === 'ours' ? 'ours ' : '') + o.name;
+  const head = '| style | ' + POOL.map(label).join(' | ') + ' |';
   const sep = '|---|' + POOL.map(() => '---|').join('');
   const base = played.get(cfg.base);
   const lines = rows.map((s) => {
@@ -625,10 +642,10 @@ function byOpponent(rows: readonly Stat[]): string {
   return [head, sep, ...lines].join('\n');
 }
 
-/* ===== відсів половинами ===== */
+/* ===== halving ===== */
 
 async function halving(gen: number, candidates: string[], reserveMs: () => number): Promise<boolean> {
-  /* основа грає всі долини й так (ensure) - місце у відсіві їй не потрібне */
+  /* the base plays all valleys anyway (ensure) - it needs no place in the halving */
   let alive = candidates.filter((spec) => spec !== cfg.base);
   if (!alive.length) return true;
   for (const [k, n] of RUNGS.entries()) {
@@ -637,18 +654,18 @@ async function halving(gen: number, candidates: string[], reserveMs: () => numbe
     if (Date.now() + costMs(need) > deadline - reserveMs()) return false;
     await ensure(alive, seeds);
     const ranked = alive.map((spec) => stat(spec, seeds)).sort((a, b) => b.delta - a.delta);
-    console.log(`покоління ${gen}, ${n} долин: ` + ranked.slice(0, 5).map((s) => `${s.spec} ${fmt(s.delta)}`).join(' | '));
+    console.log(`generation ${gen}, ${n} valleys: ` + ranked.slice(0, 5).map((s) => `${s.spec} ${fmt(s.delta)}`).join(' | '));
     report(gen);
     if (k < RUNGS.length - 1) alive = ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 2))).map((s) => s.spec);
   }
   return true;
 }
 
-/* переможця перевірки (якщо це не основа) - ще раз на другому свіжому наборі */
+/* the check's winner (if it's not the base) - once more on the second fresh set */
 async function recheckWinner(rows: readonly Stat[]): Promise<void> {
   const winner = rows.find((s) => s.spec !== cfg.base);
   if (!winner || winner.delta <= 0) return;
-  phase = 'перевірка переможця';
+  phase = 'recheck of the winner';
   report(0);
   const seeds = range(0, cfg.validate, (i) => cfg.from + RECHECK + i);
   await ensure([winner.spec], seeds);
@@ -656,20 +673,20 @@ async function recheckWinner(rows: readonly Stat[]): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  console.log(`пошук ${cfg.id}: ${hours} год, потоків ${workers}; звіт - ${REPORT}`);
+  console.log(`search ${cfg.id}: ${hours} h, ${workers} threads; report - ${REPORT}`);
   const freshSeeds = range(0, cfg.validate, freshSeed);
   const reserve = () => costMs((FINALISTS + 1) * cfg.validate);
-  for (const spec of cfg.start) note(spec, Object.hasOwn(STYLES, spec) ? 'каталог' : 'старт');
+  for (const spec of cfg.start) note(spec, Object.hasOwn(STYLES, spec) ? 'catalogue' : 'start');
   if (cfg.mode === 'eval') {
-    /* порівняння без відбору: усі кандидати й основа на тих самих свіжих долинах */
-    phase = 'порівняння на свіжих долинах';
+    /* a comparison without selection: all candidates and the base on the same fresh valleys */
+    phase = 'comparison on fresh valleys';
     report(0);
     await ensure(cfg.start, freshSeeds);
     validation = [...new Set([cfg.base, ...cfg.start])].map((spec) => stat(spec, freshSeeds)).sort((a, b) => b.delta - a.delta);
     await recheckWinner(validation);
-    phase = 'готово';
+    phase = 'done';
     report(0);
-    console.log('готово: ' + REPORT);
+    console.log('done: ' + REPORT);
     for (const w of pool) await w.terminate();
     return;
   }
@@ -684,18 +701,18 @@ async function main(): Promise<void> {
     if (!kids.length) break;
     more = await halving(gen, kids, reserve);
   }
-  phase = 'перевірка на свіжих долинах';
+  phase = 'check on fresh valleys';
   report(gen);
   const finalists = hall()
     .slice(0, FINALISTS)
     .map((s) => s.spec);
-  console.log('перевірка: ' + finalists.join(' | '));
+  console.log('check: ' + finalists.join(' | '));
   await ensure(finalists, freshSeeds);
   validation = [...new Set([cfg.base, ...finalists])].map((spec) => stat(spec, freshSeeds)).sort((a, b) => b.delta - a.delta);
   await recheckWinner(validation);
-  phase = 'готово';
+  phase = 'done';
   report(gen);
-  console.log('готово: ' + REPORT);
+  console.log('done: ' + REPORT);
   for (const w of pool) await w.terminate();
 }
 

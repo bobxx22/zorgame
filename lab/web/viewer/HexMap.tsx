@@ -1,6 +1,6 @@
-/* Карта долини на canvas: місцевість (один раз у фоновий шар), поверх неї -
-   кадр такту: покриття, нитки, голки, нагрів, юнити, бурі, лоти, контракт,
-   очі нашого місця. Наведення миші віддає соту під курсором. */
+/* The valley map on a canvas: terrain (once, into a background layer), on top
+   of it the tick's frame: coverage, threads, needles, heating, units, storms,
+   lots, contract, our seat's eyes. Mouse hover reports the cell under the cursor. */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NF, SLOTS, TASKS } from '../../shared/record.ts';
@@ -50,7 +50,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
   const st = record.static;
   const R = st.radius;
 
-  /* карта вписується і в ширину колонки, і у висоту вікна: шкала часу лишається на екрані */
+  /* the map fits both the column width and the window height: the timeline stays on screen */
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -80,7 +80,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
 
   const needleInfo = useMemo(() => new Map(st.needles.map((n) => [n.k, n])), [st]);
 
-  /* місцевість: один раз на розмір */
+  /* terrain: once per size */
   const terrain = useMemo(() => {
     const off = document.createElement('canvas');
     const dpr = window.devicePixelRatio || 1;
@@ -106,7 +106,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
         g.stroke();
       }
     }
-    /* межа (радіус черти) і цитадель */
+    /* the border (cherta radius) and the citadel */
     g.strokeStyle = 'rgba(179,157,219,0.45)';
     g.setLineDash([4, 4]);
     g.lineWidth = 1.2;
@@ -123,7 +123,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText('✹', cxp, cyp);
-    /* знахідки */
+    /* finds */
     g.font = `${Math.round(geo.size * 0.95)}px sans-serif`;
     for (const f of st.finds) {
       const [x, y] = geo.px(f.q, f.r);
@@ -155,7 +155,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       g.closePath();
     };
 
-    /* покриття: хто тягне соту, за вагами кілець 8.1 */
+    /* coverage: who pulls the cell, by the ring weights of 8.1 */
     if (layers.coverage) {
       const pull = new Map<string, Partial<Record<Actor, number>>>();
       for (const [key, owner, weight, flags] of frame.n) {
@@ -185,7 +185,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       }
     }
 
-    /* лоти до розкриття і контракт */
+    /* lots before opening and the contract */
     for (const [i, lot] of st.lots.entries()) {
       if (t >= lot.at) continue;
       for (const cell of lot.cells) {
@@ -211,7 +211,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       }
     }
 
-    /* бурі (площина правил 5.1 у масштабі соти) */
+    /* storms (the plane of rules 5.1 at cell scale) */
     if (layers.storms) {
       for (const storm of st.storms) {
         const x = geo.cx + (storm.x0 + storm.vx * t) * s;
@@ -226,7 +226,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       }
     }
 
-    /* нитки: горящі голки одного власника в межах довжини нитки */
+    /* threads: lit needles of one owner within the thread length */
     if (layers.threads) {
       const byOwner = new Map<Actor, [number, number][]>();
       for (const [key, owner, weight] of frame.n) {
@@ -256,7 +256,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       }
     }
 
-    /* руїни: усі голки маніфесту, яких немає серед власних */
+    /* ruins: all manifest needles that are not among the owned ones */
     const owned = new Set(frame.n.map(([k]) => k));
     for (const n of st.needles) {
       if (owned.has(n.k)) continue;
@@ -267,7 +267,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       g.lineWidth = 1.2;
       g.stroke();
     }
-    /* власні голки */
+    /* owned needles */
     for (const [key, owner, weight, flags] of frame.n) {
       const [q, r] = parseKey(key);
       const [x, y] = geo.px(q, r);
@@ -304,7 +304,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
         g.stroke();
       }
     }
-    /* нагрів: дуга прогресу кольором того, хто гріє */
+    /* heating: a progress arc in the colour of whoever heats */
     const ownerOf = new Map(frame.n.map(([k, o, w]) => [k, { o, w }]));
     for (const [key, who, progress] of frame.heat) {
       const [q, r] = parseKey(key);
@@ -318,7 +318,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       g.stroke();
     }
 
-    /* вогнища */
+    /* hearths */
     for (const slot of SLOTS) {
       const seat = st.seats[slot];
       const [x, y] = geo.px(seat.q, seat.r);
@@ -337,7 +337,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       g.fillText(slot, x, y + 1);
     }
 
-    /* юнити і лінії до цілей */
+    /* units and lines to their targets */
     for (const [id, owner, cls, q, r, task, tq, tr, flags] of frame.u) {
       const [x, y] = geo.px(q, r);
       const color = ACTOR_COLOR[owner];
@@ -373,7 +373,7 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       }
     }
 
-    /* очі місця у фокусі: фокус і скан такту; привиди, які бот бачив */
+    /* the eyes of the focused seat: the tick's focus and scan; ghosts the bot saw */
     if (layers.eyes && focusSlot) {
       const eye = frame.eye[focusSlot];
       if (eye?.watch) {

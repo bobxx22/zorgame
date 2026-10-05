@@ -1,77 +1,86 @@
 /* bot :: tactics
-   Надбудови, що діють не поруч із головою, а всередині неї чи після неї.
+   Tactics that act not next to the head but inside it or after it.
 
-   Голова - botOrders рушія на дзеркальному світі (MirrorBot.decide кличе
-   E.botOrders через властивість об'єкта рушія). Тож надбудова може:
-     - підмінити ручку стилю на живому E.BOT_STYLE[slot] - голова читає її
-       щотакту (k0: без клинків у верфі до такту T);
-     - обгорнути E.botOrders і на час рішення змінити те, що голова бачить
-       (nofeed: усі свої горящі голки «вже підживлюються», і botTryFeed не
-       знаходить, кого підживити);
-     - дописати команду після голови (ram: чистий таран).
-   Рушій дзеркала - свій у кожній партії (MirrorBot.init), тож між партіями
-   нічого не тече.
+   The head is the engine's botOrders on the mirror world (MirrorBot.decide
+   calls E.botOrders through a property of the engine object). So a tactic can:
+     - swap a style knob on the live E.BOT_STYLE[slot] - the head reads it
+       every tick (k0: no Klinoks from the yard before tick T);
+     - wrap E.botOrders and, for the time of the decision, change what the head
+       sees (nofeed: all our lit needles are "already being fed", and
+       botTryFeed finds no one to feed);
+     - append an order after the head (ram: clean ram).
+   The mirror engine is a fresh one in every match (MirrorBot.init), so nothing
+   leaks between matches.
 
-   ===== покажчик надбудов: що, навіщо, як, чи в бою =====
-   Токен задає ZARIA_TACTICS (розбір - parseTactics у strategy.ts), бій без
-   змінної - DEFAULT_TACTICS. Цифри - --eval лабораторії, 60 свіжих долин,
-   змішаний пул, парна різниця частки за пакет до тодішнього бою.
+   ===== tactics index: what, why, how, whether in battle =====
+   The token is set by ZARIA_TACTICS (parsed by parseTactics in strategy.ts),
+   battle without the variable - DEFAULT_TACTICS. Numbers - the lab's --eval,
+   60 fresh valleys, mixed pool, paired share difference per pack vs the
+   battle bot of that time.
 
-   Усередині голови (hookHead):
-     nofeed:T  БІЙ (1200). Голова ставить ткача на підкормку раніше за ціль і
-               тримає назавжди - мінус ткач росту. Маска w.fed на час
-               рішення: botTryFeed не знаходить, кого живити. +1.05 ± 0.19.
-     k0:T      вимкнено. Без клинків у верфі до T: ручка klinok = 0. +0.28 ± 0.17.
-     cherta    БІЙ. До зорі голки за чертою зникають із віри на час рішення:
-               Ключник таранить ткачів, що їх гріють, а захоплень там майже
-               немає. Перемір 2×2 після правок 02.10 (бот 49fb1a5): без cherta
-               бій втрачає 13-35 хвилин за пакет на сильному пулі, 77-90 на
-               чужому (жодної нашої копії за столом), 55-60 на змішаному.
-     gap, catch, bopen, rfloor  вимкнено, не міряно. Числа вбудованих голів
-               (guardGap, catchFloor, buildOpen, raidFloor) у своєму дзеркалі.
+   Inside the head (hookHead):
+     nofeed:T  BATTLE (1200). The head puts a Tkach on feeding before the
+               target and keeps it there for good - minus a growth Tkach. The
+               w.fed mask for the time of the decision: botTryFeed finds no one
+               to feed. +1.05 ± 0.19.
+     k0:T      off. No Klinoks from the yard before T: knob klinok = 0. +0.28 ± 0.17.
+     cherta    BATTLE. Before dawn needles beyond the cherta vanish from the
+               belief for the time of the decision: the Keeper rams the Tkachs
+               that heat them, and there are almost no captures there.
+               Re-measure 2×2 after the 02.10 fixes (bot 49fb1a5): without
+               cherta the battle bot loses 13-35 minutes per pack on the strong
+               pool, 77-90 on the foreign one (no copy of ours at the table),
+               55-60 on the mixed one.
+     gap, catch, bopen, rfloor  off, not measured. Numbers of the built-in
+               heads (guardGap, catchFloor, buildOpen, raidFloor) in our mirror.
 
-   Після голови (ramOrder, AfterHead):
-     ram:R     вимкнено з 02.10 (замінено hunt). Клинок таранить чужого ткача
-               на голці, що не його (гріє - таран чистий, правила 11.7). +0.17 ± 0.09.
-     hunt:R    БІЙ (12). Таран v2: ширше коло мисливців, без розмінів (пауза
-               захоплення, транзит, не встигне). R - відстань мисливець-здобич;
-               «встигне» саме обрізає її: нічия голка ≤ 3, темна ≤ 11, світла
-               чужа ≤ 19, тож hunt:20 - без обмеження. При cherta hunt:6 і
-               ram:6 рівні (−0.02 ± 0.03 частки, +1 ± 5 хвилин, 5 наборів).
-               hunt:12 проти hunt:6, свіжі долини і перевірка на другому наборі:
-               чужий пул +0.13 ± 0.04 / +0.13 ± 0.04 (+57 / +51 хвилина),
-               сильний +0.23 ± 0.08 / +0.39 ± 0.09 (+72 / +62), змішаний +0.16 ±
-               0.06 (+52); плюс проти кожного суперника. hunt:9 - між ними.
-     stay:K    вимкнено. Не відкликати ткача за K тактів до захоплення. ≈ 0.
-     nohook    БІЙ. Гачок знахідки (правила 16.8) веде ткача до схрону і назад
-               у точку, де він звернув, навіть коли той уже стоїть на голці
-               цілі. Коли знахідка вже нічого не дасть (взята або згорить під
-               стелею), move на ту саму клітину обрізає зворотний слід: ткач
-               лишається гріти. Схрон, що ще платить, гачок довозить. ±0.03 -
-               копійка без ризику: менше зайвих кроків, заряд не губиться.
-     cache:N   вимкнено. Схрон дасть повні 150 - по нього йде найближчий вільний
-               юнит до N клітин (клинок без справи чи ткач без задачі). +0.02 ±
-               0.04, але ~0.1 відмови на пакет - поки не в бою.
-     yardcap   вимкнено. Не замовляти юнит понад вагу рою (для голови-наказу).
-               −0.02 ± 0.02.
+   After the head (ramOrder, AfterHead):
+     ram:R     off since 02.10 (replaced by hunt). A Klinok rams an enemy Tkach
+               on a needle that is not his (heating - the ram is clean, rules
+               11.7). +0.17 ± 0.09.
+     hunt:R    BATTLE (12). Ram v2: a wider circle of hunters, no trades
+               (capture pause, transit, won't make it). R - hunter-prey
+               distance; "makes it" cuts it by itself: unowned needle ≤ 3, dark
+               ≤ 11, lit enemy ≤ 19, so hunt:20 is unbounded. With cherta,
+               hunt:6 and ram:6 are equal (−0.02 ± 0.03 share, +1 ± 5 minutes,
+               5 sets). hunt:12 vs hunt:6, fresh valleys and a recheck on a
+               second set: foreign pool +0.13 ± 0.04 / +0.13 ± 0.04 (+57 / +51
+               minutes), strong +0.23 ± 0.08 / +0.39 ± 0.09 (+72 / +62), mixed
+               +0.16 ± 0.06 (+52); a plus against every opponent. hunt:9 - in
+               between.
+     stay:K    off. Don't recall a Tkach K ticks before a capture. ≈ 0.
+     nohook    BATTLE. A find's hook (rules 16.8) leads a Tkach to a cache and
+               back to the point where it turned, even when it already stands
+               on its target needle. When the find gives nothing any more
+               (taken, or it would burn under the cap), a move to the same cell
+               cuts the way back: the Tkach stays to heat. A cache that still
+               pays is delivered by the hook. ±0.03 - a penny without risk:
+               fewer extra steps, no charge lost.
+     cache:N   off. A cache gives the full 150 - the nearest free unit within N
+               cells goes for it (an idle Klinok or a Tkach without a task).
+               +0.02 ± 0.04, but ~0.1 rejections per pack - not in battle yet.
+     yardcap   off. Don't order a unit above the swarm weight (for a nakaz
+               head). −0.02 ± 0.02.
 
-   Завжди, коли є хоч одна надбудова після голови (AfterHead):
-     syncMirror  перед рішенням голови вписує в дзеркало чужі взяті знахідки
-               (помилка SDK: інакше фантомний жетон спалаху і відмова «вуха»)
-               і відмовлені площадки (кеш botSites забуває їх за 20 тактів).
-     vet       фільтр кадру: порожня пара jam(null) + halt клинку-вартовому
-               (~420 за партію, роздувала кадр - «стеля»), scan без вух і без
-               жетона, needle на відмовлену «землю». Хвіст понад стелю кадру
-               воротар не розглядає - кадр обрізано (strategy.ts).
-     самоперевірка  числа світу, які читають надбудови (CFG_KEYS), і ramClean -
-               інакше рядок у журнал: 05.10 нічого не має зламатися мовчки. */
+   Always, when there is at least one tactic after the head (AfterHead):
+     syncMirror  before the head's decision writes into the mirror the finds
+               taken by others (an SDK bug: otherwise a phantom flare token and
+               an "ears" rejection) and rejected sites (the botSites cache
+               forgets them after 20 ticks).
+     vet       frame filter: the empty pair jam(null) + halt to a guard Klinok
+               (~420 per match, it bloated the frame - "cap"), a scan without
+               ears and without a token, a needle onto rejected "ground". The
+               gatekeeper doesn't consider the tail above the frame cap - the
+               frame is trimmed (strategy.ts).
+     self-check  the world numbers the tactics read (CFG_KEYS), and ramClean -
+               otherwise a line to the log: on 05.10 nothing must break silently. */
 
 import { orderCap, orderCost } from '@zoria/protocol';
 import type { ActorName, ClsName, Hex, Manifest, NeedleSpec, Observe, Order, SlotName, Verdict } from '@zoria/protocol';
 import { channelLeft } from './strategy.js';
 import type { PulseWorld, Source, Tactics } from './strategy.js';
 
-/* те, що надбудовам потрібно від рушія дзеркала */
+/* what the tactics need from the mirror engine */
 interface HeadEngine {
   botOrders: (p: string, w: unknown) => void;
   BOT_STYLE: Record<string, Record<string, unknown>>;
@@ -90,8 +99,8 @@ interface HeadWorld {
   energy?: Record<string, number>;
 }
 
-/* надбудови голови: k0, nofeed, cherta і числа вбудованих голів. Немає рушія
-   (підміна в тестах без дзеркала) або він не той - у журнал і без них */
+/* head tactics: k0, nofeed, cherta and the numbers of the built-in heads. No
+   engine (a stand-in in tests without a mirror) or the wrong one - to the log and without them */
 export function hookHead(engine: unknown, slot: SlotName, tactics: Tactics, log: (line: string) => void): void {
   const { k0, cherta, surplus } = tactics;
   let noFeed = tactics.noFeed;
@@ -99,36 +108,36 @@ export function hookHead(engine: unknown, slot: SlotName, tactics: Tactics, log:
   if (noFeed === null && k0 === null && !cherta && !surplus && !knobs.length) return;
   const E = engine as HeadEngine | null;
   if (!E || typeof E.botOrders !== 'function' || !E.BOT_STYLE?.[slot] || !E.SIM) {
-    log('надбудови голови (nofeed, k0, cherta, числа голови) без рушія дзеркала не діють');
+    log('head tactics (nofeed, k0, cherta, head numbers) have no effect without the mirror engine');
     return;
   }
-  /* числа вбудованих голів - лише в своєму дзеркалі: MirrorBot.init уже
-     переписав SIM_CFG з маніфесту, і більше його не чіпає */
+  /* numbers of the built-in heads - only in our own mirror: MirrorBot.init has
+     already rewritten SIM_CFG from the manifest and doesn't touch it again */
   if (knobs.length && E.SIM_CFG) for (const [key, value] of knobs) E.SIM_CFG[key] = value;
-  /* nofeed тримається на нутрощах рушія (w.fed, w.lit): новий світ 05.10 може
-     їх перейменувати - тоді маска мовчки перестала б діяти. Немає полів -
-     у журнал, і голова грає як є */
+  /* nofeed relies on engine internals (w.fed, w.lit): the new world of 05.10
+     may rename them - then the mask would silently stop working. No fields -
+     to the log, and the head plays as is */
   const w0 = (E.SIM as { world?: Partial<HeadWorld> }).world;
   if (noFeed !== null && (!w0 || typeof w0.fed !== 'object' || w0.fed === null || typeof w0.lit !== 'object' || w0.lit === null)) {
-    log('nofeed: у рушії дзеркала немає w.fed / w.lit - маску вимкнено, голова підживлює як є');
+    log('nofeed: the mirror engine has no w.fed / w.lit - mask disabled, the head feeds as is');
     noFeed = null;
   }
   if (noFeed === null && k0 === null && !cherta && !surplus) return;
   const style = E.BOT_STYLE[slot];
   const klinok = typeof style['klinok'] === 'number' ? style['klinok'] : 0;
   const build = typeof style['build'] === 'number' ? style['build'] : 0;
-  /* голки за чертою (центр - цитадель у 0,0): лише їх і ховає cherta */
+  /* needles inside the cherta (the center is the citadel at 0,0): only these does cherta hide */
   const inside = cherta ? (E.NEEDLES ?? []).filter((n) => hexDist(n, { q: 0, r: 0 }) <= (E.CHERTA_R ?? 6)).map((n) => n.key) : [];
   const decide = E.botOrders;
   E.botOrders = (p, w) => {
     const t = E.SIM.t;
     if (k0 !== null) style['klinok'] = t < k0 ? 0 : klinok;
     const world = w as HeadWorld;
-    /* surplus: заряд біля стелі згоряє - ручка build росте, голова ставить
-       щогли (botWantsMast) і сама ставить на лотах (ціна лота - 60 · build · …) */
+    /* surplus: charge near the cap burns - the build knob grows, the head puts
+       up masts (botWantsMast) and bids on lots itself (lot price - 60 · build · …) */
     if (surplus) style['build'] = (world.energy?.[p] ?? 0) >= surplus.at ? surplus.build : build;
-    /* botTryFeed пропускає голку з w.fed; маска - лише на час рішення,
-       бухгалтерія світу до неї вже порахована в sync дзеркала */
+    /* botTryFeed skips a needle in w.fed; the mask is only for the time of the
+       decision, the world's bookkeeping is already done in the mirror sync */
     const fed: string[] = [];
     if (noFeed !== null && t < noFeed) {
       const lit = world.lit?.[p] ?? {};
@@ -139,8 +148,8 @@ export function hookHead(engine: unknown, slot: SlotName, tactics: Tactics, log:
         }
       }
     }
-    /* до зорі й без милості голки за чертою зникають із віри: botPick
-       пропускає невідому голку, і голова не шле туди ні ткача, ні клинка */
+    /* before dawn and without mercy needles inside the cherta vanish from the
+       belief: botPick skips an unknown needle, and the head sends there neither a Tkach nor a Klinok */
     const hidden: [string, unknown][] = [];
     const at = world.bel?.[p]?.at;
     if (at && inside.length && !world.dawn && !world.keep?.mercy?.[p]) {
@@ -162,9 +171,9 @@ export function hookHead(engine: unknown, slot: SlotName, tactics: Tactics, log:
 
 const cell = (h: Hex): string => h.q + ',' + h.r;
 export const hexDist = (a: Hex, b: Hex): number => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q + a.r - b.q - b.r)) / 2;
-/* усі команди юнита в кадрі - «порожні»: jam без цілі й без hold і halt. Так
-   голова тримає клинка-вартового щотакту; його можна зайняти справою, ці
-   команди нічого не втрачають */
+/* all of a unit's orders in the frame are "empty": jam without a target and
+   without hold, and halt. That's how the head holds a guard Klinok every tick;
+   it can be given a job, these orders lose nothing */
 export function idleOnly(entries: readonly Tagged[], idx: readonly number[]): boolean {
   return idx.every((i) => {
     const o = entries[i]!.order;
@@ -172,7 +181,7 @@ export function idleOnly(entries: readonly Tagged[], idx: readonly number[]): bo
   });
 }
 
-/* кільце клітин на відстані r від центру */
+/* the ring of cells at distance r from the center */
 export function hexRing(c: Hex, r: number): Hex[] {
   const dirs: Hex[] = [{ q: 1, r: 0 }, { q: 1, r: -1 }, { q: 0, r: -1 }, { q: -1, r: 0 }, { q: -1, r: 1 }, { q: 0, r: 1 }];
   const out: Hex[] = [];
@@ -186,14 +195,14 @@ export function hexRing(c: Hex, r: number): Hex[] {
   return out;
 }
 
-/* хто володіє кожною голкою, наскільки ми знаємо: з маніфесту (руїни, кільце,
-   стартові) і з кадрів - свої повністю, чужі - коли їх видно */
+/* who owns each needle, as far as we know: from the manifest (ruins, ring,
+   starts) and from frames - ours fully, foreign ones - when they are visible */
 export class NeedleOwners {
   private readonly owner = new Map<string, ActorName | null>();
   private readonly ring = new Set<string>();
 
-  /* perm - який слот сидить на якому місці: n.start у маніфесті - буква МІСЦЯ
-     (правила 5.4), а не слот; у партіях 2 і 3 пакета вони різні */
+  /* perm - which slot sits in which seat: n.start in the manifest is the SEAT
+     letter (rules 5.4), not the slot; in matches 2 and 3 of a pack they differ */
   constructor(needles: readonly NeedleSpec[], perm?: readonly SlotName[]) {
     const seatSlot = (seat: SlotName): SlotName => perm?.[['A', 'B', 'C'].indexOf(seat)] ?? seat;
     for (const n of needles) {
@@ -211,21 +220,21 @@ export class NeedleOwners {
     for (const n of obs.mine.needles) this.owner.set(cell(n), slot);
   }
 
-  /* undefined - на клітині голки немає */
+  /* undefined - no needle on the cell */
   at(h: Hex): ActorName | null | undefined {
     return this.owner.get(cell(h));
   }
 }
 
-/* Чистий таран: чужий ткач стоїть на голці, що не його, - він її гріє або
-   будує, і таран по ньому чистий (правила 11.7). Голова таких не ловить: її
-   захист розрахований на розмін 1:1 (одна перезарядка на рій, поріг ціни
-   гостя, лише горящі голки). Здобич - лише видима точно в цьому такті (11.6),
-   не Ключник і не партнер угоди; спершу ткачі на наших голках, потім на
-   руїнах і кільці, потім на голках третього. Мисливець - клинок без справи
-   тарану чи дороги додому, не тримач облоги, якому голова в кадрі нічого не
-   дала, до R кроків. Не більше одного нового тарану за такт; канал і стелю
-   кадру перевірено, як для пульсу. */
+/* Clean ram: an enemy Tkach stands on a needle that is not his - he heats or
+   builds it, and a ram on him is clean (rules 11.7). The head doesn't catch
+   these: its defence is built for a 1:1 trade (one recharge per swarm, a
+   guest price threshold, only lit needles). Prey - only seen exactly in this
+   tick (11.6), not the Keeper and not a pact partner; first Tkachs on our
+   needles, then on ruins and the ring, then on the third player's needles.
+   Hunter - a Klinok without a ram job or a way home, not a siege holder, that
+   the head gave nothing in the frame, within R steps. At most one new ram per
+   tick; channel and frame cap are checked as for the pulse. */
 export function ramOrder(
   obs: Observe,
   orders: readonly Order[],
@@ -263,13 +272,13 @@ export function ramOrder(
   return channelLeft(obs, orders, world) >= cost ? ram : null;
 }
 
-/* числа світу, які читають надбудови (AfterHead.num): самоперевірка при старті */
+/* world numbers the tactics read (AfterHead.num): self-check at start */
 export const CFG_KEYS = [
   'heatNeedle', 'heatDark', 'heatEnemy', 'autonomy', 'stepTkach', 'stepKlinok', 'capGrace',
   'weightTkach', 'weightKlinok', 'squadWeight', 'droneBuild', 'findHook', 'energyCap', 'scanCost', 'chanOrder',
 ] as const;
 
-/* запис кадру: команда, її джерело і місце в ньому (strategy.ts, Entry) */
+/* a frame entry: an order, its source and its position in it (strategy.ts, Entry) */
 export interface Tagged {
   order: Order;
   from: Source;
@@ -277,37 +286,47 @@ export interface Tagged {
 }
 
 
-/* Надбудови після голови, що пам'ятають кадри: stay, cherta (зняти того, хто
-   вже йде за черту), hunt (таран v2), yardcap і пам'ять відмов тарану.
-   Свій стан - на одну партію: PulseStrategy будує новий у кожному init. */
+/* Tactics after the head that remember frames: stay, cherta (stop those
+   already heading beyond the line), hunt (ram v2), yardcap and the memory of
+   ram rejections. Own state - for one match: PulseStrategy builds a new one in every init. */
 export class AfterHead {
   readonly owners: NeedleOwners;
   private readonly cfg: Record<string, number>;
   private readonly citadel: Hex;
   private readonly cherta: number;
   private readonly start = new Set<string>();
-  /* свій ткач: скільки тактів із руками стоїть на одній клітині */
+  /* our Tkach: how many ticks it has stood with hands on one cell */
   private readonly dwell = new Map<string, { cell: string; ticks: number }>();
-  /* чужий юнит: з якого такту стоїть на клітині */
+  /* a foreign unit: since which tick it stands on the cell */
   private readonly foeAt = new Map<string, { cell: string; since: number }>();
-  /* своя голка: такт, коли вона стала нашою (пауза capGrace після захоплення) */
+  /* our needle: the tick it became ours (capGrace pause after a capture) */
   private readonly ours = new Map<string, number>();
   private known = false;
-  /* прийняті воротарем замовлення верфі: корпуси в черзі (droneBuild тактів) */
+  /* yard orders accepted by the gatekeeper: hulls in the queue (droneBuild ticks) */
   private readonly yards: { t: number; cls: ClsName }[] = [];
-  /* відмовлені тарани «мисливець>ціль» - до такту */
+  /* rejected rams "hunter>target" - until tick */
   private readonly refusedUntil = new Map<string, number>();
-  /* погоні hunt: мисливець -> ціль */
+  /* hunt chases: hunter -> target */
   private readonly hunts = new Map<string, string>();
-  /* схрони і спалахи долини (маніфест) і вже взяті (подія find видна всім) */
+  /* the valley's caches and flares (manifest) and the ones already taken (the find event is visible to all) */
   private readonly finds: { q: number; r: number; kind: string }[];
   private readonly taken = new Map<string, ActorName>();
-  /* площадки, де воротар відмовив needle кодом 11 «земля»: там уже чужа голка,
-     голова її не бачила і без пам'яті ставила б туди знову (кеш botSites
-     забуває відмови раз на 20 тактів) */
+  /* sites where the gatekeeper rejected a needle with code 11 "ground": there
+     is already a foreign needle there, the head didn't see it and without
+     memory would build there again (the botSites cache forgets rejections every 20 ticks) */
   private readonly refusedSites = new Set<string>();
-  /* схрон -> юнит, якого надбудова cache по нього послала */
+  /* cache -> the unit the cache tactic sent for it */
   private readonly seekers = new Map<string, string>();
+  /* the dawn tick (manifest) and the ring needles right on the cherta: next to
+     them there are cells beyond the line (cherta + 1) to both wait for dawn and jam without provoking */
+  private readonly dawnAt: number | null;
+  private readonly ringEdge: Hex[];
+  private readonly needleCells = new Set<string>();
+  /* dawn: Tkach -> ring needle and waiting cell; loot: Klinok -> needle and cell */
+  private readonly staged = new Map<string, { ring: Hex; stand: Hex }>();
+  private readonly looters = new Map<string, { ring: Hex; stand: Hex }>();
+  /* duck: a Tkach that stepped off a needle because of an enemy Klinok -> until which tick it stays aside */
+  private readonly ducking = new Map<string, number>();
   private t = 0;
 
   constructor(
@@ -315,9 +334,9 @@ export class AfterHead {
     man: Manifest,
     private readonly slot: SlotName,
     private readonly world: PulseWorld,
-    /* чи дотягнеться нитка з клітини до своєї горящої голки чи вогнища (рушій дзеркала) */
+    /* will a thread from the cell reach our lit needle or the hearth (mirror engine) */
     private readonly links: (at: Hex, obs: Observe) => boolean,
-    /* чи є шлях юниту класу cls з клітини до клітини (рушій дзеркала); немає дзеркала - ні */
+    /* is there a path for a unit of class cls from cell to cell (mirror engine); no mirror - no */
     private readonly pathOk: (from: Hex, to: Hex, cls: ClsName) => boolean = () => false,
     log: (line: string) => void = () => undefined,
   ) {
@@ -326,21 +345,24 @@ export class AfterHead {
     this.citadel = man.citadel;
     this.cherta = man.cherta;
     for (const n of man.needles) if (n.start) this.start.add(cell(n));
+    for (const n of man.needles) this.needleCells.add(cell(n));
+    this.dawnAt = typeof man.dawn?.at === 'number' ? man.dawn.at : null;
+    this.ringEdge = man.needles.filter((n) => n.ring && hexDist(n, man.citadel) === man.cherta).map((n) => ({ q: n.q, r: n.r }));
     this.finds = man.finds.filter((f) => f.kind === 'cache' || f.kind === 'flare');
-    /* новий світ 05.10 може перейменувати число - тоді надбудова тихо рахувала
-       б за запасним значенням. Немає ключа - раз у журнал */
+    /* the new world of 05.10 may rename a number - then the tactic would
+       quietly count with the fallback value. No key - once to the log */
     const missing = CFG_KEYS.filter((k) => typeof this.cfg[k] !== 'number');
-    if (missing.length) log('надбудови: у cfg маніфесту немає ' + missing.join(', ') + ' - беру запасні числа');
+    if (missing.length) log('tactics: the manifest cfg has no ' + missing.join(', ') + ' - using fallback numbers');
     if ((tactics.hunt !== null || tactics.ram !== null) && this.cfg['ramClean'] !== 1) {
-      log('таран: ramClean = ' + String(this.cfg['ramClean']) + ' - таран по ткачу на роботі може бути розміном');
+      log('ram: ramClean = ' + String(this.cfg['ramClean']) + ' - a ram on a working Tkach may be a trade');
     }
   }
 
-  /* зеркало SDK не розбирає чужі події find (помилка SDK): взята суперником
-     знахідка в дзеркалі «лежить», наш юнит проходить її соту і дзеркало
-     нараховує собі фантомний жетон спалаху - голова вважає скан під бурею
-     безкоштовним, і воротар відмовляє «вуха». Перед рішенням голови вписати
-     взяті знахідки у w.find дзеркала, а відмовлені площадки - у кеш botSites */
+  /* the SDK mirror doesn't parse foreign find events (an SDK bug): a find taken
+     by an opponent still "lies" in the mirror, our unit walks over its cell and
+     the mirror credits itself a phantom flare token - the head thinks a scan
+     under a storm is free, and the gatekeeper rejects "ears". Before the head's
+     decision write the taken finds into the mirror's w.find, and rejected sites into the botSites cache */
   syncMirror(engine: unknown): void {
     const E = engine as {
       SIM?: { world?: { find?: Record<string, unknown> } };
@@ -365,7 +387,7 @@ export class AfterHead {
 
   refused = (unit: string, target: string): boolean => (this.refusedUntil.get(unit + '>' + target) ?? -1) >= this.t;
 
-  /* кадр спостереження: власники, стояння своїх і чужих, нові свої голки */
+  /* observe frame: owners, how long ours and foreign units stand, our new needles */
   see(obs: Observe): void {
     this.t = obs.t;
     this.owners.see(obs, this.slot);
@@ -402,15 +424,15 @@ export class AfterHead {
     return !obs.pub.dawn && !obs.pulse.mercy && hexDist(h, this.citadel) <= this.cherta;
   }
 
-  /* скільки тактів гріти голку під юнитом: руїна 8, темна чужа 16, горяча 24;
-     кільце Ключника до зорі - як чужа, після - як руїна */
+  /* how many ticks to heat the needle under a unit: ruin 8, dark foreign 16,
+     lit 24; the Keeper's ring before dawn - like a foreign one, after - like a ruin */
   private heatPrice(at: Hex, owner: ActorName | null, obs: Observe): number {
     if (owner === null || (owner === 'K' && obs.pub.dawn)) return this.num('heatNeedle', 8);
     const dark = obs.own.find((e) => e.q === at.q && e.r === at.r)?.dark ?? false;
     return dark ? this.num('heatDark', 16) : this.num('heatEnemy', 24);
   }
 
-  /* stay: ткач гріє чужу чи нічию голку, до кінця ≤ K тактів, і повідець витримає */
+  /* stay: a Tkach heats a foreign or unowned needle, ≤ K ticks to go, and the leash holds */
   staysToFinish(u: Observe['mine']['units'][number], obs: Observe, K: number): boolean {
     if (u.cls !== 'ткач') return false;
     const owner = this.owners.at(u);
@@ -419,13 +441,13 @@ export class AfterHead {
     const stood = this.dwell.get(u.id);
     if (!stood || stood.cell !== cell(u)) return false;
     const left = this.heatPrice(u, owner, obs) - stood.ticks;
-    /* далеко до кінця або «прогрес» не росте (пауза чужого захоплення) */
+    /* far from the end, or the "progress" isn't growing (a foreign capture pause) */
     if (left > K || left < -2) return false;
     const back = this.links(u, obs) ? 0 : 3 * this.num('stepTkach', 2);
     return u.away + Math.max(0, left) + back + 4 <= this.num('autonomy', 40);
   }
 
-  /* усе після голови: вхід - записи голови (чи заповнювача), вихід - кадр без пульсу */
+  /* everything after the head: input - the head's (or filler's) entries, output - the frame without the pulse */
   apply(obs: Observe, entries: readonly Tagged[]): Tagged[] {
     let out = [...entries];
     const units = new Map(obs.mine.units.map((u) => [u.id, u]));
@@ -441,14 +463,14 @@ export class AfterHead {
     }
 
     if (this.tactics.noHook) {
-      /* Ткач стоїть на клітині своєї цілі, а шлях ще не порожній - це лише
-         слід гачка знахідки (правила 16.8): гачок веде юнит до знахідки, вертає
-         туди, де він звернув, і лише тоді доводить старий шлях до цілі. move
-         на ту саму клітину дає порожній шлях і ту саму ціль: юнит стоїть і
-         гріє (simHeat дивиться на клітину, не на задачу), а на порожньому
-         шляху гачок не чіпляється. Обрізаємо лише той слід, де знахідка вже
-         нічого не дасть (hookWorth): тоді ткач не втрачає ні тактів, ні
-         заряду. Ціна - звичайна команда (32 байти) */
+      /* The Tkach stands on its target cell, but the path isn't empty yet - this
+         is just the trail of a find's hook (rules 16.8): the hook leads the unit
+         to the find, returns it to where it turned, and only then finishes the
+         old path to the target. A move to the same cell gives an empty path and
+         the same target: the unit stands and heats (simHeat looks at the cell,
+         not the task), and the hook doesn't catch on an empty path. Cut only the
+         trail where the find gives nothing any more (hookWorth): then the Tkach
+         loses neither ticks nor charge. Price - an ordinary order (32 bytes) */
       for (const u of obs.mine.units) {
         const task = u.task;
         const goal = task?.goal;
@@ -464,14 +486,19 @@ export class AfterHead {
 
     if (this.tactics.cache !== null) out = this.seekCache(obs, out, this.tactics.cache);
 
+    /* dawn - before cherta: a Tkach stepping onto the ring one tick before dawn
+       already has an order, and cherta doesn't stop it (halt only for those the frame gave nothing) */
+    if (this.tactics.dawn !== null) out = this.stageDawn(obs, out, this.tactics.dawn);
+
     const extra: Order[] = [];
     if (this.tactics.cherta && !obs.pub.dawn && !obs.pulse.mercy) {
-      /* Агресор для Ключника (правила 21.6, keeperJams) - клинок у черті до 1
-         від голки кільця, на якій тримається наша жива завада (вона живе ще до
-         20 тактів після останнього глушіння), і ткач, що стоїть на голці, яку
-         може гріти (гріє й без задачі, 13.6). Зняти ціль чи halt мало: обох -
-         ходом за черту (≥ cherta + 1 від цитаделі). Клинку посеред кроку -
-         jam без цілі: приймається й посеред кроку (10.6) і не продовжує заваду */
+      /* An aggressor for the Keeper (rules 21.6, keeperJams) - a Klinok inside
+         the line within 1 of a ring needle that holds our live jam (it lives up
+         to 20 ticks after the last jamming), and a Tkach standing on a needle it
+         can heat (it heats even without a task, 13.6). Dropping the target or a
+         halt is not enough: both - move beyond the line (≥ cherta + 1 from the
+         citadel). A Klinok mid-step - jam without a target: accepted mid-step
+         too (10.6) and doesn't extend the jam */
       const liveRingJams = obs.mine.jams.filter((j) => j.until > obs.t && this.owners.at(j) === 'K');
       for (const u of obs.mine.units) {
         if (u.stuck || !this.underLine(u, obs)) continue;
@@ -486,10 +513,10 @@ export class AfterHead {
           out = this.replaceUnit(obs, out, u.id, { kind: 'jam', unit: u.id, target: null, hold: false });
         }
       }
-      /* хто вже йде за черту за старим планом - зупинити */
+      /* whoever is already heading beyond the line by an old plan - stop */
       for (const u of obs.mine.units) {
         const goal = u.task?.goal;
-        /* halt посеред кроку - відмова «поворот» (код 4): лише юниту між кроками */
+        /* halt mid-step is a "turn" rejection (code 4): only to a unit between steps */
         if (u.cls === 'ткач' && goal && this.underLine(goal, obs) && u.wait === 0 && !commanded(u.id)) extra.push({ kind: 'halt', unit: u.id });
       }
       out = out.map((e) => {
@@ -499,6 +526,10 @@ export class AfterHead {
         return u && this.underLine(u, obs) ? { ...e, order: { ...o, target: null } } : e;
       });
     }
+
+    if (this.tactics.loot !== null) out = this.lootRing(obs, out, this.tactics.loot);
+
+    if (this.tactics.duck) out = this.duckTkachs(obs, out);
 
     if (this.tactics.hunt !== null) {
       for (const [hunter, target] of [...this.hunts]) {
@@ -515,7 +546,7 @@ export class AfterHead {
       }
     }
 
-    /* зняття - безкоштовні, але воротар приймає їх лише з 32 байтами каналу (13.4) */
+    /* stops are free, but the gatekeeper accepts them only with 32 channel bytes (13.4) */
     for (const o of extra) {
       const orders = out.map((e) => e.order);
       if (orders.length + 1 > orderCap(this.world.cfg, obs.pulse.chanAt)) break;
@@ -536,15 +567,15 @@ export class AfterHead {
     return out;
   }
 
-  /* найближча клітина за чертою (cherta + 1 від цитаделі), до якої є шлях */
+  /* the nearest cell beyond the line (cherta + 1 from the citadel) with a path to it */
   private exitLine(u: Observe['mine']['units'][number]): Hex | null {
     const ring = hexRing(this.citadel, this.cherta + 1).sort((a, b) => hexDist(u, a) - hexDist(u, b));
     for (const c of ring.slice(0, 8)) if (this.pathOk(u, c, u.cls)) return c;
     return null;
   }
 
-  /* усі команди юнита в кадрі - геть, натомість одна команда надбудови; якщо її
-     не вмістять канал чи стеля кадру - кадр як був */
+  /* all of a unit's orders in the frame - out, one tactic order instead; if
+     the channel or the frame cap won't fit it - the frame as it was */
   private replaceUnit(obs: Observe, entries: Tagged[], unit: string, order: Order): Tagged[] {
     const rest = entries.filter((e) => !('unit' in e.order && e.order.unit === unit));
     const orders = rest.map((e) => e.order);
@@ -555,15 +586,224 @@ export class AfterHead {
     return [...rest, { order, from: 'tactic', at: 0 }];
   }
 
-  /* скільки заряду дасть схрон зараз: понад стелю згоряє (правила 16.3) */
+  /* all of a unit's orders in the frame - out (the unit keeps its task) */
+  private dropUnit(entries: Tagged[], unit: string): Tagged[] {
+    return entries.filter((e) => !('unit' in e.order && e.order.unit === unit));
+  }
+
+  /* cells beyond the line next to a ring needle: not a needle, no units, not taken by another plan */
+  private standsBy(ring: Hex, obs: Observe, taken: ReadonlySet<string>): Hex[] {
+    const busy = new Set([...obs.mine.units.map(cell), ...obs.foe.map(cell)]);
+    return hexRing(ring, 1).filter((c) => hexDist(c, this.citadel) === this.cherta + 1 && !this.needleCells.has(cell(c)) && !busy.has(cell(c)) && !taken.has(cell(c)));
+  }
+
+  /* dawn:N - after dawn the ring pulls twice as much, and whoever is closer
+     takes it. The head remembers the ring only on the dawn tick (the engine's
+     ring siege) and leads Tkachs across half the valley. Here a free Tkach (not
+     heating a foreign needle, not building, not feeding) N ticks before dawn
+     stands beyond the line next to a ring needle our thread reaches, and waits;
+     one tick before dawn it steps onto it - heating already after dawn (8
+     ticks). The head is ignored for it until the needle is ours */
+  private stageDawn(obs: Observe, entries: Tagged[], N: number): Tagged[] {
+    const at = this.dawnAt;
+    let out = entries;
+    if (at === null) return out;
+    const t = obs.t;
+    const units = new Map(obs.mine.units.map((u) => [u.id, u]));
+    for (const [id, s] of [...this.staged]) {
+      if (!units.has(id) || this.owners.at(s.ring) === this.slot || t > at + 16) this.staged.delete(id);
+    }
+    if (t >= at - 1) {
+      for (const [id, s] of this.staged) {
+        const u = units.get(id)!;
+        const goal = u.task?.goal;
+        const onRing = u.q === s.ring.q && u.r === s.ring.r;
+        const heading = !!goal && goal.q === s.ring.q && goal.r === s.ring.r;
+        if (onRing || heading || u.wait > 0 || u.stuck) {
+          out = this.dropUnit(out, id);
+          continue;
+        }
+        out = this.replaceUnit(obs, out, id, { kind: 'move', unit: id, q: s.ring.q, r: s.ring.r, goal: { q: s.ring.q, r: s.ring.r }, home: false });
+      }
+      return out;
+    }
+    if (t < at - N) return out;
+    /* already assigned: standing - ignore the head; knocked off - back */
+    for (const [id, s] of this.staged) {
+      const u = units.get(id)!;
+      const there = u.q === s.stand.q && u.r === s.stand.r;
+      if (there || u.wait > 0 || u.stuck) {
+        out = this.dropUnit(out, id);
+        continue;
+      }
+      out = this.replaceUnit(obs, out, id, { kind: 'move', unit: id, q: s.stand.q, r: s.stand.r, goal: null, home: false });
+    }
+    /* new ones: the nearest pair "Tkach - cell next to a ring needle" it can make in time */
+    const rings = new Set([...this.staged.values()].map((s) => cell(s.ring)));
+    const stands = new Set([...this.staged.values()].map((s) => cell(s.stand)));
+    const step = this.num('stepTkach', 2);
+    for (;;) {
+      let best: { u: Observe['mine']['units'][number]; ring: Hex; stand: Hex; d: number } | null = null;
+      for (const ring of this.ringEdge) {
+        if (rings.has(cell(ring)) || this.owners.at(ring) !== 'K' || !this.links(ring, obs)) continue;
+        for (const stand of this.standsBy(ring, obs, stands)) {
+          for (const u of obs.mine.units) {
+            if (u.cls !== 'ткач' || u.wait > 0 || u.stuck || u.mute || this.staged.has(u.id)) continue;
+            /* in the frame site = goal on the way too: busy is only one already at the goal (heating or building) */
+            const goal = u.task?.goal;
+            if (u.task?.feed || u.task?.home || (goal && goal.q === u.q && goal.r === u.r)) continue;
+            const owner = this.owners.at(u);
+            if (owner !== undefined && owner !== this.slot) continue; /* heating a foreign needle */
+            const d = hexDist(u, stand);
+            if (d * step * 1.5 > at - t + 4 || (best && d >= best.d)) continue;
+            if (!this.pathOk(u, stand, 'ткач')) continue;
+            best = { u, ring, stand, d };
+          }
+        }
+      }
+      if (!best) break;
+      const next = this.replaceUnit(obs, out, best.u.id, { kind: 'move', unit: best.u.id, q: best.stand.q, r: best.stand.r, goal: null, home: false });
+      if (next === out) break;
+      out = next;
+      this.staged.set(best.u.id, { ring: best.ring, stand: best.stand });
+      rings.add(cell(best.ring));
+      stands.add(cell(best.stand));
+    }
+    return out;
+  }
+
+  /* loot:K - a jam on a foreign lit needle pulls its coverage to us (rules
+     8.7), and the engine's head doesn't count loot at all (03-sdk 6) and even
+     removes the Keeper's penalty from a ring needle, though jamming from a cell
+     farther than 6 from the center is not a provocation (21.7). Before dawn K
+     Klinoks the head gave nothing stand beyond the line next to a lit ring
+     needle and hold the jam (hold). The head's empty pair jam(null) + halt is
+     not passed for them - it would lift the jam. One tick before dawn - release:
+     a dark ring gives no loot (22.5) */
+  private lootRing(obs: Observe, entries: Tagged[], K: number): Tagged[] {
+    const at = this.dawnAt;
+    let out = entries;
+    if (at === null) return out;
+    const units = new Map(obs.mine.units.map((u) => [u.id, u]));
+    const autonomy = this.num('autonomy', 40);
+    const idx = (id: string) => out.flatMap((e, i) => ('unit' in e.order && e.order.unit === id ? [i] : []));
+    const lit = (h: Hex) => this.owners.at(h) === 'K' && !(obs.own.find((e) => e.q === h.q && e.r === h.r)?.dark ?? false);
+    for (const [id, s] of [...this.looters]) {
+      const u = units.get(id);
+      /* the head rams (a threat), the leash, the ring went dark or is no longer the Keeper's - release;
+         its other orders (post, raid) are outweighed by the jam */
+      const rams = out.some((e) => e.order.kind === 'ram' && e.order.unit === id);
+      if (!u || obs.pub.dawn || obs.t >= at - 1 || !lit(s.ring) || u.away > autonomy - 8 || rams) this.looters.delete(id);
+    }
+    if (obs.pub.dawn || obs.t >= at - 1) return out;
+    for (const [id, s] of this.looters) {
+      const u = units.get(id)!;
+      const there = u.q === s.stand.q && u.r === s.stand.r;
+      const jam = u.task?.jam;
+      if (there && jam && jam.q === s.ring.q && jam.r === s.ring.r && u.task?.path === 0) {
+        out = this.dropUnit(out, id);
+        continue;
+      }
+      if (u.wait > 0 || u.stuck) {
+        out = this.dropUnit(out, id);
+        continue;
+      }
+      out = there
+        ? this.replaceUnit(obs, out, id, { kind: 'jam', unit: id, target: { q: s.ring.q, r: s.ring.r }, hold: true })
+        : this.replaceUnit(obs, out, id, { kind: 'move', unit: id, q: s.stand.q, r: s.stand.r, goal: null, home: false });
+    }
+    const rings = new Set([...this.looters.values()].map((s) => cell(s.ring)));
+    const stands = new Set([...this.looters.values()].map((s) => cell(s.stand)));
+    while (this.looters.size < K) {
+      let best: { u: Observe['mine']['units'][number]; ring: Hex; stand: Hex; d: number } | null = null;
+      for (const ring of this.ringEdge) {
+        if (rings.has(cell(ring)) || !lit(ring)) continue;
+        for (const stand of this.standsBy(ring, obs, stands)) {
+          for (const u of obs.mine.units) {
+            if (u.cls !== 'клинок' || u.wait > 0 || u.stuck || u.mute || this.looters.has(u.id) || this.hunts.has(u.id)) continue;
+            if (u.task && (u.task.ram || u.task.home || u.task.jam)) continue;
+            if (!idleOnly(out, idx(u.id))) continue;
+            const d = hexDist(u, stand);
+            if (d > 24 || (best && d >= best.d)) continue;
+            if (!this.pathOk(u, stand, 'клинок')) continue;
+            best = { u, ring, stand, d };
+          }
+        }
+      }
+      if (!best) break;
+      const there = best.d === 0;
+      const order: Order = there
+        ? { kind: 'jam', unit: best.u.id, target: { q: best.ring.q, r: best.ring.r }, hold: true }
+        : { kind: 'move', unit: best.u.id, q: best.stand.q, r: best.stand.r, goal: null, home: false };
+      const next = this.replaceUnit(obs, out, best.u.id, order);
+      if (next === out) break;
+      out = next;
+      this.looters.set(best.u.id, { ring: best.ring, stand: best.stand });
+      rings.add(cell(best.ring));
+      stands.add(cell(best.stand));
+    }
+    return out;
+  }
+
+  /* duck - a ram on a Tkach that heats or builds is clean (11.7): the
+     opponent's Klinok kills it and lives. A ram on a Tkach without work is a
+     trade, the rammer dies too. An enemy Klinok within 2 cells of our working
+     Tkach, and no Klinok of ours closer to it - the Tkach steps off the needle
+     to a free adjacent cell away from the Klinok and stands while the threat is
+     near (up to 6 ticks). Heating restarts, but the Tkach is alive, and a ram
+     on it costs the opponent a Klinok */
+  private duckTkachs(obs: Observe, entries: Tagged[]): Tagged[] {
+    let out = entries;
+    const t = obs.t;
+    const units = new Map(obs.mine.units.map((u) => [u.id, u]));
+    for (const [id, until] of [...this.ducking]) if (!units.has(id) || t > until) this.ducking.delete(id);
+    const blades = obs.foe.filter((f) => f.cls === 'клинок' && f.p !== 'K');
+    const ours = obs.mine.units.filter((u) => u.cls === 'клинок');
+    const threat = (u: Hex) => blades.find((f) => hexDist(f, u) <= 2 && !ours.some((k) => hexDist(k, f) < hexDist(u, f)));
+    /* already stepped away: they stand while the Klinok is near, the head is ignored */
+    for (const id of this.ducking.keys()) {
+      const u = units.get(id)!;
+      if (!threat(u)) {
+        this.ducking.delete(id);
+        continue;
+      }
+      out = this.dropUnit(out, id);
+    }
+    const busy = new Set([...obs.mine.units.map(cell), ...obs.foe.map(cell)]);
+    for (const u of obs.mine.units) {
+      if (u.cls !== 'ткач' || u.wait > 0 || u.stuck || u.mute || this.ducking.has(u.id)) continue;
+      const owner = this.owners.at(u);
+      const heating = owner !== undefined && owner !== this.slot && !this.start.has(cell(u));
+      const site = u.task?.site;
+      const building = !!site && site.q === u.q && site.r === u.r && owner === undefined;
+      if (!heating && !building) continue;
+      /* heating is almost done - finish it */
+      const stood = this.dwell.get(u.id);
+      if (heating && stood && stood.cell === cell(u) && this.heatPrice(u, owner ?? null, obs) - stood.ticks <= 1) continue;
+      const f = threat(u);
+      if (!f) continue;
+      const step = hexRing(u, 1)
+        .filter((c) => !busy.has(cell(c)) && !this.needleCells.has(cell(c)) && this.pathOk(u, c, 'ткач'))
+        .sort((a, b) => hexDist(b, f) - hexDist(a, f))[0];
+      if (!step) continue;
+      const next = this.replaceUnit(obs, out, u.id, { kind: 'move', unit: u.id, q: step.q, r: step.r, goal: null, home: false });
+      if (next === out) continue;
+      out = next;
+      busy.add(cell(step));
+      this.ducking.set(u.id, t + 6);
+    }
+    return out;
+  }
+
+  /* how much charge a cache gives now: above the cap burns (rules 16.3) */
   private cacheGain(obs: Observe): number {
     return Math.max(0, Math.min(this.num('cacheEnergy', 150), this.num('energyCap', 360) - obs.pulse.energy));
   }
 
-  /* чи є біля юнита (у межах гачка, findHook) невзята знахідка, заради якої
-     варто дати гачку дійти: спалах - завжди (безкоштовний скан, гачок - кілька
-     тактів), схрон - коли від нього лишиться ≥ 50 заряду. Нічого такого - слід
-     гачка порожній: або знахідку вже взято, або вона згорить під стелею */
+  /* is there an untaken find near the unit (within the hook, findHook) worth
+     letting the hook reach: a flare - always (a free scan, the hook - a few
+     ticks), a cache - when ≥ 50 charge would be left of it. Nothing like that -
+     the hook's trail is empty: the find is either taken or would burn under the cap */
   private hookWorth(u: Hex, obs: Observe): boolean {
     const reach = this.num('findHook', 2);
     return this.finds.some(
@@ -571,13 +811,13 @@ export class AfterHead {
     );
   }
 
-  /* cache:N - схрон дасть повні 150, тож по нього варто сходити: найближчий
-     за часом вільний юнит до N клітин (клинок крокує вдвічі швидше за
-     ткача). Вільний - у зоні (away 0), без тарану, дороги додому й облоги;
-     клинку голова дала нічого або лише «порожній» jam (його місце займе
-     move), ткач без задачі і без команди голови. Ткача, що гріє чи йде до
-     цілі, не знімаємо. По одному юниту на схрон; гачок і сама дорога
-     підберуть його кроком (16.2), після чого голова дасть юниту нову справу */
+  /* cache:N - a cache gives the full 150, so it's worth a trip: the nearest in
+     time free unit within N cells (a Klinok steps twice as fast as a Tkach).
+     Free - in the zone (away 0), no ram, no way home or siege; the head gave
+     the Klinok nothing or only an "empty" jam (its place is taken by the
+     move), a Tkach without a task and without a head order. A Tkach that heats
+     or walks to its target is never taken off. One unit per cache; the hook and
+     the road itself pick it up on a step (16.2), after which the head gives the unit a new job */
   private seekCache(obs: Observe, entries: readonly Tagged[], N: number): Tagged[] {
     if (this.cacheGain(obs) < this.num('cacheEnergy', 150)) return [...entries];
     const units = new Map(obs.mine.units.map((u) => [u.id, u]));
@@ -616,8 +856,8 @@ export class AfterHead {
     return out;
   }
 
-  /* здобич таки варта тарану: стоїть на голці, що не її, не в нашій паузі,
-     не на стартовій і не на голці партнера своєї угоди */
+  /* the prey is worth a ram after all: stands on a needle that isn't its own,
+     not in our pause, not on a start needle and not on its pact partner's needle */
   private worthy(f: Observe['foe'][number], obs: Observe): boolean {
     const owner = this.owners.at(f);
     if (owner === undefined || owner === f.p || this.start.has(cell(f))) return false;
@@ -627,12 +867,13 @@ export class AfterHead {
     return true;
   }
 
-  /* Таран v2. Мисливець - клинок у зоні (away 0), без тарану й дороги додому,
-     якому голова нічого не дала або дала лише «порожній» jam (без цілі й
-     hold: він нічого не змінює, і його місце займе таран). Тримач облоги -
-     лише на здобич на нашій голці до 3 кроків. Здобич стоїть на клітині ≥ 3
-     тактів і варта тарану (worthy), клинок встигає до кінця прогріву.
-     Ранги: наша голка (кільце після зорі - вище), руїна чи кільце, голка третього. */
+  /* Ram v2. Hunter - a Klinok in the zone (away 0), without a ram or a way
+     home, that the head gave nothing or only an "empty" jam (without a target
+     and hold: it changes nothing, and the ram takes its place). A siege holder
+     - only for prey on our needle within 3 steps. The prey has stood on the
+     cell ≥ 3 ticks and is worth a ram (worthy), the Klinok makes it before the
+     heating ends. Ranks: our needle (the ring after dawn - higher), a ruin or
+     the ring, the third player's needle. */
   private hunt(obs: Observe, entries: readonly Tagged[], R: number): { order: Order; replaces: number[] } | null {
     const link = obs.pub.pact.active.find((l) => l.a === this.slot || l.b === this.slot);
     const friend = link ? (link.a === this.slot ? link.b : link.a) : null;
@@ -643,7 +884,7 @@ export class AfterHead {
       if (f.cls !== 'ткач' || f.p === 'K' || f.p === friend || chased.has(f.id) || !this.worthy(f, obs)) continue;
       const stood = this.foeAt.get(f.id);
       const owner = this.owners.at(f) ?? null;
-      /* на нашій голці в паузі захоплення гріти не можна: прогрів почався не раніше її кінця */
+      /* on our needle in a capture pause heating isn't possible: heating started no earlier than its end */
       const graceEnd = owner === this.slot ? (this.ours.get(cell(f)) ?? -1e9) + this.num('capGrace', 60) : -1e9;
       const since = stood && stood.cell === cell(f) ? obs.t - Math.max(stood.since, graceEnd) : 0;
       if (since < 3) continue;
@@ -661,7 +902,7 @@ export class AfterHead {
       if (u.cls !== 'клинок' || u.stuck || u.wait > 0 || u.away > 0) continue;
       if (u.task && (u.task.ram || u.task.home)) continue;
       const mine = byUnit.get(u.id) ?? [];
-      /* голова дає клинку-вартовому пару jam(null) + halt щотакту: це не справа */
+      /* the head gives a guard Klinok the pair jam(null) + halt every tick: that's not a job */
       if (!idleOnly(entries, mine)) continue;
       const replaces = mine;
       const holder = !!(u.task && u.task.jam && u.task.path === 0);
@@ -680,8 +921,8 @@ export class AfterHead {
     return { order: { kind: 'ram', unit: best.unit, target: best.target }, replaces: best.replaces };
   }
 
-  /* yardcap: юнит на полі й корпуси в черзі верфі (прийняті за droneBuild
-     тактів) плюс новий - не важче squadWeight; інакше відмова «вага рою» */
+  /* yardcap: units in the field and hulls in the yard queue (accepted within
+     droneBuild ticks) plus the new one - not heavier than squadWeight; otherwise a "swarm weight" rejection */
   private capYard(obs: Observe, entries: readonly Tagged[]): Tagged[] {
     const weight = (cls: ClsName) => (cls === 'ткач' ? this.num('weightTkach', 2) : this.num('weightKlinok', 1));
     const build = this.num('droneBuild', 4);
@@ -697,15 +938,16 @@ export class AfterHead {
     });
   }
 
-  /* Фільтр кадру перед відправкою (критерій К3: 2 бали лише за 0 відмов):
-     - «порожні» команди: halt юниту без задачі, jam без цілі й hold клинку без
-       наміру глушити - якщо юниту в кадрі нічого іншого не дано. Голова дає
-       таку пару кожному клинку-вартовому щотакту (~420 пар за партію) і
-       роздуває кадр понад стелю - відмова «стеля» (код 2);
-     - scan, на який не стане вух (з бурею), коли жетона спалаху немає -
-       відмова «вуха» (код 7);
-     - needle на площадку, де воротар уже відмовив «земля» (код 11).
-     Вердикти лишаються на своїх місцях (at записів не змінюється) */
+  /* Frame filter before sending (criterion K3: 2 points only for 0 rejections):
+     - "empty" orders: halt to a unit without a task, jam without a target and
+       hold to a Klinok with no intent to jam - if the unit is given nothing
+       else in the frame. The head gives such a pair to every guard Klinok every
+       tick (~420 pairs per match) and bloats the frame above the cap - a "cap"
+       rejection (code 2);
+     - a scan there won't be enough ears for (with a storm) when there is no
+       flare token - an "ears" rejection (code 7);
+     - a needle onto a site where the gatekeeper already rejected "ground" (code 11).
+     Verdicts stay in their positions (the entries' at doesn't change) */
   vet(obs: Observe, entries: readonly Tagged[], flareTokens: number): Tagged[] {
     const units = new Map(obs.mine.units.map((u) => [u.id, u]));
     const noop = (o: Order): boolean => {
@@ -730,8 +972,8 @@ export class AfterHead {
     return drop.size ? entries.filter((_, i) => !drop.has(i)) : [...entries];
   }
 
-  /* вердикти кадру: прийняті замовлення верфі - у чергу, відмови тарану - у
-     пам'ять на 15 тактів, «земля» на needle - площадку в пам'ять до кінця партії */
+  /* frame verdicts: accepted yard orders - into the queue, ram rejections -
+     into memory for 15 ticks, "ground" on a needle - the site into memory until the end of the match */
   verdicts(sent: readonly Tagged[], list: readonly Verdict[]): void {
     for (const [i, ok, code] of list) {
       const e = sent[i];

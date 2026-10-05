@@ -30,15 +30,15 @@ const saved = join(homedir(), '.zoria-registry.json')
 if (existsSync(saved)) {
   const answer = JSON.parse(readText(saved))
   for (const key of ['token', 'auth']) {
-    if (typeof answer[key] === 'string' && answer[key].length >= 16) secrets.push(['секрет реєстру', answer[key]])
+    if (typeof answer[key] === 'string' && answer[key].length >= 16) secrets.push(['registry secret', answer[key]])
   }
 } else {
-  console.log('~/.zoria-registry.json немає: значень секрету реєстру не знаю, перевіряю лише .npmrc')
+  console.log('no ~/.zoria-registry.json: registry secret values unknown, checking .npmrc only')
 }
 const envLocal = join(root, 'client', '.env.local')
 if (existsSync(envLocal)) {
   const code = /^VITE_ZORIA_INVITATION\s*=\s*"?([^"\r\n]*)"?\s*$/m.exec(readText(envLocal))?.[1]?.trim()
-  if (code && code.length >= 8) secrets.push(['код заявки', code])
+  if (code && code.length >= 8) secrets.push(['application code', code])
 }
 const found = (text) => secrets.find(([, value]) => text.includes(value))?.[0] ?? null
 
@@ -50,25 +50,25 @@ for (const file of files) {
   if (!existsSync(path)) continue
   // bytes as latin1: the values are ASCII, and a binary file is searched as it is
   const what = found(readFileSync(path, 'latin1'))
-  if (what) problems.push(`${what} у файлі ${file}`)
+  if (what) problems.push(`${what} in file ${file}`)
   if (basename(file) === '.npmrc') {
     for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
       const auth = /:_auth(?:Token)?\s*=\s*(.*)$/.exec(line)
-      if (auth && auth[1].trim() !== '${ZORIA_NPM_AUTH}') problems.push(`${file}: _auth не посилання на \${ZORIA_NPM_AUTH}`)
+      if (auth && auth[1].trim() !== '${ZORIA_NPM_AUTH}') problems.push(`${file}: _auth is not a reference to \${ZORIA_NPM_AUTH}`)
     }
   }
 }
 
 // --text: without it git prints "Binary files differ" and hides the bytes
 const staged = found(git('-C', root, 'diff', '--cached', '--no-color', '--text'))
-if (staged) problems.push(`${staged} у підготовленому коміті`)
+if (staged) problems.push(`${staged} in the staged commit`)
 
 const history = found(git('-C', root, 'log', '--all', '-p', '--no-color', '--text'))
-if (history) problems.push(`${history} в історії репозиторію`)
+if (history) problems.push(`${history} in the repository history`)
 
 if (problems.length > 0) {
   for (const problem of problems) console.error(`P2-07: ${problem}`)
   process.exit(1)
 }
-const kinds = [...new Set(secrets.map(([what]) => what))].join(', ') || 'лише .npmrc'
-console.log(`P2-07: чисто (${kinds}; файлів ${files.length}, історія й підготовлений коміт перевірені)`)
+const kinds = [...new Set(secrets.map(([what]) => what))].join(', ') || '.npmrc only'
+console.log(`P2-07: clean (${kinds}; ${files.length} files, history and staged commit checked)`)

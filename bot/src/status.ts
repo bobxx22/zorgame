@@ -1,20 +1,20 @@
 /* bot :: status
-   внутрішній службовий порт голови - єдиний вхід до бота ззовні його
-   процесу. Його слухає control-plane стека (`zaria-kit init stack`), і з
-   цього знімка він збирає `/health` і `/metrics` службового контракту
-   (`kit/02-control-plane.md`). Другого каналу від голови немає: лічильники
-   проводу бачить лише вона.
+   the head's internal service port - the only way into the bot from outside
+   its process. The stack's control-plane listens to it (`zaria-kit init
+   stack`), and from this snapshot it builds `/health` and `/metrics` of the
+   service contract (`kit/02-control-plane.md`). There is no second channel
+   from the head: only it sees the wire counters.
 
-   Порт вмикається змінною STATUS_PORT. Без неї сервера немає зовсім:
-   локальному пакету (`npm run play`) він не потрібен, а в стеку він живе у
-   внутрішній мережі й назовні не публікується.
+   The port is enabled by the STATUS_PORT variable. Without it there is no
+   server at all: the local pack (`npm run play`) doesn't need it, and in the
+   stack it lives in the internal network and is not published outside.
 
-     GET  /state    знімок голови: провід, такт, лічильники, щоденник
-     POST /preset   {"preset"} - між партіями; у бою і на заморожуванні 409
+     GET  /state    head snapshot: wire, tick, counters, diary
+     POST /preset   {"preset"} - between matches; in battle and when frozen 409
 
-   Тіла запитів - до кілобайта: сюди ходить лише control-plane. Слова
-   відмов машинні (`preset`, `live`, `freeze`, `json`, `path`) - мовою
-   учасника їх переказує той, хто говорить з учасником. */
+   Request bodies - up to a kilobyte: only the control-plane comes here.
+   Refusal words are machine words (`preset`, `live`, `freeze`, `json`,
+   `path`) - whoever talks to the participant retells them in their language. */
 
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
@@ -34,18 +34,18 @@ export interface HeadStats {
 }
 
 export interface HeadState {
-  /* lobby - у партію ще не увійшли; live - провід живий; done - партію скінчено */
+  /* lobby - not in a match yet; live - the wire is alive; done - the match is over */
   state: 'lobby' | 'live' | 'done';
   slot: string | null;
   preset: string;
   presets: string[];
   freeze: boolean;
-  /* такт світу із заголовка останнього кадру спостереження */
+  /* world tick from the header of the last observe frame */
   tick: number;
-  /* кадрів, на які голова дала відповідь; розбіжність із tick - пропуски */
+  /* frames the head answered; a mismatch with tick - skips */
   frames: number;
   ticks: number;
-  /* причина кінця партії: end - вузол попрощався, close:<код> - закрив */
+  /* reason the match ended: end - the node said goodbye, close:<code> - closed */
   why: string;
   engine: string;
   uptimeMs: number;
@@ -55,7 +55,7 @@ export interface HeadState {
 
 export interface Head {
   state(): HeadState;
-  /* змінити пресет між партіями; відмова - Refusal зі своїм кодом HTTP */
+  /* change the preset between matches; a refusal - Refusal with its own HTTP code */
   promote(preset: unknown): string;
 }
 

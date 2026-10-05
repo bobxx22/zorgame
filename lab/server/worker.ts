@@ -1,6 +1,6 @@
 /* lab :: worker
-   Потік, що грає один запуск: партії пакета по черзі, запис кожної на диск,
-   прогрес - повідомленнями головному потоку. */
+   A thread that plays one run: the pack's matches in turn, each written to
+   disk, progress - as messages to the main thread. */
 
 import { writeFileSync } from 'node:fs';
 import { parentPort, workerData } from 'node:worker_threads';

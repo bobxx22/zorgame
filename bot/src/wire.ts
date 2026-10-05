@@ -1,8 +1,8 @@
 /* bot :: wire
-   усе, що main.ts робить навколо стратегії, у формі, яку можна перевірити
-   без вузла: параметри з'єднання, щоденник віри, WireBot для connectBot,
-   знімок голови і зміна пресета для службового порту, підсумок думи.
-   main.ts лише читає оточення і з'єднує ці частини. */
+   everything main.ts does around the strategy, in a form that can be checked
+   without a node: connection options, belief diary, WireBot for connectBot,
+   head snapshot and preset change for the service port, think summary.
+   main.ts only reads the environment and connects these parts. */
 
 import { closeSync, openSync, writeSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
@@ -14,26 +14,27 @@ import { Refusal } from './status.js';
 import type { Head, HeadStats } from './status.js';
 import type { Strategy } from './strategy.js';
 
-/* Повернення після обриву (протокол 8). Типово SDK робить 4 спроби з паузою
-   до 150 мс - це ~0,3 с, і обрив мережі на секунду-дві закінчує партію, хоча
-   печатка повернення живе 180 с. 12 спроб зі стелею паузи 1 с тримають вікно
-   ~8-10 с; перша спроба, як і раніше, миттєва, тож плановій ротації і
-   обриву провокатора це нічого не коштує. Ліміт вузла - 8 hello за 10 с на
-   печатку; мережеві відмови до вузла не доходять і його не витрачають.
-   Присяга чекає відповіді не менше за лобі init-ms (протокол 3.3, 10 с). */
+/* Reconnect after a drop (protocol 8). By default the SDK makes 4 attempts
+   with a pause of up to 150 ms - that's ~0.3 s, and a network drop of a second
+   or two ends the match, though the reconnect seal lives 180 s. 12 attempts
+   with a pause cap of 1 s keep a ~8-10 s window; the first attempt is still
+   immediate, so a planned rotation and the provocateur's drop cost nothing.
+   The node's limit is 8 hellos per 10 s per seal; network failures never reach
+   the node and don't spend it. The oath waits for an answer no less than the
+   lobby's init-ms (protocol 3.3, 10 s). */
 export const WIRE_OPTS = { resumeTries: 12, resumeJitterMs: 1000, connectTimeoutMs: 10_000 } as const satisfies Partial<ConnectOpts>;
 
-/* номер службового порту з оточення; не число 1-65535 - без порту (listen
-   на такому номері кидає синхронно, до присяги) */
+/* service port number from the environment; not a number 1-65535 - no port
+   (listen on such a number throws synchronously, before the oath) */
 export function statusPortOf(value: string | undefined, log: (line: string) => void = () => undefined): number {
   if (value === undefined || value.trim() === '') return 0;
   const port = Number(value);
   if (Number.isInteger(port) && port > 0 && port < 65536) return port;
-  log('STATUS_PORT «' + value + '» не порт 1-65535: службового порту не буде');
+  log('STATUS_PORT "' + value + '" is not a port 1-65535: there will be no service port');
   return 0;
 }
 
-/* p50, p99 і максимум думи за партію, мс */
+/* p50, p99 and max think time per match, ms */
 export function thinkSummary(values: readonly number[]): { p50: string; p99: string; max: string } {
   const sorted = [...values].sort((a, b) => a - b);
   const q = (p: number): string =>
@@ -41,11 +42,11 @@ export function thinkSummary(values: readonly number[]): { p50: string; p99: str
   return { p50: q(50), p99: q(99), max: q(100) };
 }
 
-/* Щоденник віри: один дескриптор на партію, запис синхронний - процес, що
-   впав, не забирає останні такти. Збій файлу не зриває ні присягу, ні
-   відповідь такту: кожен збій - у журнал із тактом, наступний рядок -
-   повний кадр (щоденник пишеться різницями), після BELIEF_FAULTS збоїв
-   поспіль щоденник вимикається. */
+/* Belief diary: one descriptor per match, writes are synchronous - a process
+   that crashed doesn't take the last ticks with it. A file failure breaks
+   neither the oath nor the tick's answer: each failure goes to the log with
+   the tick, the next line is a full frame (the diary is written as diffs),
+   after BELIEF_FAULTS failures in a row the diary is turned off. */
 export const BELIEF_FAULTS = 3;
 
 export class BeliefDiary {
@@ -70,7 +71,7 @@ export class BeliefDiary {
       this.fd = openSync(this.path, 'w');
       this.faults = 0;
     } catch (e) {
-      this.log('щоденник віри не відкрився, граю без нього: ' + errText(e));
+      this.log('belief diary did not open, playing without it: ' + errText(e));
     }
   }
 
@@ -85,11 +86,11 @@ export class BeliefDiary {
       this.faults = 0;
     } catch (e) {
       this.faults++;
-      this.log('щоденник віри, такт ' + String(peekObserveTick(observe)) + ': ' + errText(e));
+      this.log('belief diary, tick ' + String(peekObserveTick(observe)) + ': ' + errText(e));
       // the diary is written in deltas: after a lost line the next one must be full
       strategy.resetBelief();
       if (this.faults < BELIEF_FAULTS) return;
-      this.log('щоденник віри вимкнено після ' + this.faults + ' збоїв поспіль');
+      this.log('belief diary turned off after ' + this.faults + ' failures in a row');
       this.close();
     }
   }
@@ -101,7 +102,7 @@ export class BeliefDiary {
     try {
       closeSync(fd);
     } catch (e) {
-      this.log('щоденник віри не закрився: ' + errText(e));
+      this.log('belief diary did not close: ' + errText(e));
     }
   }
 }
@@ -118,7 +119,7 @@ export interface ShellOpts {
 
 const IDLE: HeadStats = { ticks: 0, orders: 0, nacks: 0, bytesIn: 0, bytesOut: 0, resyncMs: 0, resumes: 0, faults: 0, deferred: 0, lastTickAt: 0 };
 
-/* стан голови в процесі: стратегія, фаза партії, провід і щоденник */
+/* the head's state in the process: strategy, match phase, wire and diary */
 export class BotShell {
   preset: string;
   strategy: Strategy;
@@ -137,9 +138,9 @@ export class BotShell {
     this.diary = new BeliefDiary(o.beliefFile, o.log);
   }
 
-  /* WireBot для connectBot. Щоденник пишеться після відповіді: SDK шле її
-     одразу після tick, а мікрозадача виконується після цього і до
-     наступного кадру - затримка диска не лягає в дедлайн такту */
+  /* WireBot for connectBot. The diary is written after the answer: the SDK
+     sends it right after tick, and the microtask runs after that and before
+     the next frame - disk latency doesn't fall into the tick deadline */
   wireBot(): WireBot {
     return {
       init: (manifest, slot) => {
@@ -162,7 +163,7 @@ export class BotShell {
     };
   }
 
-  /* параметри connectBot: провід і повернення */
+  /* connectBot options: wire and reconnects */
   connectOpts(url: string, token: string, agent: string): ConnectOpts {
     return {
       url,
@@ -178,7 +179,7 @@ export class BotShell {
     };
   }
 
-  /* знімок і зміна пресета для службового порту (status.ts) */
+  /* snapshot and preset change for the service port (status.ts) */
   head(): Head {
     return {
       state: () => ({
@@ -196,8 +197,8 @@ export class BotShell {
         stats: this.run ? { ...this.run.stats } : { ...IDLE },
         belief: { frames: this.diary.frames, ageMs: this.diary.at ? Date.now() - this.diary.at : 0 },
       }),
-      /* зміна стратегії - між партіями і лише до заморожування: зміна
-         пресета посеред бою була б зміною гравця */
+      /* a strategy change - between matches and only before the freeze: a
+         preset change mid-battle would be a change of player */
       promote: (value) => {
         if (typeof value !== 'string' || !this.o.presets().includes(value)) throw new Refusal(400, 'preset');
         if (this.phase === 'live') throw new Refusal(409, 'live');
@@ -211,20 +212,20 @@ export class BotShell {
     };
   }
 
-  /* рядок про кінець партії для журналу */
+  /* the end-of-match line for the log */
   summary(): string {
     const s = thinkSummary(this.think);
     const stats = this.run?.stats;
     return (
-      'партію закінчено (' +
+      'match over (' +
       this.why +
-      '): відповідей ' +
+      '): answers ' +
       String(stats?.ticks ?? 0) +
-      ', кидків ' +
+      ', throws ' +
       String(stats?.faults ?? 0) +
-      ', повернень ' +
+      ', reconnects ' +
       String(stats?.resumes ?? 0) +
-      '; дума, мс: p50 ' +
+      '; think, ms: p50 ' +
       s.p50 +
       ', p99 ' +
       s.p99 +

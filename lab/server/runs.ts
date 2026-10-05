@@ -1,6 +1,6 @@
 /* lab :: runs
-   Запуски лабораторії на диску: runs/<id>/meta.json і по файлу на партію
-   (match-<n>.json.gz). Каталог runs/ не комітиться. */
+   Lab runs on disk: runs/<id>/meta.json and a file per match
+   (match-<n>.json.gz). The runs/ directory is not committed. */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isPreset, parseTactics } from '../../bot/dist/strategy.js';
 import type { RunMeta, RunRequest, SeatSpec } from '../shared/record.ts';
+import { isExtBot } from './ext.ts';
+import { isMix } from './mix.ts';
 
 export const RUNS = fileURLToPath(new URL('../runs/', import.meta.url));
 
@@ -55,17 +57,18 @@ export interface Known {
   presets: string[];
   archetypes: string[];
   nakaz: string[];
+  ext: string[];
   charters: string[];
 }
 
-/* місце з панелі: лише відомі імена, надбудови - лише з відомих */
+/* a seat from the panel: only known names, tactics - only known ones */
 export function parseSeat(seat: unknown, known: Known): SeatSpec {
   const s = seat as Partial<SeatSpec> | null;
   const kind = s?.kind;
   const name = String(s?.name ?? '');
   if (kind === 'ours' && (known.presets.includes(name) || isPreset(name))) {
     const tactics = Array.isArray(s?.tactics) ? s.tactics.map(String) : [];
-    /* надбудови перевіряє сам бот: усе, що він пропустив би, - відмова */
+    /* the bot checks the tactics itself: anything it would skip is a refusal */
     for (const t of tactics) {
       parseTactics([t], () => {
         throw new Error('tactic ' + t);
@@ -75,11 +78,13 @@ export function parseSeat(seat: unknown, known: Known): SeatSpec {
   }
   if (kind === 'archetype' && known.archetypes.includes(name)) return { kind, name };
   if (kind === 'nakaz' && known.nakaz.includes(name)) return { kind, name };
+  if (kind === 'ext' && (known.ext.includes(name) || isExtBot(name))) return { kind, name };
+  if (kind === 'mix' && isMix(name)) return { kind, name };
   if (kind === 'our-nakaz') return { kind, name: 'nakaz.yaml' };
   throw new Error('seat ' + String(kind) + ' ' + name);
 }
 
-/* запит із панелі: перевірити все, що піде в рушій */
+/* a request from the panel: check everything that goes into the engine */
 export function parseRequest(body: unknown, known: Known): RunRequest {
   const b = body as Partial<RunRequest> | null;
   if (!b || typeof b !== 'object') throw new Error('body');

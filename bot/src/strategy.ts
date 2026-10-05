@@ -1,27 +1,27 @@
 /* bot :: strategy
-   Стратегія бота: голова-дзеркало з характером (ZARIA_PRESET - ім'я
-   каталогу styles.ts або рядок «основа+ручка=число,...», типово полудень) і
-   пульс, що тримає слот за ботом.
+   The bot's strategy: a mirror head with a character (ZARIA_PRESET - a name
+   from the styles.ts catalogue or a string "base+knob=number,...", полудень by
+   default) and a pulse that keeps the slot with the bot.
 
-   Контракт - WireBot (маніфест, кадр спостереження -> кадр команд,
-   вердикти) плюс кадр щоденника віри. Мережі тут немає і бути не повинно:
-   провід, повернення і піни живуть у main.ts, wire.ts і connectBot.
+   Contract - WireBot (manifest, observe frame -> orders frame, verdicts)
+   plus a belief diary frame. There is no network here and there must not be:
+   the wire, reconnects and pings live in main.ts, wire.ts and connectBot.
 
-   Пульс. Наказ бере слот із сьомого такту без прийнятої команди (правила
-   23.2), а голова дзеркала мовчить, коли їй нема чого скомандувати, або
-   отримує відмови. Після PULSE_AFTER таких тактів бот сам ставить першою в
-   кадр команду, яка нічого не змінює у світі (P2-04):
-     - halt юниту без завдання - безкоштовний (правила 13.4), але лише
-       юниту, якому голова в цьому кадрі нічого не дала: кадр спостереження
-       знято до команд (6.3), і воротар виконує їх по черзі (6.4), тож halt
-       такому юниту скасував би щойно дану команду;
-     - jam без цілі клинку в справі, який не глушить і не таранить, -
-       теж безкоштовний; наміру глушити в нього й так немає;
-     - повтор фокуса, який воротар уже прийняв, - 32 байти каналу. Він стоїть
-       першим, тож watch голови в тому самому кадрі, якщо його приймуть,
-       перекриває його.
-   Пульс подається, лише якщо на нього вистачає каналу разом із командами
-   голови і кадр не впирається в стелю: відмова - теж відхилена команда. */
+   Pulse. The nakaz takes the slot from the seventh tick without an accepted
+   order (rules 23.2), and the mirror head stays silent when it has nothing to
+   order, or gets rejections. After PULSE_AFTER such ticks the bot itself puts
+   first in the frame an order that changes nothing in the world (P2-04):
+     - halt to a unit without a task - free (rules 13.4), but only to a unit
+       the head gave nothing in this frame: the observe frame is taken before
+       the orders (6.3), and the gatekeeper executes them in turn (6.4), so a
+       halt to such a unit would cancel the order just given;
+     - jam without a target to a busy Klinok that neither jams nor rams -
+       also free; it has no intent to jam anyway;
+     - a repeat of the focus the gatekeeper already accepted - 32 channel
+       bytes. It goes first, so the head's watch in the same frame, if
+       accepted, overrides it.
+   The pulse is sent only if the channel covers it together with the head's
+   orders and the frame doesn't hit the cap: a rejection is a rejected order too. */
 
 import { readFileSync } from 'node:fs';
 import { createEngine } from '@zoria/engine';
@@ -44,29 +44,30 @@ import { parseStyle, STYLES } from './styles.js';
 import { AfterHead, hookHead, ramOrder } from './tactics.js';
 
 export interface Strategy extends WireBot {
-  /* кадр щоденника віри такту; null - кадру немає */
+  /* the tick's belief diary frame; null - no frame */
   belief(obs: Observe | null): BeliefFrame | null;
-  /* наступний кадр щоденника - повний: попередній рядок не записався */
+  /* the next diary frame is a full one: the previous line was not written */
   resetBelief(): void;
 }
 
-/* Пульс - із третього такту без прийнятої команди: до сьомого лишається
-   чотири такти запасу на обрив і повернення (протокол 8.4). */
+/* Pulse - from the third tick without an accepted order: that leaves four
+   ticks of margin before the seventh for a drop and reconnect (protocol 8.4). */
 export const PULSE_AFTER = 2;
-/* Падіння голови в журналі: перше і далі кожне FAIL_LOG_EVERY-те. */
+/* Head failures in the log: the first one and then every FAIL_LOG_EVERY-th. */
 export const FAIL_LOG_EVERY = 100;
 
 type Watch = Extract<Order, { kind: 'watch' }>;
 
-/* що потрібно пульсу про світ: тарифи, бурі, вогнище */
+/* what the pulse needs to know about the world: tariffs, storms, hearth */
 export interface PulseWorld {
   cfg: ChannelCfg;
   storms: Manifest['storms'];
   hearth: Hex;
 }
 
-/* де «стоїть» команда для тарифу: юнит - на своїй соті, фокус і скан -
-   у цілі, решта (yard, bid, pact, cry) - на вогнищі (правила 15.3) */
+/* where an order "stands" for the tariff: a unit order - at the unit's cell,
+   focus and scan - at the target, the rest (yard, bid, pact, cry) - at the
+   hearth (rules 15.3) */
 export function costAt(order: Order, obs: Observe, hearth: Hex): Hex {
   if ('unit' in order) {
     const unit = obs.mine.units.find((u) => u.id === order.unit);
@@ -76,7 +77,7 @@ export function costAt(order: Order, obs: Observe, hearth: Hex): Hex {
   return hearth;
 }
 
-/* байти каналу, що лишаться після команд голови; скан платить вухами */
+/* channel bytes left after the head's orders; a scan pays with ears */
 export function channelLeft(obs: Observe, orders: readonly Order[], world: PulseWorld): number {
   let left = obs.pulse.chan;
   for (const order of orders) {
@@ -86,7 +87,7 @@ export function channelLeft(obs: Observe, orders: readonly Order[], world: Pulse
   return left;
 }
 
-/* найдешевша команда, що нічого не змінює, або null, якщо такої немає */
+/* the cheapest order that changes nothing, or null if there is none */
 export function pulseOrder(obs: Observe, orders: readonly Order[], focus: Watch | null, world: PulseWorld): Order | null {
   if (orders.length + 1 > orderCap(world.cfg, obs.pulse.chanAt)) return null;
   const left = channelLeft(obs, orders, world);
@@ -94,58 +95,85 @@ export function pulseOrder(obs: Observe, orders: readonly Order[], focus: Watch 
   const idle = obs.mine.units.find((unit) => unit.task === null && unit.wait === 0 && !busy.has(unit.id));
   // halt and jam are free, but the gatekeeper accepts them only while 32 bytes are left (rules 13.4)
   if (idle && left >= world.cfg.chanOrder) return { kind: 'halt', unit: idle.id };
-  /* клинок у справі, що не глушить і не таранить: jam без цілі лише скидає
-     намір глушити, а його й так немає - світ не змінюється (zaria-sim-order.js, subJam) */
+  /* a busy Klinok that neither jams nor rams: a jam without a target only
+     drops the intent to jam, which it doesn't have anyway - the world doesn't
+     change (zaria-sim-order.js, subJam) */
   const klinok = obs.mine.units.find((u) => u.cls === 'клинок' && u.task !== null && u.task.jam === null && u.task.ram === null && u.wait === 0 && !busy.has(u.id));
   if (klinok && left >= world.cfg.chanOrder) return { kind: 'jam', unit: klinok.id, target: null, hold: false };
   if (!focus) return null;
   return left >= orderCost(world.cfg, 'watch', focus, obs.t, world.storms) ? focus : null;
 }
 
-/* Надбудови над головою. Типово - DEFAULT_TACTICS. Заповнювач спрацьовує
-   рідко (близько такту за партію): на 60 свіжих долинах бот без надбудов
-   проти fill:наш:6 - -0.10 ± 0.15 частки за пакет, у межах похибки. Його
-   лишено, бо шкоди немає, а в довгий простій він дає ткача. Задаються
-   рядком ZARIA_TACTICS через кому; none - без надбудов, порожньо - типові:
-     fill:<наказ>[:N]  - простій голови заповнює наказ: зразок SDK (черепаха,
-                         експансія, економка, хвилини, замовлення, тиск) або
-                         наш (bot/nakaz.yaml). Наказ іде всередині бота
-                         кожен такт і знає світ; його команди йдуть у кадр,
-                         коли голова мовчить понад N тактів (типово 0). Слот
-                         лишається за ботом: це не епізод наказу вузла;
-     nopact            - не пропонувати і не приймати угод: податок угоди -
-                         десята частка доходу кожного такту (правила 19.5);
-     nofeed:T          - голова не ставить ткачів на підкормку до такту T
-                         (1200 - ніколи): підкормка в її черзі рішень стоїть
-                         раніше за ціль і забирає ткача росту назавжди;
-     k0:T              - без клинків у верфі до такту T, далі - klinok стилю;
-     ram:R             - чистий таран: вільний клинок до R кроків таранить
-                         чужого ткача на голці, що не його (греє - таран чистий,
-                         правила 11.7);
-     hunt:R            - таран v2: охотник і клинок із «порожнім» jam голови,
-                         лише в зоні; здобич стоїть на голці ≥ 3 тактів, не в
-                         паузі нашого захоплення, клинок встигає; погоню, що
-                         втратила сенс, знято;
-     cherta            - до зорі голова не бачить голок за чертою (Ключник
-                         таранить, захоплень майже немає);
-     stay:K            - не відкликати додому ткача, якому до захоплення ≤ K
-                         тактів і повідець витримає;
-     yardcap           - не замовляти юнит понад вагу рою (відмова «вага рою»);
-     nohook            - ткач уже на голці своєї цілі, а сервер веде його ще
-                         слідом гачка знахідки (правила 16.8) - move на ту саму
-                         клітину обрізає зайвий круг, прогрів не переривається.
-                         Лише коли знахідка на гачку нічого не дасть: уже взята
-                         або від схрону під стелею заряду лишиться < 50;
-     surplus:E:B       - динамічний стиль: поки заряд ≥ E, ручка build = B
-                         (заряд на стелі 360 згоряє - нехай іде на щогли й лоти);
-     cache:N           - схрон дасть повні 150 (заряд + 150 ≤ стеля): по нього
-                         йде найближчий вільний юнит до N клітин - клинок без
-                         справи чи ткач без задачі; ткача, що гріє, не знімаємо;
-     gap:N, catch:x,   - числа «вбудованих голів» з маніфесту (правила, A.1)
-     bopen:x, rfloor:x   у власному дзеркалі: guardGap, catchFloor, buildOpen,
-                         raidFloor. Законів світу вони не міняють, лише голову.
-   Механіка - tactics.ts. */
-export const FILL_CHARTERS = [...Object.keys(NAKAZ_SAMPLES), 'наш'] as const;
+/* Tactics on top of the head. Default - DEFAULT_TACTICS. The filler fires
+   rarely (about one tick per match): on 60 fresh valleys the bot without
+   tactics vs fill:own:6 - -0.10 ± 0.15 share per pack, within the error. It
+   is kept because it does no harm, and in a long idle stretch it gives a
+   Tkach. Set by the ZARIA_TACTICS string, comma separated; none - no tactics,
+   empty - the defaults:
+     fill:<nakaz>[:N]  - the head's idle time is filled by a nakaz: an SDK sample
+                         (черепаха, експансія, економка, хвилини, замовлення,
+                         тиск) or own (bot/nakaz.yaml; the old name наш is
+                         still accepted). The nakaz runs inside the bot every
+                         tick and knows the world; its orders go into the frame
+                         when the head has been silent for more than N ticks
+                         (0 by default). The slot stays with the bot: this is
+                         not the node's nakaz episode;
+     nopact            - never offer or accept pacts: the pact tax is a tenth
+                         of the income of every tick (rules 19.5);
+     nofeed:T          - the head doesn't put Tkachs on feeding before tick T
+                         (1200 - never): in its decision queue feeding comes
+                         before the target and takes a growth Tkach for good;
+     k0:T              - no Klinoks from the yard before tick T, then the
+                         style's klinok;
+     ram:R             - clean ram: a free Klinok within R steps rams an enemy
+                         Tkach on a needle that is not his (heating - the ram
+                         is clean, rules 11.7);
+     hunt:R            - ram v2: a hunter and a Klinok with the head's "empty"
+                         jam, only inside the zone; the prey has stood on the
+                         needle ≥ 3 ticks, not in a pause of our capture, the
+                         Klinok makes it in time; a chase that lost its point
+                         is dropped;
+     cherta            - before dawn the head doesn't see needles beyond the
+                         cherta line (the Keeper rams, there are almost no
+                         captures);
+     stay:K            - don't recall home a Tkach that is ≤ K ticks from a
+                         capture if the leash holds;
+     yardcap           - don't order a unit above the swarm weight (rejection
+                         "swarm weight");
+     nohook            - the Tkach is already on the needle of its target, but
+                         the server still leads it along the hook of a find
+                         (rules 16.8) - a move to the same cell cuts the extra
+                         loop, heating isn't interrupted. Only when the hooked
+                         find gives nothing: already taken, or a cache under
+                         the charge cap would leave < 50;
+     surplus:E:B       - dynamic style: while the charge is ≥ E, knob build = B
+                         (charge at the 360 cap burns - let it go to masts and
+                         lots);
+     cache:N           - a cache gives the full 150 (charge + 150 ≤ cap): the
+                         nearest free unit within N cells goes for it - an idle
+                         Klinok or a Tkach without a task; a heating Tkach is
+                         never taken off;
+     dawn:N            - N ticks before dawn a free Tkach (not heating, not
+                         building) stands beyond the cherta next to the ring
+                         needle our thread reaches; one tick before dawn it
+                         steps on it and heats until it is ours (idea from
+                         external bots, 03.10);
+     loot:K            - before dawn K free Klinoks jam a lit ring needle from
+                         a cell beyond the cherta: loot (rules 8.7) without
+                         provoking (21.7); the jam is lifted before dawn - a
+                         dark ring gives no loot;
+     duck              - a working Tkach (heating or building) with an enemy
+                         Klinok closer than ours steps to an adjacent cell: a
+                         ram on a Tkach without work is a trade (11.7), not a
+                         clean one (idea from an external bot, 04.10);
+     gap:N, catch:x,   - numbers of the "built-in heads" from the manifest
+     bopen:x, rfloor:x   (rules, A.1) in our own mirror: guardGap, catchFloor,
+                         buildOpen, raidFloor. They don't change the laws of
+                         the world, only the head.
+   Mechanics - tactics.ts. */
+export const FILL_CHARTERS = [...Object.keys(NAKAZ_SAMPLES), 'own'] as const;
+/* the old name of our nakaz (until 05.10) */
+const OWN_ALIAS = 'наш';
 
 export interface Tactics {
   fill: { charter: string; after: number } | null;
@@ -159,12 +187,15 @@ export interface Tactics {
   yardCap: boolean;
   noHook: boolean;
   cache: number | null;
+  dawn: number | null;
+  loot: number | null;
+  duck: boolean;
   surplus: { at: number; build: number } | null;
-  /* ключ SIM_CFG -> значення в дзеркалі голови */
+  /* SIM_CFG key -> value in the head's mirror */
   engine: Readonly<Record<string, number>>;
 }
 
-/* токен -> ключ SIM_CFG і межі; gap - ціле */
+/* token -> SIM_CFG key and bounds; gap is an integer */
 export const ENGINE_KNOBS: Readonly<Record<string, { key: string; min: number; max: number; int: boolean }>> = {
   gap: { key: 'guardGap', min: 1, max: 600, int: true },
   catch: { key: 'catchFloor', min: 0, max: 1, int: false },
@@ -172,77 +203,82 @@ export const ENGINE_KNOBS: Readonly<Record<string, { key: string; min: number; m
   rfloor: { key: 'raidFloor', min: 0, max: 2, int: false },
 };
 
-export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, surplus: null, engine: {} };
+export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, dawn: null, loot: null, duck: false, surplus: null, engine: {} };
 
-/* здача: ZARIA_TACTICS організатори не задають, тож бій іде з цим рядком.
-   Порожня змінна (стек часто так задає) - теж цей рядок; без надбудов - none.
-   nofeed:1200 - з пошуку 01.10 разом зі стилем полудень (DEFAULT_PRESET);
-   nohook - лише скорочує шлях після гачка знахідки; cherta і hunt:12 (таран v2
-   замість ram:6) - див. покажчик у tactics.ts: без cherta мінус 55-90 хвилин за
-   пакет на чужому і змішаному пулах; hunt:12 проти hunt:6 - плюс на всіх трьох
-   пулах (+0.13…+0.39 частки, +51…+72 хвилини) */
-export const DEFAULT_TACTICS = 'fill:наш:6,nofeed:1200,nohook,cherta,hunt:12';
+/* submission: the organizers don't set ZARIA_TACTICS, so the battle runs with
+   this string. An empty variable (the stack often sets it so) - this string
+   too; no tactics - none. nofeed:1200 - from the 01.10 search together with
+   the полудень style (DEFAULT_PRESET); nohook only shortens the path after a
+   find's hook; cherta and hunt:12 (ram v2 instead of ram:6) - see the index in
+   tactics.ts: without cherta minus 55-90 minutes per pack on the foreign and
+   mixed pools; hunt:12 vs hunt:6 - a plus on all three pools (+0.13…+0.39
+   share, +51…+72 minutes) */
+export const DEFAULT_TACTICS = 'fill:own:6,nofeed:1200,nohook,cherta,hunt:12';
 
-/* рядок надбудов; невідоме - у журнал і пропустити */
+/* tactics string; anything unknown - to the log and skip */
 export function parseTactics(spec: string | readonly string[] | undefined, log: (line: string) => void = () => undefined): Tactics {
   const items = (typeof spec === 'string' ? spec.split(',') : (spec ?? [])).map((x) => x.trim()).filter(Boolean);
   const out: Tactics = { ...NO_TACTICS };
-  /* такт або радіус: ціле в межах, інакше - у журнал */
+  /* tick or radius: an integer within bounds, otherwise - to the log */
   const int = (item: string, v: string | undefined, max: number): number | null => {
     const n = Number(v);
     if (v !== undefined && /^\d{1,4}$/.test(v) && n >= 1 && n <= max) return n;
-    log('надбудова «' + item + '»: N - ціле 1-' + max + ', пропускаю');
+    log('tactic "' + item + '": N - integer 1-' + max + ', skipping');
     return null;
   };
   for (const item of items) {
-    const [name, charter, after, ...rest] = item.split(':');
-    if (rest.length) log('надбудови «' + item + '» немає, пропускаю');
+    const [name, rawCharter, after, ...rest] = item.split(':');
+    const charter = name === 'fill' && rawCharter === OWN_ALIAS ? 'own' : rawCharter;
+    if (rest.length) log('no tactic "' + item + '", skipping');
     else if (name === 'none' && charter === undefined) continue;
     else if (name === 'nopact' && charter === undefined) out.noPact = true;
     else if (name === 'nofeed' && after === undefined) out.noFeed = int(item, charter, 1200) ?? out.noFeed;
     else if (name === 'k0' && after === undefined) out.k0 = int(item, charter, 1200) ?? out.k0;
     else if (name === 'ram' && after === undefined) out.ram = int(item, charter, 12) ?? out.ram;
-    else if (name === 'hunt' && after === undefined) out.hunt = int(item, charter, 12) ?? out.hunt;
+    else if (name === 'hunt' && after === undefined) out.hunt = int(item, charter, 24) ?? out.hunt;
     else if (name === 'stay' && after === undefined) out.stay = int(item, charter, 24) ?? out.stay;
     else if (name === 'cherta' && charter === undefined) out.cherta = true;
     else if (name === 'yardcap' && charter === undefined) out.yardCap = true;
     else if (name === 'nohook' && charter === undefined) out.noHook = true;
     else if (name === 'cache' && after === undefined) out.cache = int(item, charter, 12) ?? out.cache;
+    else if (name === 'dawn' && after === undefined) out.dawn = int(item, charter, 120) ?? out.dawn;
+    else if (name === 'loot' && after === undefined) out.loot = int(item, charter, 3) ?? out.loot;
+    else if (name === 'duck' && charter === undefined) out.duck = true;
     else if (name === 'surplus' && charter !== undefined && after !== undefined) {
       const at = Number(charter);
       const build = Number(after);
       const ok = /^\d{1,3}$/.test(charter) && at >= 0 && at <= 360 && /^\d+(\.\d+)?$/.test(after) && build <= 3;
       if (ok) out.surplus = { at, build };
-      else log('надбудова «' + item + '»: E - ціле 0-360, B - 0-3, пропускаю');
+      else log('tactic "' + item + '": E - integer 0-360, B - 0-3, skipping');
     }
     else if (name && Object.hasOwn(ENGINE_KNOBS, name) && after === undefined) {
       const k = ENGINE_KNOBS[name]!;
       const n = Number(charter);
       const ok = charter !== undefined && (k.int ? /^\d{1,4}$/ : /^\d+(\.\d+)?$/).test(charter) && n >= k.min && n <= k.max;
       if (ok) out.engine = { ...out.engine, [k.key]: n };
-      else log('надбудова «' + item + '»: N - ' + (k.int ? 'ціле ' : '') + k.min + '-' + k.max + ', пропускаю');
+      else log('tactic "' + item + '": N - ' + (k.int ? 'integer ' : '') + k.min + '-' + k.max + ', skipping');
     }
     else if (name === 'fill' && charter && (FILL_CHARTERS as readonly string[]).includes(charter)) {
       const n = after === undefined ? 0 : Number(after);
       if (Number.isInteger(n) && n >= 0 && n <= 1200) out.fill = { charter, after: n };
-      else log('надбудова «' + item + '»: N - ціле 0-1200, пропускаю');
-    } else log('надбудови «' + item + '» немає, пропускаю');
+      else log('tactic "' + item + '": N - integer 0-1200, skipping');
+    } else log('no tactic "' + item + '", skipping');
   }
   return out;
 }
 
-/* текст наказу-заповнювача */
+/* the filler nakaz's text */
 export function charterText(name: string): string {
-  if (name === 'наш') return readFileSync(new URL('../nakaz.yaml', import.meta.url), 'utf8');
+  if (name === 'own' || name === OWN_ALIAS) return readFileSync(new URL('../nakaz.yaml', import.meta.url), 'utf8');
   const text = (NAKAZ_SAMPLES as Readonly<Record<string, string>>)[name];
   if (!text) throw new Error('no such charter: ' + name);
   return text;
 }
 
-/* голова, яку обгортає пульс: дзеркало архетипу або підміна в тестах */
+/* the head the pulse wraps: an archetype mirror or a stand-in in tests */
 export type Head = Pick<MirrorBot, 'init' | 'tick' | 'feedback' | 'mirror'>;
 
-/* звідки команда кадру: пульс, голова, наказ-заповнювач чи надбудова, і її місце у своєму джерелі */
+/* where a frame order comes from: pulse, head, filler nakaz or a tactic, and its position in its source */
 export type Source = 'pulse' | 'head' | 'fill' | 'tactic';
 interface Entry {
   order: Order;
@@ -252,7 +288,7 @@ interface Entry {
 
 export interface StrategyOpts {
   tactics?: Tactics;
-  /* наказ-заповнювач; без нього fill не діє */
+  /* the filler nakaz; without it fill does nothing */
   filler?: WireBot | null;
 }
 
@@ -264,21 +300,21 @@ export class PulseStrategy implements Strategy {
   private slot: SlotName | null = null;
   private trace: BeliefTrace | null = null;
   private world: PulseWorld | null = null;
-  /* тактів поспіль без прийнятої команди */
+  /* ticks in a row without an accepted order */
   private quiet = 0;
-  /* тактів поспіль, коли голова мовчала */
+  /* ticks in a row when the head was silent */
   private headIdle = 0;
-  /* фокус, прийнятий воротарем; до першого watch - вогнище */
+  /* focus accepted by the gatekeeper; before the first watch - the hearth */
   private focus: Watch | null = null;
-  /* команди кадру цього такту в порядку кадру: за ними вердикти йдуть до свого джерела */
+  /* this tick's frame orders in frame order: verdicts go back to their source by them */
   private sent: Entry[] = [];
-  /* діагностика для лабораторії (lab/): пульс і джерела команд останнього кадру */
+  /* diagnostics for the lab (lab/): pulse and order sources of the last frame */
   lastPulse: Order | null = null;
   lastSources: Source[] = [];
   private headFaults = 0;
-  /* надбудови після голови з пам'яттю кадрів (tactics.ts); null - жодної */
+  /* tactics after the head with frame memory (tactics.ts); null - none */
   private after: AfterHead | null = null;
-  /* попередження «nofeed не діє» - раз за партію */
+  /* the "nofeed has no effect" warning - once per match */
   private feedWarned = false;
 
   constructor(head: Head, log: (line: string) => void = () => undefined, opts: StrategyOpts = {}) {
@@ -301,7 +337,7 @@ export class PulseStrategy implements Strategy {
     this.headIdle = 0;
     this.feedWarned = false;
     const t = this.tactics;
-    const needAfter = t.ram !== null || t.hunt !== null || t.stay !== null || t.cherta || t.yardCap || t.noHook || t.cache !== null;
+    const needAfter = t.ram !== null || t.hunt !== null || t.stay !== null || t.cherta || t.yardCap || t.noHook || t.cache !== null || t.dawn !== null || t.loot !== null || t.duck;
     this.after =
       needAfter && m && this.world
         ? new AfterHead(t, m, slot, this.world, (at, obs) => this.links(at, obs), (a, b, cls) => this.pathOk(a, b, cls), this.log)
@@ -312,8 +348,8 @@ export class PulseStrategy implements Strategy {
   tick(observe: Uint8Array): Uint8Array {
     let reply: Uint8Array | null = null;
     let headOrders: Order[] = [];
-    /* кадр спостереження - до голови: надбудови спершу бачать світ і
-       виправляють дзеркало (чужі знахідки, відмовлені площадки) */
+    /* the observe frame - before the head: tactics first see the world and
+       correct the mirror (foreign finds, rejected sites) */
     const obs = (this.quiet >= PULSE_AFTER || this.after || this.tactics.noFeed !== null) && this.world ? decodeObserve(observe) : null;
     if (obs && this.after) {
       this.after.see(obs);
@@ -349,12 +385,12 @@ export class PulseStrategy implements Strategy {
 
     const quiet = this.quiet;
     this.quiet += 1;
-    /* nofeed діє, а ткач однаково на підкормці (її поставив наказ вузла чи
-       маска не спрацювала) - раз за партію в журнал: інакше втрату не видно */
+    /* nofeed is on, but a Tkach is feeding anyway (the node's nakaz put it
+       there or the mask failed) - once per match to the log: otherwise the loss is invisible */
     const nf = this.tactics.noFeed;
     if (obs && nf !== null && obs.t < nf && !this.feedWarned && obs.mine.units.some((u) => u.task?.feed)) {
       this.feedWarned = true;
-      this.log('nofeed: ткач на підкормці на такті ' + obs.t + ' - перевірте маску (новий рушій?)');
+      this.log('nofeed: a Tkach is feeding at tick ' + obs.t + ' - check the mask (new engine?)');
     }
     if (obs && this.after && this.slot && this.world) {
       entries = this.after.apply(obs, entries);
@@ -368,14 +404,14 @@ export class PulseStrategy implements Strategy {
     const pulse = obs && quiet >= PULSE_AFTER && this.world ? pulseOrder(obs, orders, this.focus, this.world) : null;
     this.lastPulse = pulse;
     this.sent = pulse ? [{ order: pulse, from: 'pulse', at: 0 }, ...entries] : entries;
-    /* кадр понад стелю воротар не розглядає (хвіст - відмова «стеля»): пульс
-       стоїть першим і лишається */
+    /* the gatekeeper doesn't consider a frame above the cap (the tail is a
+       "cap" rejection): the pulse goes first and stays */
     if (obs && this.world) this.sent = this.sent.slice(0, orderCap(this.world.cfg, obs.pulse.chanAt));
     this.lastSources = this.sent.map((e) => e.from);
 
-    /* кадр голови йде байт у байт, лише якщо кожна команда - той самий об'єкт
-       голови на своєму місці: правка надбудови на місці (новий об'єкт) - уже
-       інший кадр */
+    /* the head's frame goes byte for byte only if every order is the same head
+       object at its own position: a tactic's in-place edit (a new object) is
+       already a different frame */
     if (!pulse && reply && this.sent.length === headOrders.length && this.sent.every((e, i) => e.from === 'head' && e.order === headOrders[i])) return reply;
     return encodeOrders(this.sent.map((e) => e.order));
   }
@@ -408,15 +444,15 @@ export class PulseStrategy implements Strategy {
     }
   }
 
-  /* жетони спалаху дзеркала: скан із жетоном безкоштовний (правила 16.4) */
+  /* mirror flare tokens: a scan with a token is free (rules 16.4) */
   private flareTokens(): number {
     const E = this.head.mirror() as { SIM?: { world?: { flare?: Record<string, number> } } } | null;
     return (this.slot && E?.SIM?.world?.flare?.[this.slot]) || 0;
   }
 
-  /* чи можна дійти юниту класу cls до клітини (рушій дзеркала): сама клітина
-     прохідна (canPass - гора, вода чи край дають відмову «земля» на move) і є
-     шлях (botPath не перевіряє кінцеву клітину). Немає дзеркала - ні */
+  /* can a unit of class cls reach the cell (mirror engine): the cell itself is
+     passable (canPass - a mountain, water or the edge give a "ground" rejection
+     on move) and there is a path (botPath doesn't check the end cell). No mirror - no */
   private pathOk(from: Hex, to: Hex, cls: string): boolean {
     const E = this.head.mirror() as {
       botPath?: (a: Hex, b: Hex, cap: number, u: unknown) => unknown[] | null;
@@ -431,8 +467,8 @@ export class PulseStrategy implements Strategy {
     }
   }
 
-  /* чи дотягнеться нитка з клітини до своєї горящої голки чи вогнища: питаємо
-     рушій дзеркала (гори, пагорби - правила 7.2); голова-наказ - ні (обережно) */
+  /* will a thread from the cell reach our lit needle or the hearth: ask the
+     mirror engine (mountains, hills - rules 7.2); a nakaz head - no (cautious) */
   private links(at: Hex, obs: Observe): boolean {
     const E = this.head.mirror() as { linkOk?: (aq: number, ar: number, bq: number, br: number) => boolean } | null;
     if (!E || typeof E.linkOk !== 'function' || !this.world) return false;
@@ -440,7 +476,7 @@ export class PulseStrategy implements Strategy {
     return to.some((n) => E.linkOk!(at.q, at.r, n.q, n.r));
   }
 
-  /* віра дзеркала: світ дзеркальної голови і є те, у що вона вірить */
+  /* mirror belief: the world of the mirror head is what it believes in */
   belief(obs: Observe | null): BeliefFrame | null {
     const E = this.head.mirror();
     return this.trace && E ? this.trace.frame(E, obs) : null;
@@ -450,52 +486,55 @@ export class PulseStrategy implements Strategy {
     if (this.slot) this.trace = new BeliefTrace(this.slot);
   }
 
-  /* голова впала: такт іде далі без її команд; у журналі - перше падіння і
-     кожне FAIL_LOG_EVERY-те, з лічильником */
+  /* the head failed: the tick goes on without its orders; the log gets the
+     first failure and every FAIL_LOG_EVERY-th, with a counter */
   private fail(where: string, e: unknown): void {
     this.headFaults += 1;
     if (this.headFaults % FAIL_LOG_EVERY !== 1) return;
-    this.log('голова впала (' + where + ', ' + this.headFaults + '-й раз): ' + errText(e) + '; пульс тримає слот');
+    this.log('head failed (' + where + ', failure #' + this.headFaults + '): ' + errText(e) + '; the pulse keeps the slot');
   }
 }
 
-/* імена каталогу стилів: за ними службова ручка зміни пресета вирішує, є
-   такий пресет чи ні */
+/* names in the style catalogue: by them the service knob for changing the
+   preset decides whether such a preset exists */
 export function presets(): string[] {
   return Object.keys(STYLES);
 }
 
-/* полудень - переможець пошуку 01.10 (styles.ts), шукали разом із надбудовами
-   nofeed:1200 і ram:6. Із ними до світанку з fill:наш:6, що грав у бою до
-   того: +1.55 ± 0.21 частки за пакет на 60 свіжих долинах проти змішаного
-   пулу (наш бот, рівний, облягач, опортуніст, рейдер, бот під наказом),
-   кращий проти кожного з них. Після зсуву світу 05.10 - перемірити */
+/* полудень - the winner of the 01.10 search (styles.ts), searched together
+   with the tactics nofeed:1200 and ram:6. With them vs світанок with
+   fill:own:6, which played in battle before: +1.55 ± 0.21 share per pack on
+   60 fresh valleys vs the mixed pool (our bot, рівний, облягач, опортуніст,
+   рейдер, a nakaz bot), better against each of them. Re-measure after the
+   05.10 world shift */
 export const DEFAULT_PRESET = 'полудень';
 
-/* Голова-наказ: «nakaz:<зразок SDK або наш>» - замість дзеркала думає наказ
-   усередині бота (як заповнювач, але весь час). Пульс і надбудови після голови
-   діють як завжди, тож слот лишається за ботом: голий наказ на місці мовчить у
-   такти без справ, і вузол віддає слот наказу (правила 23.2) */
+/* Nakaz head: "nakaz:<SDK sample or own>" - instead of the mirror, a nakaz
+   thinks inside the bot (like the filler, but all the time). The pulse and
+   the tactics after the head work as always, so the slot stays with the bot: a
+   bare nakaz in its place is silent in ticks without business, and the node
+   gives the slot to the nakaz (rules 23.2) */
 export const NAKAZ_HEADS = FILL_CHARTERS.map((name) => 'nakaz:' + name);
 export function nakazHeadOf(preset: string): string | null {
+  if (preset === 'nakaz:' + OWN_ALIAS) return 'own';
   return NAKAZ_HEADS.includes(preset) ? preset.slice('nakaz:'.length) : null;
 }
 
-/* пресет - стиль каталогу, рядок «основа+ручка=число» або голова-наказ */
+/* preset - a catalogue style, a "base+knob=number" string or a nakaz head */
 export function isPreset(preset: string): boolean {
   return parseStyle(preset) !== null || nakazHeadOf(preset) !== null;
 }
 
-/* невідоме ім'я (одруківка, кодова сторінка cmd) не валить бота до присяги:
-   грає типовий стиль */
+/* an unknown name (typo, cmd code page) doesn't bring the bot down before the
+   oath: the default style plays */
 export function presetOrDefault(preset: string | undefined, log: (line: string) => void = () => undefined): string {
   if (!preset) return DEFAULT_PRESET;
   if (isPreset(preset)) return preset;
-  log('пресета «' + preset + '» немає, граю ' + DEFAULT_PRESET);
+  log('no preset "' + preset + '", playing ' + DEFAULT_PRESET);
   return DEFAULT_PRESET;
 }
 
-/* наказ у ролі голови: віри-дзеркала в нього немає, щоденник віри порожній */
+/* a nakaz as the head: it has no mirror belief, the belief diary is empty */
 function nakazHead(text: string): Head {
   const bot = createNakazSparring(text);
   return {
@@ -519,7 +558,7 @@ export function createStrategy(
     try {
       filler = createNakazSparring(charterText(tactics.fill.charter));
     } catch (e) {
-      log('наказ-заповнювач «' + tactics.fill.charter + '» не прочитався, граю без нього: ' + errText(e));
+      log('filler nakaz "' + tactics.fill.charter + '" could not be read, playing without it: ' + errText(e));
     }
   }
   return new PulseStrategy(head, log, { tactics, filler });

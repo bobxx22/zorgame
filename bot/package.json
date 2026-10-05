@@ -2,7 +2,7 @@
   "name": "zaria-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "Бот Зорі",
+  "description": "Zorya bot",
   "type": "module",
   "engines": {
     "node": ">=24"

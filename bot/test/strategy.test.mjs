@@ -201,7 +201,7 @@ test('a silent head keeps the slot: at most 2 quiet ticks in a row, nothing refu
 });
 
 test('a head refused every tick keeps the slot too: the pulse goes first and is accepted', () => {
-  // a focus outside the valley: the gatekeeper answers "погляд" every time
+  // a focus outside the valley: the gatekeeper answers "view" (погляд) every time
   const head = fakeHead(() => encodeOrders([{ kind: 'watch', q: 40, r: 40, keep: 0 }]));
   const { sent, refused, longest } = play(head);
   assert.equal(longest, 2);
@@ -224,8 +224,8 @@ test('a head that throws every tick keeps the slot, and the log says it once per
   const { longest, lines } = play(head, 150);
   assert.equal(longest, 2);
   assert.equal(lines.length, 2);
-  assert.match(lines[0], /1-й раз/);
-  assert.match(lines[1], /101-й раз/);
+  assert.match(lines[0], /failure #1\)/);
+  assert.match(lines[1], /failure #101\)/);
 });
 
 test('a reply that does not decode is replaced: the node never gets the garbage', () => {
@@ -273,16 +273,16 @@ test('the strategy survives a head whose feedback throws', () => {
 
 test('tactics: fill with a charter and a delay, no pacts; unknown ones are logged and skipped', () => {
   assert.deepEqual(parseTactics(undefined), NO_TACTICS);
-  assert.deepEqual(parseTactics('fill:черепаха'), { fill: { charter: 'черепаха', after: 0 }, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, surplus: null, engine: {} });
-  assert.deepEqual(parseTactics('fill:наш:6, nopact'), { fill: { charter: 'наш', after: 6 }, noPact: true, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, surplus: null, engine: {} });
-  assert.deepEqual(parseTactics(['nopact']), { fill: null, noPact: true, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, surplus: null, engine: {} });
+  assert.deepEqual(parseTactics('fill:черепаха'), { fill: { charter: 'черепаха', after: 0 }, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, dawn: null, loot: null, duck: false, surplus: null, engine: {} });
+  assert.deepEqual(parseTactics('fill:наш:6, nopact'), { fill: { charter: 'own', after: 6 }, noPact: true, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, dawn: null, loot: null, duck: false, surplus: null, engine: {} });
+  assert.deepEqual(parseTactics(['nopact']), { fill: null, noPact: true, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, dawn: null, loot: null, duck: false, surplus: null, engine: {} });
   assert.deepEqual(parseTactics('none'), NO_TACTICS);
-  assert.deepEqual(parseTactics(DEFAULT_TACTICS), { fill: { charter: 'наш', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: null, hunt: 12, cherta: true, stay: null, yardCap: false, noHook: true, cache: null, surplus: null, engine: {} });
+  assert.deepEqual(parseTactics(DEFAULT_TACTICS), { fill: { charter: 'own', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: null, hunt: 12, cherta: true, stay: null, yardCap: false, noHook: true, cache: null, dawn: null, loot: null, duck: false, surplus: null, engine: {} });
   const lines = [];
   assert.deepEqual(parseTactics('fill:нема,fill:тиск:-1,dance,nopact:1', (l) => lines.push(l)), NO_TACTICS);
   assert.equal(lines.length, 4);
-  assert.deepEqual([...FILL_CHARTERS].sort(), ['економка', 'експансія', 'замовлення', 'наш', 'тиск', 'хвилини', 'черепаха'].sort());
-  assert.match(charterText('наш'), /^nakaz: 1/m);
+  assert.deepEqual([...FILL_CHARTERS].sort(), ['економка', 'експансія', 'замовлення', 'own', 'тиск', 'хвилини', 'черепаха'].sort());
+  assert.match(charterText('own'), /^nakaz: 1/m);
   assert.match(charterText('черепаха'), /nakaz: 1/);
   assert.throws(() => charterText('нема'));
 });

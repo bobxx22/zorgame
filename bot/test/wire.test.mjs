@@ -119,7 +119,7 @@ test('a diary that cannot open plays on without it', () => {
     diary.start();
     assert.equal(diary.open, false);
     assert.equal(lines.length, 1);
-    assert.match(lines[0], /не відкрився/);
+    assert.match(lines[0], /did not open/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -140,7 +140,7 @@ test('every diary fault is logged with its tick, resets the belief, and three in
     });
     diary.write(s, observeBytes(7));
     assert.equal(s.resets, 1);
-    assert.match(lines[0], /такт 7: disk/);
+    assert.match(lines[0], /tick 7: disk/);
     fail = false;
     diary.write(s, observeBytes(8));
     assert.equal(diary.frames, 1);
@@ -153,7 +153,7 @@ test('every diary fault is logged with its tick, resets the belief, and three in
     assert.equal(BELIEF_FAULTS, 3);
     assert.equal(diary.open, false);
     assert.equal(s.resets, 4);
-    assert.match(lines.at(-1), /вимкнено після 3/);
+    assert.match(lines.at(-1), /turned off after 3/);
     assert.equal(lines.length, 5);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -254,5 +254,5 @@ test('the end-of-match line names the reason, the counters and the think time', 
   sh.why = 'end';
   sh.think.push(1, 2, 3);
   sh.run = { stats: { ticks: 1200, faults: 0, resumes: 6 } };
-  assert.equal(sh.summary(), 'партію закінчено (end): відповідей 1200, кидків 0, повернень 6; дума, мс: p50 2.0, p99 3.0, max 3.0');
+  assert.equal(sh.summary(), 'match over (end): answers 1200, throws 0, reconnects 6; think, ms: p50 2.0, p99 3.0, max 3.0');
 });

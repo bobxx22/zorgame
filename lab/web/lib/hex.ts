@@ -1,6 +1,6 @@
-/* Геометрія долини: осьові координати (q, r), гострий верх (правила 5.1).
-   Центр соти на площині: x = sqrt(3) * (q + r / 2), y = 1.5 * r - у тих самих
-   одиницях задано бурі маніфесту. */
+/* Valley geometry: axial coordinates (q, r), pointy top (rules 5.1).
+   A cell's center on the plane: x = sqrt(3) * (q + r / 2), y = 1.5 * r - the
+   manifest's storms are given in the same units. */
 
 export const SQRT3 = Math.sqrt(3);
 
@@ -21,7 +21,7 @@ export function toPlane(q: number, r: number): { x: number; y: number } {
   return { x: SQRT3 * (q + r / 2), y: 1.5 * r };
 }
 
-/* найближча сота до точки площини (кубічне округлення) */
+/* the nearest cell to a point of the plane (cube rounding) */
 export function fromPlane(x: number, y: number): [number, number] {
   const r = y / 1.5;
   const q = x / SQRT3 - r / 2;
@@ -37,7 +37,7 @@ export function fromPlane(x: number, y: number): [number, number] {
   return [rq, rr];
 }
 
-/* соти на відстані до rad від центру, з відстанню */
+/* cells within rad of the center, with the distance */
 export function disc(q: number, r: number, rad: number): [number, number, number][] {
   const out: [number, number, number][] = [];
   for (let dq = -rad; dq <= rad; dq++) {
@@ -48,7 +48,7 @@ export function disc(q: number, r: number, rad: number): [number, number, number
   return out;
 }
 
-/* шість кутів шестикутника з центром (cx, cy) і радіусом size */
+/* the six corners of a hexagon with center (cx, cy) and radius size */
 export function corners(cx: number, cy: number, size: number): [number, number][] {
   const out: [number, number][] = [];
   for (let i = 0; i < 6; i++) {

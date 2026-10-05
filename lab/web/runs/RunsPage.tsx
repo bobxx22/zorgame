@@ -1,4 +1,4 @@
-/* Запуски: форма нового пакета і список уже зіграних, з прогресом. */
+/* Runs: a form for a new pack and the list of played ones, with progress. */
 
 import { useEffect, useState } from 'react';
 import { seatText } from '../../shared/record.ts';
@@ -12,14 +12,15 @@ const DEFAULT_LINEUP: RunRequest['lineup'] = [
   { kind: 'archetype', name: 'рівний' },
 ];
 
-/* суперники для випадкового старту: стилі каталогу в нашій обгортці (з
-   типовими надбудовами), архетипи SDK і зразки наказу; голови-накази - ні,
-   це наш бот, а не суперник */
+/* opponents for a random start: catalogue styles in our wrapper (with the
+   default tactics), SDK archetypes, nakaz samples and external bots; nakaz
+   heads - no, that's our bot, not an opponent */
 function opponentPool(options: LabOptions): SeatSpec[] {
   return [
     ...options.presets.filter((name) => !name.startsWith('nakaz:')).map((name): SeatSpec => ({ kind: 'ours', name })),
     ...options.archetypes.map((name): SeatSpec => ({ kind: 'archetype', name })),
     ...options.nakaz.map((name): SeatSpec => ({ kind: 'nakaz', name })),
+    ...options.ext.map((name): SeatSpec => ({ kind: 'ext', name })),
   ];
 }
 
@@ -64,7 +65,7 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
     }
   };
 
-  /* учасник 1 - як вибрано; двоє інших різні й випадкові, долина теж */
+  /* participant 1 - as chosen; the other two are different and random, the valley too */
   const startRandom = async () => {
     if (!options) return;
     const pool = opponentPool(options);
@@ -86,39 +87,39 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
   return (
     <div className="runs">
       <section className="card">
-        <h2>Нова партія</h2>
+        <h2>New match</h2>
         <p className="muted">
-          Партії грає той самий рушій, що й вузол ({options?.engine.slice(0, 12) ?? '…'}), у процесі без мережі. Наш бот - зібраний bot/dist: голова
-          архетипу, пульс і надбудови на вибір. Пакет - три партії однієї долини з пересадкою по місцях (правила 25.1).
+          Matches are played by the same engine as the node ({options?.engine.slice(0, 12) ?? '…'}), in process without a network. Our bot is the built bot/dist: an
+          archetype head, the pulse and tactics to choose. A pack is three matches of one valley with seat rotation (rules 25.1).
         </p>
         {options && (
           <div className="form">
             <label className="field">
-              <span>жереб долини</span>
+              <span>valley lot</span>
               <input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value))} />
               <button className="mini" onClick={() => setSeed(Math.floor(Math.random() * 100000))}>
-                випадковий
+                random
               </button>
             </label>
             <label className="field">
-              <span>тактів у партії</span>
+              <span>ticks per match</span>
               <select value={ticks} onChange={(e) => setTicks(Number(e.target.value))}>
-                <option value={1200}>1200 (повна)</option>
+                <option value={1200}>1200 (full)</option>
                 <option value={600}>600</option>
-                <option value={300}>300 (швидко)</option>
+                <option value={300}>300 (quick)</option>
               </select>
             </label>
             <label className="field">
-              <span>обсяг</span>
+              <span>size</span>
               <select value={matches} onChange={(e) => setMatches(Number(e.target.value) === 1 ? 1 : 3)}>
-                <option value={3}>пакет із 3 партій</option>
-                <option value={1}>одна партія</option>
+                <option value={3}>a pack of 3 matches</option>
+                <option value={1}>a single match</option>
               </select>
             </label>
             {lineup.map((seat, i) => (
               <SeatEditor
                 key={i}
-                label={`учасник ${i + 1}`}
+                label={`participant ${i + 1}`}
                 options={options}
                 value={seat}
                 onChange={(next) => {
@@ -129,14 +130,14 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
               />
             ))}
             <button className="primary" onClick={() => void start()}>
-              Зіграти
+              Play
             </button>
             <button
               className="primary"
               onClick={() => void startRandom()}
-              title="учасник 1 - як вибрано; двоє інших - випадкові з усіх стилів каталогу (наш бот із типовими надбудовами), архетипів SDK і зразків наказу; долина теж випадкова"
+              title="participant 1 - as chosen; the other two are random from all catalogue styles (our bot with the default tactics), SDK archetypes and nakaz samples; the valley is random too"
             >
-              Зіграти з випадковими
+              Play with random ones
             </button>
           </div>
         )}
@@ -144,16 +145,16 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
       </section>
 
       <section className="card">
-        <h2>Запуски</h2>
-        {runs.length === 0 && <p className="muted">Ще нічого не зіграно.</p>}
+        <h2>Runs</h2>
+        {runs.length === 0 && <p className="muted">Nothing played yet.</p>}
         <table className="grid runlist">
           <thead>
             <tr>
-              <th>коли</th>
-              <th>долина</th>
-              <th>учасники (частки за пакет)</th>
-              <th>стан</th>
-              <th>партії</th>
+              <th>when</th>
+              <th>valley</th>
+              <th>participants (shares per pack)</th>
+              <th>status</th>
+              <th>matches</th>
               <th />
             </tr>
           </thead>
@@ -162,7 +163,7 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
               <tr key={run.id}>
                 <td>{new Date(run.createdAt).toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'medium' })}</td>
                 <td className="num">
-                  {run.request.seed} · {run.request.ticks} т
+                  {run.request.seed} · {run.request.ticks} t
                 </td>
                 <td>
                   {run.request.lineup.map((seat, i) => (
@@ -173,18 +174,18 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
                   ))}
                 </td>
                 <td>
-                  {run.status === 'done' && `готово за ${((run.ms ?? 0) / 1000).toFixed(0)} с`}
-                  {run.status === 'queued' && 'у черзі'}
+                  {run.status === 'done' && `done in ${((run.ms ?? 0) / 1000).toFixed(0)} s`}
+                  {run.status === 'queued' && 'queued'}
                   {run.status === 'running' && (
                     <span>
-                      партія {Math.min(run.progress.match + 1, run.request.matches)} / {run.request.matches}, такт {run.progress.t}
+                      match {Math.min(run.progress.match + 1, run.request.matches)} / {run.request.matches}, tick {run.progress.t}
                       <progress
                         max={run.request.matches * run.request.ticks}
                         value={run.progress.match * run.request.ticks + run.progress.t}
                       />
                     </span>
                   )}
-                  {run.status === 'failed' && <span className="error" title={run.error}>помилка</span>}
+                  {run.status === 'failed' && <span className="error" title={run.error}>error</span>}
                 </td>
                 <td>
                   {Array.from({ length: run.request.matches }, (_, i) => {
@@ -197,7 +198,7 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
                   })}
                 </td>
                 <td>
-                  <button className="mini" disabled={run.status === 'running' || run.status === 'queued'} onClick={() => void remove(run.id)} title="видалити запуск">
+                  <button className="mini" disabled={run.status === 'running' || run.status === 'queued'} onClick={() => void remove(run.id)} title="delete the run">
                     ✕
                   </button>
                 </td>

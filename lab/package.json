@@ -2,7 +2,7 @@
   "name": "zaria-lab",
   "version": "0.1.0",
   "private": true,
-  "description": "Лабораторія бота: партії в процесі, повний запис, перегляд і порівняння тактик",
+  "description": "Bot lab: matches in process, full record, viewer and tactics comparison",
   "type": "module",
   "engines": {
     "node": ">=24"

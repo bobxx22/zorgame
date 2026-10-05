@@ -1,13 +1,13 @@
 /* bot :: jitter
-   перше з'єднання з вузлом: повний джитер поверх експоненційного відкату
-   (full jitter) - той самий закон, що в connectBot для повернень
-   (04-protocol.md, розділ 8).
+   the first connection to the node: full jitter on top of exponential backoff
+   (full jitter) - the same law connectBot uses for reconnects
+   (04-protocol.md, section 8).
 
-   Перша спроба - негайно. Кожна наступна чекає рівномірно
-   [0, min(стеля, база * 2^n)), база - третина стелі. Саме рівномірно від
-   нуля: константа плюс невеликий розкид стадо не розводить, а зсуває
-   цілком. Боти встають разом, і якщо лобі ще не відкрито, ломляться в нього
-   всі одразу - рівно той випадок, заради якого закон. */
+   The first attempt is immediate. Each next one waits uniformly in
+   [0, min(ceil, base * 2^n)), base is a third of the ceiling. Uniformly from
+   zero exactly: a constant plus a small spread doesn't break up the herd, it
+   shifts it whole. Bots start together, and if the lobby isn't open yet they
+   all rush it at once - exactly the case the law exists for. */
 
 import { errText } from './errors.js';
 
@@ -17,17 +17,17 @@ export function backoffMs(attempt: number, ceilMs: number, rnd: () => number = M
   return Math.floor(rnd() * cap);
 }
 
-/* повторювати варто лише мережу: сокет не піднявся або закрився до
-   присяги кодом транспорту (менше 4000). Коди застосунку 4000-4999 -
-   вердикт вузла (печатка чужа, слот зайнятий), піни і маніфест -
-   несумісність; повтор їх не лікує. Розбір за текстом помилки connectBot
-   (англійською, як її пише SDK): структурного коду вона не несе, тому список
-   повторюваного білий, а не чорний. Сюди ж - присяга, на яку вузол не
-   відповів за connectTimeoutMs (SDK: "wire closed before the manifest:
-   timeout:5000"), і закриття до маніфесту кодом транспорту: лобі триває
-   init-ms (протокол 3.3), і одна невдала спроба його не вичерпує. Тести
-   (test/jitter.test.mjs) тримають ці тексти: новий SDK, що їх змінить,
-   упаде на тестах, а не мовчки в лобі */
+/* only the network is worth retrying: the socket didn't come up or closed
+   before the oath with a transport code (below 4000). Application codes
+   4000-4999 are the node's verdict (foreign seal, slot taken), pins and the
+   manifest - incompatibility; a retry doesn't cure them. Parsed by the text of
+   connectBot's error (in English, as the SDK writes it): it carries no
+   structured code, so the retry list is a whitelist, not a blacklist. Also
+   here - an oath the node didn't answer within connectTimeoutMs (SDK: "wire
+   closed before the manifest: timeout:5000"), and a close before the manifest
+   with a transport code: the lobby lasts init-ms (protocol 3.3), and one failed
+   attempt doesn't exhaust it. The tests (test/jitter.test.mjs) pin these texts:
+   a new SDK that changes them will fail the tests, not silently in the lobby */
 export function retryable(err: unknown): boolean {
   const msg = errText(err);
   if (msg.startsWith('wire did not come up')) return true;

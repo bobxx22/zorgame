@@ -1,7 +1,7 @@
 /* lab :: record
-   Формат запису партії лабораторії - спільний для сервера (пише) і панелі
-   (читає). Кадр на кожен такт: правда світу з рушія, команди й відмови всіх
-   місць, події, а для нашого місця - що бот бачив і коли стріляв пульс. */
+   The lab's match record format - shared by the server (writes) and the panel
+   (reads). A frame per tick: the world's truth from the engine, orders and
+   rejections of all seats, events, and for our seat - what the bot saw and when the pulse fired. */
 
 export type Slot = 'A' | 'B' | 'C';
 export type Actor = Slot | 'K';
@@ -12,36 +12,38 @@ export interface Hex {
   r: number;
 }
 
-/* хто сидить на місці: наш бот (пресет), дзеркало архетипу SDK або наказ-зразок */
-export type SeatKind = 'ours' | 'archetype' | 'nakaz' | 'our-nakaz';
+/* who sits in a seat: our bot (preset), an SDK archetype mirror, a sample nakaz, an external bot (lab/ext) or a mixed one (one's economy, another's Klinoks: "e=a3,k=ours") */
+export type SeatKind = 'ours' | 'archetype' | 'nakaz' | 'our-nakaz' | 'ext' | 'mix';
 
 export interface SeatSpec {
   kind: SeatKind;
-  /* пресет нашої голови, ім'я архетипу або зразка наказу */
+  /* our head's preset, an archetype name or a nakaz sample name */
   name: string;
-  /* надбудови нашого бота (bot/src/strategy.ts): fill:<наказ>[:N], nopact, none;
-     не задано - типові, як у бою (DEFAULT_TACTICS) */
+  /* our bot's tactics (bot/src/strategy.ts): fill:<nakaz>[:N], nopact, none;
+     unset - the defaults, as in battle (DEFAULT_TACTICS) */
   tactics?: string[];
 }
 
 export function seatText(seat: SeatSpec): string {
   if (seat.kind === 'ours') {
-    const tactics = seat.tactics === undefined ? ['типові надбудови'] : seat.tactics.join(',') === 'none' ? ['без надбудов'] : seat.tactics;
-    return ['наш · ' + seat.name, ...tactics].join(' · ');
+    const tactics = seat.tactics === undefined ? ['default tactics'] : seat.tactics.join(',') === 'none' ? ['no tactics'] : seat.tactics;
+    return ['ours · ' + seat.name, ...tactics].join(' · ');
   }
-  if (seat.kind === 'archetype') return 'архетип · ' + seat.name;
-  if (seat.kind === 'our-nakaz') return 'наш наказ';
-  return 'наказ · ' + seat.name;
+  if (seat.kind === 'archetype') return 'archetype · ' + seat.name;
+  if (seat.kind === 'ext') return 'external · ' + seat.name;
+  if (seat.kind === 'mix') return 'mixed · ' + seat.name;
+  if (seat.kind === 'our-nakaz') return 'our nakaz';
+  return 'nakaz · ' + seat.name;
 }
 
 export interface MatchStatic {
   radius: number;
-  /* імена типів місцевості за індексом */
+  /* terrain type names by index */
   types: string[];
-  /* кожна сота долини: q, r, тип, рівень */
+  /* every valley cell: q, r, type, level */
   cells: [number, number, number, number][];
   needles: { k: string; q: number; r: number; start: Slot | null; ring: boolean }[];
-  /* вогнища місць A, B, C */
+  /* hearths of seats A, B, C */
   seats: Record<Slot, Hex>;
   citadel: Hex;
   cherta: number;
@@ -52,18 +54,18 @@ export interface MatchStatic {
   linkRange: number;
 }
 
-/* рахунок, хвилини, заряд, голок, горить, юнитів, канал, бюджет каналу, вуха, бюджет вух */
+/* score, minutes, charge, needles, lit, units, channel, channel budget, ears, ears budget */
 export type PlayerRow = [number, number, number, number, number, number, number, number, number, number];
 export const P = { score: 0, minutes: 1, energy: 2, needles: 3, lit: 4, units: 5, chan: 6, chanAt: 7, ear: 8, earAt: 9 } as const;
 
-/* ключ, власник, вага горіння (0 - темна), прапорці: 1 - глушіння, 2 - корона, 4 - підживлення, 8 - жевріє */
+/* key, owner, burn weight (0 - dark), flags: 1 - jamming, 2 - crown, 4 - feeding, 8 - smouldering */
 export type NeedleRow = [string, Actor, number, number];
 export const NF = { jam: 1, crown: 2, fed: 4, ember: 8 } as const;
 
-/* завдання юнита */
+/* a unit's task */
 export const TASKS = ['', 'move', 'needle', 'feed', 'jam', 'ram', 'home'] as const;
 export type TaskName = (typeof TASKS)[number];
-/* id, власник, клас (0 ткач, 1 клинок), q, r, завдання, ціль q, ціль r, прапорці: 1 - без рук, 2 - на повідку */
+/* id, owner, class (0 Tkach, 1 Klinok), q, r, task, target q, target r, flags: 1 - no hands, 2 - on the leash */
 export type UnitRow = [string, Actor, 0 | 1, number, number, number, number | null, number | null, number];
 
 export interface Eye {
@@ -83,21 +85,21 @@ export interface Frame {
   p: Record<Actor, PlayerRow>;
   n: NeedleRow[];
   u: UnitRow[];
-  /* нагрів: ключ голки, хто гріє, прогрес у тактах */
+  /* heating: needle key, who heats, progress in ticks */
   heat: [string, Actor, number][];
-  /* події такту з журналу рушія, як є */
+  /* the tick's events from the engine journal, as is */
   ev: Record<string, unknown>[];
-  /* кадри команд місць цього такту (декодовані) */
+  /* the seats' order frames of this tick (decoded) */
   ord: Partial<Record<Slot, unknown[]>>;
-  /* відмови: [позиція в кадрі, код] */
+  /* rejections: [position in the frame, code] */
   den: Partial<Record<Slot, [number, number][]>>;
   eye: Partial<Record<Slot, Eye>>;
   order: Contract | null;
   dawn: boolean;
-  /* наше місце: що бот бачив у кадрі спостереження і який пульс подав */
+  /* our seat: what the bot saw in the observe frame and which pulse it sent */
   seen?: { foe: [string, string, number, number][]; noisy: [number, number][] };
   pulse?: unknown;
-  /* звідки кожна команда кадру нашого місця: pulse, head, fill */
+  /* where each order of our seat's frame came from: pulse, head, fill */
   src?: string[];
 }
 
@@ -113,9 +115,9 @@ export interface SeatResult {
   denials: number;
   orders: number;
   pulses: number;
-  /* такти, коли в кадрі нашого місця були команди наказу-заповнювача */
+  /* ticks when our seat's frame had filler nakaz orders */
   fills: number;
-  /* такти, коли слот вів наказ (мовчання бота 6 тактів і довше, правила 23.2) */
+  /* ticks when the nakaz ran the slot (the bot silent for 6 ticks or longer, rules 23.2) */
   nakazTicks: number;
   nakazEpisodes: { from: number; to: number }[];
 }
@@ -125,7 +127,7 @@ export interface MatchMeta {
   seed: number;
   ticks: number;
   engine: string;
-  /* хто на якому місці: учасник 0, 1, 2 пакета */
+  /* who is in which seat: participant 0, 1, 2 of the pack */
   seating: Record<Slot, number>;
   labels: Record<Slot, string>;
   ours: Slot | null;
@@ -142,13 +144,13 @@ export interface MatchRecord {
 export interface RunRequest {
   seed: number;
   ticks: number;
-  /* учасники 1, 2, 3 пакета */
+  /* participants 1, 2, 3 of the pack */
   lineup: [SeatSpec, SeatSpec, SeatSpec];
-  /* 3 - повний пакет з пересадкою, 1 - одна партія */
+  /* 3 - a full pack with seat rotation, 1 - a single match */
   matches: 1 | 3;
 }
 
-/* підсумок учасника в одній партії - для турнірів без читання записів */
+/* a participant's result in one match - for tournaments without reading records */
 export interface SeatLine {
   participant: number;
   slot: Slot;
@@ -173,11 +175,11 @@ export interface RunMeta {
   status: 'queued' | 'running' | 'done' | 'failed';
   error?: string;
   progress: { match: number; t: number };
-  /* доля кожного учасника за пакет */
+  /* each participant's share per pack */
   shares?: [number, number, number];
   matches?: { index: number; places: Record<Slot, number>; scores: Record<Slot, number>; seats?: SeatLine[] }[];
   ms?: number;
-  /* запуск - частина турніру: варіант і номер долини */
+  /* the run is part of a tournament: variant and valley number */
   tournament?: { id: string; variant: number; seed: number };
 }
 
@@ -185,9 +187,11 @@ export interface LabOptions {
   presets: string[];
   archetypes: string[];
   nakaz: string[];
-  /* накази, якими можна заповнювати простій голови */
+  /* external bots (lab/ext) */
+  ext: string[];
+  /* nakazes that can fill the head's idle time */
   charters: string[];
-  /* бойова конфігурація нашого бота: стиль і надбудови за замовчуванням */
+  /* our bot's battle configuration: default style and tactics */
   defaultPreset: string;
   defaultTactics: string[];
   engine: string;
@@ -196,9 +200,9 @@ export interface LabOptions {
 
 export interface TournamentRequest {
   name: string;
-  /* варіанти на місці учасника 1: наш бот із надбудовами або будь-хто інший як еталон */
+  /* variants in participant 1's seat: our bot with tactics or anyone else as a reference */
   variants: SeatSpec[];
-  /* суперники: пари з цього пулу по черзі, кожен варіант - на тих самих парах і долинах */
+  /* opponents: pairs from this pool in turn, every variant - on the same pairs and valleys */
   opponents: SeatSpec[];
   seedFrom: number;
   seeds: number;
@@ -209,9 +213,9 @@ export interface Tournament {
   id: string;
   createdAt: string;
   request: TournamentRequest;
-  /* пари суперників за номером долини */
+  /* opponent pairs by valley number */
   pairs: [SeatSpec, SeatSpec][];
-  /* id запусків: [варіант][долина] */
+  /* run ids: [variant][valley] */
   runs: string[][];
 }
 
@@ -224,7 +228,7 @@ export interface VariantStats {
   se: number;
   min: number;
   max: number;
-  /* різниця з варіантом 1 на тих самих долинах */
+  /* difference vs variant 1 on the same valleys */
   delta: { mean: number; se: number; n: number } | null;
   places: [number, number, number];
   score: number;
@@ -243,7 +247,7 @@ export interface VariantStats {
 export interface TournamentView {
   tournament: Tournament;
   stats: VariantStats[];
-  /* частка варіанта на кожній долині: [долина][варіант], null - ще не зіграно */
+  /* the variant's share on each valley: [valley][variant], null - not played yet */
   grid: (number | null)[][];
   status: { queued: number; running: number; done: number; failed: number };
 }

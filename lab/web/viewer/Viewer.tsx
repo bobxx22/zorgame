@@ -1,4 +1,4 @@
-/* Перегляд партії: карта, шкала часу з відтворенням, бокові панелі. */
+/* Match viewer: map, timeline with playback, side panels. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SLOTS } from '../../shared/record.ts';
@@ -11,13 +11,13 @@ import { CellInfo, Chart, Events, Orders, Players, Summary } from './panels.tsx'
 
 const SPEEDS = [2, 10, 30, 90, 240];
 const LAYER_NAME: Record<keyof Layers, string> = {
-  coverage: 'покриття',
-  threads: 'нитки',
-  targets: 'цілі юнитів',
-  storms: 'бурі',
-  eyes: 'фокус і скан',
-  ghosts: 'привиди (очима бота)',
-  ids: 'імена юнитів',
+  coverage: 'coverage',
+  threads: 'threads',
+  targets: 'unit targets',
+  storms: 'storms',
+  eyes: 'focus and scan',
+  ghosts: 'ghosts (the bot\'s view)',
+  ids: 'unit names',
 };
 
 type Tab = 'events' | 'orders' | 'summary';
@@ -61,7 +61,7 @@ export function Viewer({ run, match }: { run: RunMeta; match: number }) {
     [ticks],
   );
 
-  /* відтворення: speed тактів за секунду */
+  /* playback: speed in ticks per second */
   const last = useRef<number | null>(null);
   useEffect(() => {
     if (!playing) return;
@@ -101,29 +101,29 @@ export function Viewer({ run, match }: { run: RunMeta; match: number }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [t, seek]);
 
-  /* позначки на шкалі: захоплення і втрати місця у фокусі, лоти, контракти, зоря */
+  /* timeline marks: captures and losses of the focused seat, lots, contracts, dawn */
   const marks = useMemo(() => {
     if (!record) return [];
     const out: { t: number; color: string; title: string }[] = [];
     for (const f of record.frames) {
       for (const e of f.ev) {
         const type = e['type'];
-        if (type === 'dawn') out.push({ t: f.t, color: '#b39ddb', title: 'зоря' });
-        else if (type === 'lot' && e['p']) out.push({ t: f.t, color: '#ffd166', title: 'лот → ' + String(e['p']) });
-        else if (type === 'orderDone') out.push({ t: f.t, color: '#ffd166', title: 'контракт виконано ' + String(e['p'] ?? '') });
-        else if (focus && type === 'cap' && e['p'] === focus) out.push({ t: f.t, color: ACTOR_COLOR[focus], title: 'захоплення' });
-        else if (focus && type === 'cap' && e['from'] === focus) out.push({ t: f.t, color: '#ff5252', title: 'втрата голки' });
+        if (type === 'dawn') out.push({ t: f.t, color: '#b39ddb', title: 'dawn' });
+        else if (type === 'lot' && e['p']) out.push({ t: f.t, color: '#ffd166', title: 'lot → ' + String(e['p']) });
+        else if (type === 'orderDone') out.push({ t: f.t, color: '#ffd166', title: 'contract done ' + String(e['p'] ?? '') });
+        else if (focus && type === 'cap' && e['p'] === focus) out.push({ t: f.t, color: ACTOR_COLOR[focus], title: 'capture' });
+        else if (focus && type === 'cap' && e['from'] === focus) out.push({ t: f.t, color: '#ff5252', title: 'needle lost' });
       }
     }
     const seat = record.result.find((r) => r.slot === focus);
-    for (const ep of seat?.nakazEpisodes ?? []) out.push({ t: ep.from, color: '#ffffff', title: `наказ вів слот ${ep.from}-${ep.to}` });
+    for (const ep of seat?.nakazEpisodes ?? []) out.push({ t: ep.from, color: '#ffffff', title: `nakaz ran the slot ${ep.from}-${ep.to}` });
     return out;
   }, [record, focus]);
 
-  if (error) return <p className="error">Запис не прочитався: {error}</p>;
-  if (!record) return <p className="muted">Читаю запис партії…</p>;
+  if (error) return <p className="error">The record could not be read: {error}</p>;
+  if (!record) return <p className="muted">Reading the match record…</p>;
   const frame = record.frames[Math.min(t, record.frames.length - 1)]!;
-  const phase = frame.dawn ? 'зоря' : t < 5 ? 'старт' : 'бій';
+  const phase = frame.dawn ? 'dawn' : t < 5 ? 'start' : 'battle';
 
   return (
     <div className="viewer">
@@ -137,22 +137,22 @@ export function Viewer({ run, match }: { run: RunMeta; match: number }) {
           </div>
           <input type="range" min={0} max={ticks} value={t} onChange={(e) => seek(Number(e.target.value))} />
           <div className="controls">
-            <button onClick={() => seek(0)} title="на початок">⏮</button>
-            <button onClick={() => seek(t - 1)} title="такт назад (←)">◀</button>
-            <button className="play" onClick={() => setPlaying(!playing)} title="пробіл">
+            <button onClick={() => seek(0)} title="to the start">⏮</button>
+            <button onClick={() => seek(t - 1)} title="tick back (←)">◀</button>
+            <button className="play" onClick={() => setPlaying(!playing)} title="space">
               {playing ? '⏸' : '▶'}
             </button>
-            <button onClick={() => seek(t + 1)} title="такт вперед (→)">▶|</button>
-            <button onClick={() => seek(ticks)} title="на кінець">⏭</button>
+            <button onClick={() => seek(t + 1)} title="tick forward (→)">▶|</button>
+            <button onClick={() => seek(ticks)} title="to the end">⏭</button>
             <span className="tick">
-              такт <b>{t}</b> / {ticks} · {phase}
+              tick <b>{t}</b> / {ticks} · {phase}
             </span>
             <label>
-              швидкість{' '}
+              speed{' '}
               <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
                 {SPEEDS.map((s) => (
                   <option key={s} value={s}>
-                    {s} т/с{s === 2 ? ' (як на вузлі)' : ''}
+                    {s} t/s{s === 2 ? ' (as on the node)' : ''}
                   </option>
                 ))}
               </select>
@@ -173,16 +173,16 @@ export function Viewer({ run, match }: { run: RunMeta; match: number }) {
         <Chart record={record} t={t} onSeek={(x) => seek(x)} />
         <div className="tabs">
           <button className={tab === 'events' ? 'on' : ''} onClick={() => setTab('events')}>
-            журнал подій
+            event journal
           </button>
           <button className={tab === 'orders' ? 'on' : ''} onClick={() => setTab('orders')}>
-            команди {focus ?? ''}
+            orders {focus ?? ''}
           </button>
           <button className={tab === 'summary' ? 'on' : ''} onClick={() => setTab('summary')}>
-            підсумок
+            summary
           </button>
           <span className="muted">
-            у фокусі:{' '}
+            in focus:{' '}
             {SLOTS.map((s) => (
               <button key={s} className={'mini' + (s === focus ? ' on' : '')} style={{ color: ACTOR_COLOR[s] }} onClick={() => setFocus(s)}>
                 {s}

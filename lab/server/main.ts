@@ -1,18 +1,18 @@
 /* lab :: main
-   Локальний сервер лабораторії: API запусків і сама панель (dist-web).
-   Слухає лише 127.0.0.1. Партії грають потоки (worker_threads), не більше
-   ніж ядер мінус одне одночасно.
+   The lab's local server: the runs API and the panel itself (dist-web).
+   Listens on 127.0.0.1 only. Matches are played by threads (worker_threads),
+   at most cores minus one at a time.
 
-     GET    /api/options             пресети, архетипи, зразки наказу, рушій
-     GET    /api/runs                запуски, найсвіжіші згори
-     POST   /api/runs                новий запуск (RunRequest)
-     GET    /api/runs/:id            стан запуску
-     DELETE /api/runs/:id            видалити запуск із записами
-     GET    /api/runs/:id/match/:n   запис партії n (1-3), gzip
-     GET    /api/tournaments         турніри
-     POST   /api/tournaments         новий турнір (TournamentRequest)
-     GET    /api/tournaments/:id     зведення турніру (TournamentView)
-     DELETE /api/tournaments/:id     видалити турнір і його запуски */
+     GET    /api/options             presets, archetypes, nakaz samples, engine
+     GET    /api/runs                runs, newest first
+     POST   /api/runs                a new run (RunRequest)
+     GET    /api/runs/:id            run status
+     DELETE /api/runs/:id            delete a run with its records
+     GET    /api/runs/:id/match/:n   record of match n (1-3), gzip
+     GET    /api/tournaments         tournaments
+     POST   /api/tournaments         a new tournament (TournamentRequest)
+     GET    /api/tournaments/:id     tournament summary (TournamentView)
+     DELETE /api/tournaments/:id     delete a tournament and its runs */
 
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -26,6 +26,7 @@ import { ARCHETYPES } from '@zoria/sdk';
 import { NAKAZ_SAMPLES } from '@zoria/sdk/nakaz';
 import { DEFAULT_PRESET, DEFAULT_TACTICS, FILL_CHARTERS, NAKAZ_HEADS, presets } from '../../bot/dist/strategy.js';
 import type { LabOptions, RunMeta, RunRequest, SeatSpec } from '../shared/record.ts';
+import { EXT_BOTS } from './ext.ts';
 import { deleteRun, listRuns, matchFile, newRunId, parseRequest, readMeta, saveMeta } from './runs.ts';
 import { deleteTournament, listTournaments, parseTournament, planTournament, readTournament, viewTournament } from './tournaments.ts';
 import type { WorkerJob, WorkerMessage } from './worker.ts';
@@ -40,11 +41,12 @@ const NAKAZ_BROKEN: readonly string[] = ['хвилини', 'тиск'];
 const options: LabOptions = {
   presets: [...presets(), ...NAKAZ_HEADS],
   archetypes: Object.keys(ARCHETYPES),
-  /* зразки наказу як суперники - без двох із логічною дірою: «хвилини» і «тиск»
-     будують ткачів лише до 600-го і 400-го такту і втрачених не відновлюють, а
-     правило зорі в них стоїть після правила росту і не спрацьовує ніколи.
-     Перемога над таким рій-що-вимирає дає хибні бали (NAKAZ_BROKEN) */
+  /* nakaz samples as opponents - without the two with a logic hole: "хвилини"
+     and "тиск" build Tkachs only until tick 600 and 400 and don't replace lost
+     ones, and their dawn rule stands after the growth rule and never fires. A
+     win over such a dying swarm gives false points (NAKAZ_BROKEN) */
   nakaz: Object.keys(NAKAZ_SAMPLES).filter((name) => !NAKAZ_BROKEN.includes(name)),
+  ext: [...EXT_BOTS],
   charters: [...FILL_CHARTERS],
   defaultPreset: DEFAULT_PRESET,
   defaultTactics: DEFAULT_TACTICS.split(','),
@@ -52,7 +54,7 @@ const options: LabOptions = {
   cpus: CPUS,
 };
 
-/* черга запусків: живий стан тримається тут, на диск - на кожен крок */
+/* the run queue: live state is kept here, on disk - at every step */
 const live = new Map<string, RunMeta>();
 const queue: string[] = [];
 let running = 0;
@@ -153,7 +155,7 @@ function serveStatic(res: ServerResponse, path: string): void {
   if (!file.startsWith(WEB) || !existsSync(file) || statSync(file).isDirectory()) file = join(WEB, 'index.html');
   if (!existsSync(file)) {
     res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
-    res.end('Панель не зібрана: npm run build (або npm start) у каталозі lab.');
+    res.end('The panel is not built: npm run build (or npm start) in the lab directory.');
     return;
   }
   res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
@@ -261,11 +263,11 @@ async function tournaments(req: IncomingMessage, res: ServerResponse, id: string
   return json(res, 404, { error: 'path' });
 }
 
-/* запуски, що обірвалися разом із попереднім сервером */
+/* runs that broke off together with the previous server */
 for (const meta of listRuns()) {
   if (meta.status === 'running' || meta.status === 'queued') {
     meta.status = 'failed';
-    meta.error = 'сервер перезапущено під час гри';
+    meta.error = 'the server was restarted during the game';
     saveMeta(meta);
   }
 }
@@ -275,5 +277,5 @@ createServer((req, res) => {
     json(res, 500, { error: e instanceof Error ? e.message : String(e) });
   });
 }).listen(PORT, '127.0.0.1', () => {
-  process.stdout.write(`лабораторія: http://127.0.0.1:${PORT}  (рушій ${ENGINE_HASH.slice(0, 12)}, потоків ${PARALLEL})\n`);
+  process.stdout.write(`lab: http://127.0.0.1:${PORT}  (engine ${ENGINE_HASH.slice(0, 12)}, ${PARALLEL} threads)\n`);
 });

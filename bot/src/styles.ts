@@ -1,40 +1,42 @@
 /* bot :: styles
-   Характер голови: повний об'єкт ручок, яким MirrorBot підміняє BOT_STYLE
-   свого місця в рушії. Алгоритм голови один; ручки - множники на чесну
-   оцінку (хвилини за такт), тож стиль - це лише ваги, не інший код.
+   The head's character: a full knob object with which MirrorBot replaces the
+   BOT_STYLE of its seat in the engine. The head's algorithm is one; knobs are
+   multipliers on the honest estimate (minutes per tick), so a style is only
+   weights, not different code.
 
-   Каталог: п'ять архетипів SDK як є, три стилі самого рушія (економіст,
-   рейдер, опортуніст) і наші суміші. Будь-який стиль задається ще й рядком
-   «основа+ручка=число,...» (рівний+raid=1.5,pact=1; облягач+mind=): так
-   нічний пошук лабораторії (lab/server/search.ts) перебирає ваги, а
-   переможця можна дописати в каталог під іменем. */
+   Catalogue: the five SDK archetypes as they are, the engine's own three
+   styles (економіст, рейдер, опортуніст) and our mixes. Any style can also be
+   given as a string "base+knob=number,..." (рівний+raid=1.5,pact=1; облягач+mind=):
+   that's how the lab's night search (lab/server/search.ts) tries weights, and
+   the winner can be added to the catalogue under a name. Style names stay in
+   Ukrainian: they are bot names. */
 
 import { ARCHETYPES } from '@zoria/sdk';
 
 export const KNOBS = ['dark', 'grow', 'steal', 'raid', 'order', 'klinok', 'build', 'guard', 'scout', 'deep', 'spare', 'pirate', 'siege', 'pact'] as const;
 export type Knob = (typeof KNOBS)[number];
 export type Mind = '' | 'різчик';
-/* land - необов'язкова: без неї голова бере landContest світу (зараз 0), тож у
-   стиль вона потрапляє лише заданою явно - новий світ 05.10 може змінити типове */
+/* land is optional: without it the head takes the world's landContest (0 now),
+   so it gets into a style only when set explicitly - the new world of 05.10 may change the default */
 export type Style = { mind: Mind; land?: number } & Record<Knob, number>;
 export const LAND_MAX = 2;
 
-/* межі ручок, за рушієм (source/js/core/zaria-bot*.js):
-     dark    чужа темрява за захопленою голкою проти своєї хвилини
-     grow    нічия руїна - своя нова голка
-     steal   чужа голка під захоплення
-     raid    глушіння чужих голок
-     order   контракти «Утримай лінію»
-     klinok  частка клинків у рої (0-1)
-     build   готовність тримати заряд на нову голку
-     guard   ймовірність відповіді тараном на гостя (0-1, жереб)
-     scout   вага чужої мережі в прицілі спалаху і скана
-     deep    частка автономії на виліт углиб чужої мережі
-     spare   ціна запасного шляху мережі (обхідник)
-     pirate  клинок чергує біля чужого контракту
-     siege   облога: жертва, пара вузлів, тримачі; на зорі - кільце
-     pact    ймовірність угоди проти лідера (0-1, жереб)
-     land    мірило руїни: приріст своєї частки і спірність соти (0-2) */
+/* knob bounds, per the engine (source/js/core/zaria-bot*.js):
+     dark    foreign darkness behind a captured needle vs our own minute
+     grow    an unowned ruin - a new needle of ours
+     steal   a foreign needle to capture
+     raid    jamming foreign needles
+     order   "Hold the line" contracts
+     klinok  share of Klinoks in the swarm (0-1)
+     build   readiness to hold charge for a new needle
+     guard   probability of answering a guest with a ram (0-1, lot)
+     scout   weight of a foreign network in the aim of a flare and a scan
+     deep    share of autonomy for a sortie deep into a foreign network
+     spare   price of a spare network path (обхідник)
+     pirate  a Klinok stands watch by a foreign contract
+     siege   siege: victim, node pair, holders; at dawn - the ring
+     pact    probability of a pact against the leader (0-1, lot)
+     land    ruin measure: growth of our share and how contested the cell is (0-2) */
 export const KNOB_MAX: Readonly<Record<Knob, number>> = {
   dark: 4,
   grow: 3,
@@ -52,7 +54,7 @@ export const KNOB_MAX: Readonly<Record<Knob, number>> = {
   pact: 1,
 };
 
-/* повний стиль із часткового: відсутня ручка - нуль, як у SDK; land - лише задана */
+/* a full style from a partial one: a missing knob is zero, as in the SDK; land - only if set */
 export function fullStyle(way: Partial<Style>): Style {
   const st = { mind: way.mind ?? '' } as Style;
   for (const k of KNOBS) st[k] = way[k] ?? 0;
@@ -68,21 +70,21 @@ const обхідник = sdk('обхідник');
 const проривник = sdk('проривник');
 const облягач = sdk('облягач');
 const шир = sdk('шир');
-/* стилі самого рушія (zaria-bot-style.js, BOT_STYLE A/B/C) */
+/* the engine's own styles (zaria-bot-style.js, BOT_STYLE A/B/C) */
 const опортуніст = fullStyle({ grow: 1, steal: 1, dark: 1, raid: 0.9, order: 2.4, klinok: 0.4, build: 0.8, guard: 0.7, pact: 1 });
 
 export const STYLES: Readonly<Record<string, Style>> = {
-  /* архетипи SDK - ті самі об'єкти, що дає sampleBot */
+  /* SDK archetypes - the same objects sampleBot gives */
   рівний,
   шир,
   обхідник,
   проривник,
   облягач,
-  /* стилі рушія */
+  /* engine styles */
   економіст: fullStyle({ grow: 1.4, steal: 0.55, dark: 0.4, raid: 0.4, order: 0.8, klinok: 0.2, build: 1.2, guard: 1, pact: 0.5 }),
   рейдер: fullStyle({ grow: 0.75, steal: 1.3, dark: 1.6, raid: 1.7, order: 0.7, klinok: 0.6, build: 0.45, guard: 0.5, pact: 1 }),
   опортуніст,
-  /* наші суміші: кожна міняє одну-дві риси відомого архетипу */
+  /* our mixes: each changes one or two traits of a known archetype */
   союзник: mix(рівний, { pact: 1 }),
   підрядник: mix(рівний, { order: 2, pirate: 0.5 }),
   вартовий: mix(обхідник, { guard: 1, klinok: 0.6, spare: 1.5 }),
@@ -94,15 +96,15 @@ export const STYLES: Readonly<Record<string, Style>> = {
   зоряний: mix(обхідник, { siege: 1 }),
   широблог: mix(облягач, { grow: 1.2, build: 1, klinok: 0.45 }),
   тихий: mix(шир, { guard: 1, spare: 1, pact: 1 }),
-  /* знайдений нічним пошуком 30.09 (покоління 3): зоряний із розумом різчика,
-     більшим ростом, меншим будівництвом і частішим тараном. До широблога:
-     +0.83 ± 0.15 частки за пакет на 60 свіжих долинах проти пар архетипів SDK
-     і +1.06 ± 0.12 на 120 долинах проти змішаного пулу */
+  /* found by the night search of 30.09 (generation 3): зоряний with the різчик
+     mind, more growth, less building and more frequent rams. Vs широблог:
+     +0.83 ± 0.15 share per pack on 60 fresh valleys vs pairs of SDK archetypes
+     and +1.06 ± 0.12 on 120 valleys vs the mixed pool */
   світанок: mix(обхідник, { siege: 1, mind: 'різчик', grow: 1.4, build: 0.4, guard: 0.7, scout: 0.8 }),
-  /* знайдений пошуком 01.10 разом із надбудовами nofeed:1200 і ram:6 (покоління 5):
-     світанок із більшим ростом, контрактами, глушінням і розвідкою, ще меншим
-     будівництвом, land 1. З цими надбудовами до світанку без них: +1.55 ± 0.21
-     частки за пакет на 60 свіжих долинах проти змішаного пулу */
+  /* found by the 01.10 search together with the tactics nofeed:1200 and ram:6
+     (generation 5): світанок with more growth, contracts, jamming and scouting,
+     even less building, land 1. With these tactics vs світанок without them:
+     +1.55 ± 0.21 share per pack on 60 fresh valleys vs the mixed pool */
   полудень: mix(обхідник, {
     mind: 'різчик',
     grow: 2.25,
@@ -118,7 +120,7 @@ export const STYLES: Readonly<Record<string, Style>> = {
   }),
 };
 
-/* рядок стилю: ім'я каталогу або «основа+ручка=число,...»; неправильне - null */
+/* style string: a catalogue name or "base+knob=number,..."; invalid - null */
 export function parseStyle(spec: string): Style | null {
   const [baseName, over, ...rest] = spec.split('+');
   if (rest.length || !baseName || !Object.hasOwn(STYLES, baseName)) return null;
@@ -146,7 +148,7 @@ export function parseStyle(spec: string): Style | null {
   return st;
 }
 
-/* стиль рядком: основа і ручки, що від неї відрізняються; зворотне до parseStyle */
+/* a style as a string: the base and the knobs that differ from it; the inverse of parseStyle */
 export function styleSpec(base: string, st: Style): string {
   const b = STYLES[base];
   if (!b) throw new Error('no such style: ' + base);
