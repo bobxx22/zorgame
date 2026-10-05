@@ -1,0 +1,109 @@
+# Submission stack: what we build from your commit and bring up on our
+# machine (part 4, 02-build.md). One file at the repository root; include
+# and extends are forbidden.
+#
+# The pipeline reads roles by labels, not by names of services:
+#   zaria.role: head   the head on the wire - the node gives it ZARIA_URL and ZARIA_TOKEN
+#   zaria.control      service handles: /health, /metrics (kit/02-control-plane.md)
+#   zaria.hq           HQ: serves the built page
+#   zaria.belief       the absolute path of the belief diary inside the container
+#
+# Networks: wire - outbound to the node; plane - only the head and service
+# handles (internal: true, does not go outward); front - what you expose
+# yourself. Published ports are for you: on the grading machine they are
+# not published.
+
+services:
+  head:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+      args:
+        # we set the registry secret, and only into the build: it does not
+        # end up in the image, it is not in the repository at all (02-build.md, 6.5)
+        ZORIA_NPM_AUTH: ${ZORIA_NPM_AUTH:-}
+    labels:
+      zaria.role: head
+      zaria.belief: /data/belief.ndjson
+    environment:
+      ZARIA_URL: ${ZARIA_URL:-}
+      ZARIA_TOKEN: ${ZARIA_TOKEN:-}
+      ZARIA_ENGINE: ${ZARIA_ENGINE:-}
+      ZARIA_FREEZE: ${ZARIA_FREEZE:-}
+      # empty - the bot plays its own battle style (DEFAULT_PRESET in
+      # bot/src/strategy.ts); the template's stub archetype would replace it
+      ZARIA_PRESET: ${ZARIA_PRESET:-}
+      ZARIA_BELIEF: /data/belief.ndjson
+      STATUS_PORT: '7811'
+      STATUS_HOST: 0.0.0.0
+    volumes:
+      - diaries:/data
+    networks:
+      - wire
+      - plane
+    read_only: true
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    # the head does not restart: the resume seal lives in the process
+    # memory, and a fresh process gets closed by the node with code 4006
+    # (kit/04-protocol-pins.md)
+    restart: 'no'
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: control-plane/Dockerfile
+    labels:
+      zaria.control: '7801'
+    environment:
+      PORT: '7801'
+      HOST: 0.0.0.0
+      HEAD_URL: http://head:7811
+      ZARIA_BELIEF: /data/belief.ndjson
+    volumes:
+      - type: volume
+        source: diaries
+        target: /data
+        read_only: true
+    networks:
+      - plane
+      - front
+    ports:
+      - '${ZARIA_BIND:-127.0.0.1}:${ZARIA_CONTROL_PORT:-7801}:7801'
+    depends_on:
+      head:
+        condition: service_started
+    read_only: true
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+networks:
+  wire: {}
+  plane:
+    internal: true
+  front: {}
+
+volumes:
+  diaries: {}

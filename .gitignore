@@ -32,3 +32,7 @@ Thumbs.db
 
 # registry answer of the hub (P2-07): lives in the home folder, never here
 .zoria-registry.json
+records/
+preflight.json
+hq-report.json
+.zaria-preflight/

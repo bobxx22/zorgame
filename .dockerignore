@@ -1,0 +1,14 @@
+# the build context is the repository root; every Dockerfile copies only
+# its own. Anything extra in the context costs seconds on every build
+.git
+**/node_modules
+**/dist
+records
+*.log
+preflight.json
+hq-report.json
+.zaria-preflight
+# not part of any image: the bot lab (with its local runs) and the part 1
+# client. When the HQ grows out of the client, open the HQ part of it here
+lab
+client

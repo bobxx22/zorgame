@@ -1,19 +1,21 @@
 # zorgame
 
-Клієнт мережі Зоря.нет для конкурсу ZORIA. Слухає ефір і перевіряє печатку станції, реєструє в просвіт кодом заявки, показує статус доступу до репозиторію, листи, новини та частини завдання. Надалі виросте в ігровий штаб.
+A client of the Зоря.нет network for the ZORIA contest. It listens to the ether and checks the station's seal, registers during the window with an application code, shows the repository access status, letters, news and the parts of the task. Later it will grow into a game HQ.
 
-Бот частини 2 - у каталозі `bot/` (див. [Бот](#бот-частина-2)), лабораторія для розбору його партій і порівняння тактик - у `lab/` (`lab/README.md`).
+The part 2 bot is in the `bot/` directory (see [Bot](#bot-part-2)), the lab for analysing its matches and comparing tactics is in `lab/` (`lab/README.md`).
 
-Контракт - редакція від 22.09.2026: реєстрація потребує одноразового коду заявки (поле `invitation`), репозиторій - будь-який свій, але приватний.
+The client's interface stays in Ukrainian (it is the part 1 product); code comments and documentation are in English. Quoted interface texts below are given as they appear in the app.
 
-## Вимоги
+Contract - the 22.09.2026 edition: registration needs a one-time application code (the `invitation` field), the repository - any of your own, but private.
 
-- Node.js 24 або новіший (клієнту досить 22.12, боту потрібен 24 - P2-08)
-- npm (залежності фіксує `client/package-lock.json`)
-- браузер з Ed25519 у WebCrypto: Chrome 137+, Firefox 129+, Safari 17.4+
-- захищене джерело сторінки: `localhost`, `https` або файл. Через `http` з IP-адреси браузер вимикає криптографію, і клієнт про це каже
+## Requirements
 
-## Встановлення і запуск
+- Node.js 24 or newer (the client is fine with 22.12, the bot needs 24 - P2-08)
+- npm (dependencies are pinned by `client/package-lock.json`)
+- a browser with Ed25519 in WebCrypto: Chrome 137+, Firefox 129+, Safari 17.4+
+- a secure page origin: `localhost`, `https` or a file. Over `http` from an IP address the browser turns cryptography off, and the client says so
+
+## Install and run
 
 ```bash
 cd client
@@ -21,9 +23,9 @@ npm ci
 npm run dev
 ```
 
-Застосунок відкривається на http://localhost:5173.
+The app opens at http://localhost:5173.
 
-Збірка і перегляд зібраної версії:
+Build and preview the built version:
 
 ```bash
 cd client
@@ -31,16 +33,16 @@ npm run build
 npm run preview
 ```
 
-Автономна збірка: один файл `client/dist-single/index.html`, усе всередині (код, стилі, шрифти, картинки, звуки), відкривається подвійним кліком. Сам файл нічого не довантажує; клієнт звертається лише до API мережі. Вимога P3-03 до штабу (жодного мережевого запиту після відкриття) стосується частини 3 і буде звірена з її текстом; за FAQ кістяк штабу дає `npx zaria-kit init hq`:
+Standalone build: a single file `client/dist-single/index.html`, everything inside (code, styles, fonts, images, sounds), opens with a double click. The file itself loads nothing extra; the client talks only to the network API. The P3-03 requirement for the HQ (not a single network request after opening) concerns part 3 and will be checked against its text; per the FAQ the HQ skeleton comes from `npx zaria-kit init hq`:
 
 ```bash
 cd client
 npm run build:single
 ```
 
-## Бот (частина 2)
+## Bot (part 2)
 
-Бот живе в `bot/` і зібраний із шаблону `npx @zoria/kit init bot`. Пакети `@zoria/*` лежать у приватному реєстрі https://npm.zoria.net/, тож для `npm ci` потрібна змінна `ZORIA_NPM_AUTH` - поле `auth` з відповіді `GET /api/v1/me/registry-token` (порядок - `02-path.md` у пакеті `@zoria/kit`). Відповідь hub лежить поза репозиторієм, у `~/.zoria-registry.json`; `bot/.npmrc` містить лише посилання `${ZORIA_NPM_AUTH}`.
+The bot lives in `bot/` and is built from the `npx @zoria/kit init bot` template. The `@zoria/*` packages are in the private registry https://npm.zoria.net/, so `npm ci` needs the `ZORIA_NPM_AUTH` variable - the `auth` field of the `GET /api/v1/me/registry-token` answer (the procedure - `02-path.md` in the `@zoria/kit` package). The hub's answer lives outside the repository, in `~/.zoria-registry.json`; `bot/.npmrc` only holds the `${ZORIA_NPM_AUTH}` reference.
 
 ```bash
 cd bot
@@ -51,131 +53,147 @@ npm test
 npm run play -- --fast
 ```
 
-У PowerShell змінну задають так (там немає `export` і `HOME`), а пакет на Windows грає `npm run play:win` (`bot/README.md`, розділ «Windows»):
+In PowerShell the variable is set like this (there is no `export` or `HOME` there), and on Windows the pack is played by `npm run play:win` (`bot/README.md`, the "Windows" section):
 
 ```powershell
 $env:ZORIA_NPM_AUTH = node -p "require(require('os').homedir() + '/.zoria-registry.json').auth"
 ```
 
-`.npmrc` із реєстром `@zoria` лежить і в корені, і в `bot/`: перевірка з чек-листа `npm view @zoria/engine version` відповідає версією з обох місць. Клієнта він не зачіпає: у `client/` свій `package.json`.
+An `.npmrc` with the `@zoria` registry is both in the root and in `bot/`: the checklist's `npm view @zoria/engine version` answers with a version from both places. It doesn't affect the client: `client/` has its own `package.json`.
 
-Команди бота, файли й прапорці пакета - `bot/README.md`; документи частини 2 - `npx zaria-kit docs`.
+Bot commands, files and pack flags - `bot/README.md`; the part 2 documents - `npx zaria-kit docs`.
 
-Секрет реєстру в репозиторій не потрапляє (P2-07): перед комітом
+The registry secret never gets into the repository (P2-07): before a commit
 
 ```bash
 node scripts/check-secrets.mjs
 ```
 
-шукає значення `token` і `auth` реєстру та код заявки з `client/.env.local` у файлах (двійкові теж), у підготовленому коміті й у всій історії та перевіряє, що кожен `.npmrc` лише посилається на змінну. Значення вона не друкує.
+looks for the registry's `token` and `auth` values and the application code from `client/.env.local` in the files (binary ones too), in the staged commit and in the whole history, and checks that every `.npmrc` only references the variable. It doesn't print the values.
 
-## Команди
+## Submission stack (part 4)
 
-Усі команди виконуються в каталозі `client`.
+`compose.yaml` at the root builds two images from the commit: the head (`bot/Dockerfile`, the bot from part 2 on the wire) and `control-plane/` (the service handles `/health`, `/metrics`, `/belief-stream`, `/presets/promote` on port 7801). Roles, labels and variables - `STACK.md`. The kit of parts 3 and 4 is installed at the root:
 
-| Команда | Що робить |
+```bash
+npm ci                     # @zoria/kit at the root, needs ZORIA_NPM_AUTH
+npx zaria-kit preflight    # the same eleven stages as the organizers' run (Docker with compose v2)
+```
+
+The head plays its own battle style: `ZARIA_PRESET` is empty in `compose.yaml`, so the bot falls back to `DEFAULT_PRESET` and `DEFAULT_TACTICS`, and its image carries `bot/nakaz.yaml` for the `fill:own` tactic. On Docker Desktop for Windows the local preflight cannot reach the containers (it uses the Linux `docker0` bridge address); run it on Linux.
+
+## Commands
+
+All commands below run in the `client` directory.
+
+| Command | What it does |
 |---|---|
-| `npm ci` | встановлює залежності точно за `package-lock.json` |
-| `npm run dev` | сервер розробки Vite з гарячим перезавантаженням, http://localhost:5173 |
-| `npm run build` | перевірка типів (`tsc -b`) і збірка в `client/dist` |
-| `npm run build:single` | те саме, але в один самодостатній `client/dist-single/index.html`; `scripts/check-single.mjs` перевіряє, що поруч нічого немає і зовнішніх посилань теж |
-| `npm run preview` | віддає зібраний `client/dist`, http://localhost:4173 |
-| `npm run typecheck` | тільки перевірка типів TypeScript |
-| `npm run lint` | ESLint із перевірками типів (проміси без обробки, порожні `catch` тощо) |
-| `npm test` | усі тести один раз (Vitest) |
-| `npm run test:watch` | тести в режимі спостереження |
-| `npm run gen:api` | перегенерувати `src/api/schema.gen.ts` з `api/part1.openapi.yaml` |
-| `npm run mock` | локальний стенд на http://localhost:8787 (див. нижче) |
+| `npm ci` | installs dependencies exactly per `package-lock.json` |
+| `npm run dev` | Vite dev server with hot reload, http://localhost:5173 |
+| `npm run build` | type check (`tsc -b`) and build into `client/dist` |
+| `npm run build:single` | the same, but into one self-contained `client/dist-single/index.html`; `scripts/check-single.mjs` checks there is nothing next to it and no external links either |
+| `npm run preview` | serves the built `client/dist`, http://localhost:4173 |
+| `npm run typecheck` | TypeScript type check only |
+| `npm run lint` | ESLint with type-aware checks (unhandled promises, empty `catch` etc.) |
+| `npm test` | all tests once (Vitest) |
+| `npm run test:watch` | tests in watch mode |
+| `npm run gen:api` | regenerate `src/api/schema.gen.ts` from `api/part1.openapi.yaml` |
+| `npm run mock` | a local stand at http://localhost:8787 (see below) |
 
-## Сервер
+## Server
 
-Адреса сервера - налаштування, код правити не треба.
+The server address is a setting, no code changes needed.
 
-- У застосунку: перемикач «Сервер» унизу сторінки (вибір запам'ятовується в браузері).
-- Через змінні середовища: скопіюйте `client/.env.example` у `client/.env.local`.
+- In the app: the «Сервер» (server) switch at the bottom of the page (the choice is remembered in the browser).
+- Through environment variables: copy `client/.env.example` to `client/.env.local`.
 
-| Значення `VITE_ZORIA_SERVER` | Адреса |
+| `VITE_ZORIA_SERVER` value | Address |
 |---|---|
-| `prod` (за замовчуванням) | https://zoria.net/api/v1 |
+| `prod` (default) | https://zoria.net/api/v1 |
 | `stand` | https://stand.zoria.net/api/v1 |
-| `custom` | `VITE_ZORIA_API_URL`, наприклад локальний стенд |
+| `custom` | `VITE_ZORIA_API_URL`, e.g. the local stand |
 
-Відбитки ключів печатки вбудовано (`src/config/servers.ts`): бойовий - з ТЗ, розділ 3 (23.09), стенда - постійний, зі специфікації. Ключ з іншим відбитком клієнт відхиляє. Змінні `VITE_ZORIA_PROD_KEY_FINGERPRINT` і `VITE_ZORIA_STAND_KEY_FINGERPRINT` лише перевизначають їх.
+The seal key fingerprints are built in (`src/config/servers.ts`): production - from the TZ, section 3 (23.09), the stand - permanent, from the specification. The client rejects a key with a different fingerprint. The variables `VITE_ZORIA_PROD_KEY_FINGERPRINT` and `VITE_ZORIA_STAND_KEY_FINGERPRINT` only override them.
 
-Якщо організатори змінять ключ станції, новий відбиток опублікують уточненням до ТЗ і новиною. До того клієнт відкидає новий ключ («Відбиток ключа не збігається з опублікованим у ТЗ») і не вірить кадрам. Порядок дій: звірити відбиток на zoria.net (не з листа і не з чату), записати його в `client/.env.local` як `VITE_ZORIA_PROD_KEY_FINGERPRINT=…` і перезапустити `npm run dev`; згодом оновити `PROD_KEY_FINGERPRINT` у коді. Поля для відбитка в інтерфейсі навмисно немає: так його не підмінити через фальшиву «новину».
+If the organizers change the station key, the new fingerprint will be published as a TZ clarification and a news item. Until then the client rejects the new key («Відбиток ключа не збігається з опублікованим у ТЗ» - the key fingerprint doesn't match the one published in the TZ) and doesn't trust the frames. What to do: check the fingerprint on zoria.net (not from a letter or a chat), write it into `client/.env.local` as `VITE_ZORIA_PROD_KEY_FINGERPRINT=…` and restart `npm run dev`; later update `PROD_KEY_FINGERPRINT` in the code. There is deliberately no fingerprint field in the interface: that way it can't be swapped through a fake "news item".
 
-Код заявки можна покласти в `client/.env.local` як `VITE_ZORIA_INVITATION`: під `npm run dev` він підставиться у форму для бойового сервера (не для стенда). У збірки код не потрапляє.
+The application code can be put into `client/.env.local` as `VITE_ZORIA_INVITATION`: under `npm run dev` it is prefilled in the form for the production server (not for the stand). The code never gets into builds.
 
-Токени, паролі й код заявки в репозиторій не потрапляють: `.env.local` виключено в `.gitignore`.
+Tokens, passwords and the application code never get into the repository: `.env.local` is excluded in `.gitignore`.
 
-## Після просвіту
+## After the window
 
-- Ефір у фазі `after` опитується раз на 5 хвилин: нового там уже немає, а кожен запит без токена витрачає ліміт ефіру адреси. Поки відкрито журнал - як звичайно: ефір раз на 15 с, журнал раз на хвилину. Зведення кабінету - раз на 15 с (CL-08).
-- Сесія живе добу. За годину до кінця клієнт попереджає, а після - просить увійти знову; пароль клієнт не зберігає.
-- Загублений пароль замінює лише одноразовий код від організаторів (FAQ від 25.09): форма «Загубили пароль?» під входом надсилає `POST /auth/recover` із `{token, password}`. У контракті 1.1.0 цього маршруту ще немає.
+- In the `after` phase the ether is polled once every 5 minutes: there is nothing new there any more, and every request without a token spends the address's ether limit. While the journal is open - as usual: the ether every 15 s, the journal once a minute. The cabinet summary - every 15 s (CL-08).
+- A session lives a day. An hour before the end the client warns, and after it asks to log in again; the client doesn't store the password.
+- A lost password is replaced only by a one-time code from the organizers (the FAQ of 25.09): the «Загубили пароль?» (lost your password?) form under the login sends `POST /auth/recover` with `{token, password}`. Contract 1.1.0 doesn't have this route yet.
 
-## Локальний стенд
+## Local stand
 
-`client/mock/server.mjs` - імітація стенда для розробки: протокол частини 1 (ефір, реєстрація, вхід, заявка на репозиторій, листи, новини, частини завдання), кадри запечатано ключем, який генерується під час запуску, перешкоди, ліміт і глушіння, фази по короткому колу.
+`client/mock/server.mjs` - an imitation of the stand for development: the part 1 protocol (ether, registration, login, repository application, letters, news, task parts), frames sealed with a key generated at startup, interference, the limit and jamming, phases in a short cycle.
 
 ```bash
 cd client
 npm run mock
 ```
 
-Коло за замовчуванням - 10 хвилин: перша половина - шум (з третини кола - провісник), далі просвіт і після просвіту. У режимі розробки в перемикачі сервера з'являється «Локальний сервер» (`client/.env.development`).
+The default cycle is 10 minutes: the first half is noise (from a third of the cycle - the harbinger), then the window and after the window. In development mode the server switch gets «Локальний сервер» (local server) (`client/.env.development`).
 
-| Змінна | За замовчуванням | Що робить |
+| Variable | Default | What it does |
 |---|---|---|
-| `MOCK_PORT` | `8787` | порт |
-| `MOCK_CYCLE_MIN` | `10` | довжина кола, хвилин |
-| `MOCK_PHASE` | `static` | з якої точки почати коло: `static`, `harbinger`, `window`, `after` |
-| `MOCK_NOISE` | `0.6` | частка перешкод до просвіту |
-| `MOCK_INVITATION` | `STAND-2026` | код заявки, який приймає стенд (як навчальний на справжньому стенді) |
-| `MOCK_CODE_ONCE` | `1` | код спрацьовує один раз, як на бойовому сервері; `0` - багаторазовий |
-| `MOCK_CABINET_FAIL` | `0` | частка читань кабінету (GET), що падають із 502: перевірка перечитування |
-| `MOCK_LOSE` | `0.15` | частка реєстрацій, відповідь на які губиться після створення акаунта |
-| `MOCK_BUSY` | `0.1` | частка входів і реєстрацій із відповіддю `429 authentication-busy` |
-| `MOCK_VERIFY_SEC` | `0` | через скільки секунд заявка стає `verified` (0 - лишається `pending`, як на стенді) |
-| `MOCK_STAGE2_SEC` | `120` | через скільки секунд після реєстрації видається «частина 2» |
-| `MOCK_ERRATA_SEC` | `240` | через скільки секунд після реєстрації до неї приходить уточнення |
+| `MOCK_PORT` | `8787` | port |
+| `MOCK_CYCLE_MIN` | `10` | cycle length, minutes |
+| `MOCK_PHASE` | `static` | where to start the cycle: `static`, `harbinger`, `window`, `after` |
+| `MOCK_NOISE` | `0.6` | share of interference before the window |
+| `MOCK_INVITATION` | `STAND-2026` | the application code the stand accepts (like the training one on the real stand) |
+| `MOCK_CODE_ONCE` | `1` | the code works once, as on the production server; `0` - reusable |
+| `MOCK_CABINET_FAIL` | `0` | share of cabinet reads (GET) that fail with 502: a check of re-reading |
+| `MOCK_LOSE` | `0.15` | share of registrations whose answer is lost after the account is created |
+| `MOCK_BUSY` | `0.1` | share of logins and registrations answered with `429 authentication-busy` |
+| `MOCK_VERIFY_SEC` | `0` | after how many seconds the application becomes `verified` (0 - stays `pending`, as on the stand) |
+| `MOCK_STAGE2_SEC` | `120` | how many seconds after registration "part 2" is issued |
+| `MOCK_ERRATA_SEC` | `240` | how many seconds after registration a clarification to it arrives |
 
-Приклад: одразу просвіт і підтвердження заявки за хвилину. Код заявки для стенда - `STAND-2026`.
+Example: the window right away and the application confirmed in a minute. The application code for the stand is `STAND-2026`.
 
 ```bash
 MOCK_PHASE=window MOCK_VERIFY_SEC=60 npm run mock
 ```
 
-Стенд зберігає все в пам'яті: після перезапуску акаунтів немає, ключ печатки новий. Код відновлення пароля на ньому - `RECOVER-<логін>`, спрацьовує один раз.
+The stand keeps everything in memory: after a restart there are no accounts, the seal key is new. The password recovery code on it is `RECOVER-<login>`, it works once.
 
-## Структура
+## Structure
 
 ```
-.zoria                  логін у мережі Зоря.нет
-client/                 клієнт мережі (React + TypeScript + Vite)
-  api/                  контракт OpenAPI частини 1 (MIT, від організаторів)
-  mock/                 локальний стенд для розробки
-  src/api/              обмін із сервером: безпечний fetch, ліміт ефіру, 429, повтори
-  src/ether/            ефір: печатка Ed25519, кадри, стан станції, прослуховування
-  src/auth/             реєстрація з відновленням входом, сесія, перевірка полів
-  src/cabinet/          зведення, листи, новини, частини завдання, безпечний Markdown
-  src/app/              оболонка застосунку: шапка, підвал, провайдери, маршрути, варта заготовки
-  src/config/           адреси й ключі серверів, дати сезону, код заявки з .env.local
-  src/lib/              спільні утиліти (час тощо)
-  src/pages/            екрани
-  src/ui/               спільні елементи інтерфейсу: знак, іконки, сцена, документ, шкала сезону
-  src/sound/            звук станції: сигнали й голос на події, клавіша M
-  src/assets/           шрифти (OFL), сцени, звуки
-  scripts/              перевірка автономної збірки
+.zoria                  login in the Зоря.нет network
+client/                 network client (React + TypeScript + Vite)
+  api/                  part 1 OpenAPI contract (MIT, from the organizers)
+  mock/                 local stand for development
+  src/api/              exchange with the server: safe fetch, ether limit, 429, retries
+  src/ether/            ether: Ed25519 seal, frames, station state, listening
+  src/auth/             registration with recovery by login, session, field validation
+  src/cabinet/          summary, letters, news, task parts, safe Markdown
+  src/app/              app shell: header, footer, providers, routes, draft guard
+  src/config/           server addresses and keys, season dates, application code from .env.local
+  src/lib/              shared utilities (time etc.)
+  src/pages/            screens
+  src/ui/               shared interface elements: sign, icons, scene, document, season scale
+  src/sound/            station sound: signals and voice on events, the M key
+  src/assets/           fonts (OFL), scenes, sounds
+  scripts/              standalone build check
+compose.yaml            submission stack (STACK.md)
+control-plane/          the bot's service handles in the stack
+bot/                    part 2 bot (bot/README.md), its Dockerfile for the stack
+lab/                    bot lab: match viewer, tournaments, night search (lab/README.md)
+scripts/                repository checks (check-secrets.mjs)
 ```
 
-## Звук і сповіщення
+## Sound and notifications
 
-Звук - знак події, а не фон: провісник, останні 10 секунд до просвіту, просвіт, реєстрація, «підтверджено», лист, нова частина, глушіння, втрата сесії. Після сигналу - голос станції. Вимикається кнопкою в шапці або клавішею `M`. Браузер дозволяє звук лише після першого кліку чи натискання клавіші на сторінці.
+Sound is a sign of an event, not a background: the harbinger, the last 10 seconds before the window, the window, registration, "confirmed", a letter, a new part, jamming, session loss. After the signal - the station's voice. It is turned off by the button in the header or the `M` key. The browser allows sound only after the first click or key press on the page.
 
-Коли вкладка у фоні, про новий лист, нову частину, зміну статусу доступу, близький кінець і втрату сесії скаже система (сповіщення браузера). Дозвіл клієнт просить під час входу чи заготовки заявки; стан і кнопка - у «Налаштуваннях» на сторінці «Вихід на зв’язок». Кількість непрочитаних листів видно в заголовку вкладки.
+When the tab is in the background, the system (browser notifications) tells about a new letter, a new part, an access status change, the approaching end and session loss. The client asks for permission at login or when drafting the application; the state and the button are in «Налаштування» (settings) on the «Вихід на зв’язок» (going on air) page. The number of unread letters is shown in the tab title.
 
-## Ресурси
+## Resources
 
-- Шрифти Golos Text, Unbounded, IBM Plex Mono - SIL Open Font License 1.1, текст ліцензії в `client/src/assets/fonts/OFL.txt`.
-- Звукові сигнали - з пакета Sonniss GDC 2019 (royalty-free, без обов'язкової атрибуції).
+- Fonts Golos Text, Unbounded, IBM Plex Mono - SIL Open Font License 1.1, the license text is in `client/src/assets/fonts/OFL.txt`.
+- Sound signals - from the Sonniss GDC 2019 pack (royalty-free, no mandatory attribution).
