@@ -1,6 +1,8 @@
 /* The valley map on a canvas: terrain (once, into a background layer), on top
    of it the tick's frame: coverage, threads, needles, heating, units, storms,
-   lots, contract, our seat's eyes. Mouse hover reports the cell under the cursor. */
+   lots, contract, our seat's eyes. Mouse hover reports the cell under the cursor,
+   a click picks it (play mode), marks ring extra cells (play mode: the chosen
+   unit and the targets of the orders being prepared). */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NF, SLOTS, TASKS } from '../../shared/record.ts';
@@ -27,6 +29,8 @@ interface Props {
   focusSlot: Slot | null;
   highlight: [number, number] | null;
   onHover: (cell: [number, number] | null) => void;
+  onPick?: (cell: [number, number]) => void;
+  marks?: { cell: [number, number]; color: string }[];
 }
 
 const COV = [1, 1, 2 / 3, 1 / 3];
@@ -43,7 +47,7 @@ function shade(hex: string, level: number): string {
   return `rgb(${c((n >> 16) & 255)},${c((n >> 8) & 255)},${c(n & 255)})`;
 }
 
-export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }: Props) {
+export function HexMap({ record, frame, layers, focusSlot, highlight, onHover, onPick, marks }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [room, setRoom] = useState({ w: 720, h: 640 });
@@ -407,13 +411,21 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
       }
     }
 
+    for (const m of marks ?? []) {
+      hexPath(m.cell[0], m.cell[1], 1.15);
+      g.strokeStyle = m.color;
+      g.lineWidth = 2;
+      g.setLineDash([4, 3]);
+      g.stroke();
+      g.setLineDash([]);
+    }
     if (highlight) {
       hexPath(highlight[0], highlight[1], 1.25);
       g.strokeStyle = '#fff';
       g.lineWidth = 2.5;
       g.stroke();
     }
-  }, [frame, layers, focusSlot, highlight, terrain, geo, width, st, needleInfo, R]);
+  }, [frame, layers, focusSlot, highlight, marks, terrain, geo, width, st, needleInfo, R]);
 
   const cellAt = (e: React.MouseEvent<HTMLCanvasElement>): [number, number] | null => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -425,7 +437,16 @@ export function HexMap({ record, frame, layers, focusSlot, highlight, onHover }:
 
   return (
     <div ref={box} className="map">
-      <canvas ref={canvas} onMouseMove={(e) => onHover(cellAt(e))} onMouseLeave={() => onHover(null)} />
+      <canvas
+        ref={canvas}
+        className={onPick ? 'pick' : undefined}
+        onMouseMove={(e) => onHover(cellAt(e))}
+        onMouseLeave={() => onHover(null)}
+        onClick={(e) => {
+          const c = cellAt(e);
+          if (c && onPick) onPick(c);
+        }}
+      />
     </div>
   );
 }

@@ -12,8 +12,9 @@ export interface Hex {
   r: number;
 }
 
-/* who sits in a seat: our bot (preset), an SDK archetype mirror, a sample nakaz, an external bot (lab/ext) or a mixed one (one's economy, another's Klinoks: "e=a3,k=ours") */
-export type SeatKind = 'ours' | 'archetype' | 'nakaz' | 'our-nakaz' | 'ext' | 'mix';
+/* who sits in a seat: our bot (preset), an SDK archetype mirror, a sample nakaz, an external bot (lab/ext),
+   a mixed one (one's economy, another's Klinoks: "e=a3,k=ours") or a human at the panel (play mode) */
+export type SeatKind = 'ours' | 'archetype' | 'nakaz' | 'our-nakaz' | 'ext' | 'mix' | 'human';
 
 export interface SeatSpec {
   kind: SeatKind;
@@ -24,16 +25,20 @@ export interface SeatSpec {
   tactics?: string[];
 }
 
-export function seatText(seat: SeatSpec): string {
+/* a seat as one line; records keep the line they were played with, the panel asks in its language */
+export function seatText(seat: SeatSpec, lang: 'en' | 'uk' = 'en'): string {
+  const uk = lang === 'uk';
   if (seat.kind === 'ours') {
-    const tactics = seat.tactics === undefined ? ['default tactics'] : seat.tactics.join(',') === 'none' ? ['no tactics'] : seat.tactics;
-    return ['ours · ' + seat.name, ...tactics].join(' · ');
+    const tactics =
+      seat.tactics === undefined ? [uk ? 'типові надбудови' : 'default tactics'] : seat.tactics.join(',') === 'none' ? [uk ? 'без надбудов' : 'no tactics'] : seat.tactics;
+    return [(uk ? 'наш · ' : 'ours · ') + seat.name, ...tactics].join(' · ');
   }
-  if (seat.kind === 'archetype') return 'archetype · ' + seat.name;
-  if (seat.kind === 'ext') return 'external · ' + seat.name;
-  if (seat.kind === 'mix') return 'mixed · ' + seat.name;
-  if (seat.kind === 'our-nakaz') return 'our nakaz';
-  return 'nakaz · ' + seat.name;
+  if (seat.kind === 'archetype') return (uk ? 'архетип · ' : 'archetype · ') + seat.name;
+  if (seat.kind === 'ext') return (uk ? 'зовнішній · ' : 'external · ') + seat.name;
+  if (seat.kind === 'mix') return (uk ? 'збірний · ' : 'mixed · ') + seat.name;
+  if (seat.kind === 'our-nakaz') return uk ? 'наш наказ' : 'our nakaz';
+  if (seat.kind === 'human') return uk ? 'людина' : 'human';
+  return (uk ? 'наказ · ' : 'nakaz · ') + seat.name;
 }
 
 export interface MatchStatic {

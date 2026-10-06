@@ -1,28 +1,30 @@
 /* Match viewer: map, timeline with playback, side panels. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SLOTS } from '../../shared/record.ts';
+import { seatText, SLOTS } from '../../shared/record.ts';
 import type { MatchRecord, RunMeta, Slot } from '../../shared/record.ts';
 import { api } from '../lib/api.ts';
+import { tr, useLang } from '../lib/i18n.ts';
 import { ACTOR_COLOR } from '../lib/look.ts';
 import { DEFAULT_LAYERS, HexMap } from './HexMap.tsx';
 import type { Layers } from './HexMap.tsx';
 import { CellInfo, Chart, Events, Orders, Players, Summary } from './panels.tsx';
 
 const SPEEDS = [2, 10, 30, 90, 240];
-const LAYER_NAME: Record<keyof Layers, string> = {
-  coverage: 'coverage',
-  threads: 'threads',
-  targets: 'unit targets',
-  storms: 'storms',
-  eyes: 'focus and scan',
-  ghosts: 'ghosts (the bot\'s view)',
-  ids: 'unit names',
+const LAYER_NAME: Record<keyof Layers, [string, string]> = {
+  coverage: ['coverage', 'покриття'],
+  threads: ['threads', 'нитки'],
+  targets: ['unit targets', 'цілі юнитів'],
+  storms: ['storms', 'бурі'],
+  eyes: ['focus and scan', 'фокус і скан'],
+  ghosts: ["ghosts (the bot's view)", 'привиди (очима бота)'],
+  ids: ['unit names', 'імена юнитів'],
 };
 
 type Tab = 'events' | 'orders' | 'summary';
 
 export function Viewer({ run, match }: { run: RunMeta; match: number }) {
+  const lang = useLang();
   const [record, setRecord] = useState<MatchRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [t, setT] = useState(0);
@@ -33,6 +35,17 @@ export function Viewer({ run, match }: { run: RunMeta; match: number }) {
   const [tab, setTab] = useState<Tab>('events');
   const [hover, setHover] = useState<[number, number] | null>(null);
   const [highlight, setHighlight] = useState<[number, number] | null>(null);
+
+  /* seat labels in the panel's language, from the run's lineup (the record keeps the line it was played with) */
+  const shown = useMemo(() => {
+    if (!record) return null;
+    const labels = { ...record.meta.labels };
+    for (const s of SLOTS) {
+      const spec = run.request.lineup[record.meta.seating[s] ?? -1];
+      if (spec) labels[s] = spec.kind === 'human' ? (lang === 'uk' ? 'людина' : 'human') : seatText(spec, lang);
+    }
+    return { ...record, meta: { ...record.meta, labels } };
+  }, [record, run, lang]);
 
   useEffect(() => {
     let alive = true;
@@ -108,22 +121,23 @@ export function Viewer({ run, match }: { run: RunMeta; match: number }) {
     for (const f of record.frames) {
       for (const e of f.ev) {
         const type = e['type'];
-        if (type === 'dawn') out.push({ t: f.t, color: '#b39ddb', title: 'dawn' });
-        else if (type === 'lot' && e['p']) out.push({ t: f.t, color: '#ffd166', title: 'lot → ' + String(e['p']) });
-        else if (type === 'orderDone') out.push({ t: f.t, color: '#ffd166', title: 'contract done ' + String(e['p'] ?? '') });
-        else if (focus && type === 'cap' && e['p'] === focus) out.push({ t: f.t, color: ACTOR_COLOR[focus], title: 'capture' });
-        else if (focus && type === 'cap' && e['from'] === focus) out.push({ t: f.t, color: '#ff5252', title: 'needle lost' });
+        if (type === 'dawn') out.push({ t: f.t, color: '#b39ddb', title: tr('dawn', 'зоря') });
+        else if (type === 'lot' && e['p']) out.push({ t: f.t, color: '#ffd166', title: tr('lot → ', 'лот → ') + String(e['p']) });
+        else if (type === 'orderDone') out.push({ t: f.t, color: '#ffd166', title: tr('contract done ', 'контракт виконано ') + String(e['p'] ?? '') });
+        else if (focus && type === 'cap' && e['p'] === focus) out.push({ t: f.t, color: ACTOR_COLOR[focus], title: tr('capture', 'захоплення') });
+        else if (focus && type === 'cap' && e['from'] === focus) out.push({ t: f.t, color: '#ff5252', title: tr('needle lost', 'втрата голки') });
       }
     }
     const seat = record.result.find((r) => r.slot === focus);
-    for (const ep of seat?.nakazEpisodes ?? []) out.push({ t: ep.from, color: '#ffffff', title: `nakaz ran the slot ${ep.from}-${ep.to}` });
+    for (const ep of seat?.nakazEpisodes ?? []) out.push({ t: ep.from, color: '#ffffff', title: `${tr('nakaz ran the slot', 'наказ вів слот')} ${ep.from}-${ep.to}` });
     return out;
-  }, [record, focus]);
+  }, [record, focus, lang]);
 
-  if (error) return <p className="error">The record could not be read: {error}</p>;
-  if (!record) return <p className="muted">Reading the match record…</p>;
+  if (error) return <p className="error">{tr('The record could not be read', 'Запис не прочитався')}: {error}</p>;
+  if (!record) return <p className="muted">{tr('Reading the match record…', 'Читаю запис партії…')}</p>;
+  const view = shown ?? record;
   const frame = record.frames[Math.min(t, record.frames.length - 1)]!;
-  const phase = frame.dawn ? 'dawn' : t < 5 ? 'start' : 'battle';
+  const phase = frame.dawn ? tr('dawn', 'зоря') : t < 5 ? tr('start', 'старт') : tr('battle', 'бій');
 
   return (
     <div className="viewer">
@@ -137,22 +151,22 @@ export function Viewer({ run, match }: { run: RunMeta; match: number }) {
           </div>
           <input type="range" min={0} max={ticks} value={t} onChange={(e) => seek(Number(e.target.value))} />
           <div className="controls">
-            <button onClick={() => seek(0)} title="to the start">⏮</button>
-            <button onClick={() => seek(t - 1)} title="tick back (←)">◀</button>
-            <button className="play" onClick={() => setPlaying(!playing)} title="space">
+            <button onClick={() => seek(0)} title={tr('to the start', 'на початок')}>⏮</button>
+            <button onClick={() => seek(t - 1)} title={tr('tick back (←)', 'такт назад (←)')}>◀</button>
+            <button className="play" onClick={() => setPlaying(!playing)} title={tr('space', 'пробіл')}>
               {playing ? '⏸' : '▶'}
             </button>
-            <button onClick={() => seek(t + 1)} title="tick forward (→)">▶|</button>
-            <button onClick={() => seek(ticks)} title="to the end">⏭</button>
+            <button onClick={() => seek(t + 1)} title={tr('tick forward (→)', 'такт вперед (→)')}>▶|</button>
+            <button onClick={() => seek(ticks)} title={tr('to the end', 'на кінець')}>⏭</button>
             <span className="tick">
-              tick <b>{t}</b> / {ticks} · {phase}
+              {tr('tick', 'такт')} <b>{t}</b> / {ticks} · {phase}
             </span>
             <label>
-              speed{' '}
+              {tr('speed', 'швидкість')}{' '}
               <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
                 {SPEEDS.map((s) => (
                   <option key={s} value={s}>
-                    {s} t/s{s === 2 ? ' (as on the node)' : ''}
+                    {s} {tr('t/s', 'т/с')}{s === 2 ? tr(' (as on the node)', ' (як на вузлі)') : ''}
                   </option>
                 ))}
               </select>
@@ -161,28 +175,28 @@ export function Viewer({ run, match }: { run: RunMeta; match: number }) {
           <div className="layers">
             {(Object.keys(LAYER_NAME) as (keyof Layers)[]).map((k) => (
               <label key={k}>
-                <input type="checkbox" checked={layers[k]} onChange={() => setLayers({ ...layers, [k]: !layers[k] })} /> {LAYER_NAME[k]}
+                <input type="checkbox" checked={layers[k]} onChange={() => setLayers({ ...layers, [k]: !layers[k] })} /> {tr(...LAYER_NAME[k])}
               </label>
             ))}
           </div>
         </div>
-        <CellInfo record={record} frame={frame} cell={hover} />
+        <CellInfo record={view} frame={frame} cell={hover} />
       </section>
       <section className="right">
-        <Players record={record} frame={frame} focus={focus} onFocus={setFocus} />
+        <Players record={view} frame={frame} focus={focus} onFocus={setFocus} />
         <Chart record={record} t={t} onSeek={(x) => seek(x)} />
         <div className="tabs">
           <button className={tab === 'events' ? 'on' : ''} onClick={() => setTab('events')}>
-            event journal
+            {tr('event journal', 'журнал подій')}
           </button>
           <button className={tab === 'orders' ? 'on' : ''} onClick={() => setTab('orders')}>
-            orders {focus ?? ''}
+            {tr('orders', 'команди')} {focus ?? ''}
           </button>
           <button className={tab === 'summary' ? 'on' : ''} onClick={() => setTab('summary')}>
-            summary
+            {tr('summary', 'підсумок')}
           </button>
           <span className="muted">
-            in focus:{' '}
+            {tr('in focus', 'у фокусі')}:{' '}
             {SLOTS.map((s) => (
               <button key={s} className={'mini' + (s === focus ? ' on' : '')} style={{ color: ACTOR_COLOR[s] }} onClick={() => setFocus(s)}>
                 {s}
@@ -192,7 +206,7 @@ export function Viewer({ run, match }: { run: RunMeta; match: number }) {
         </div>
         {tab === 'events' && <Events record={record} t={t} onSeek={seek} />}
         {tab === 'orders' && focus && <Orders record={record} slot={focus} t={t} onSeek={(x) => seek(x)} />}
-        {tab === 'summary' && <Summary record={record} />}
+        {tab === 'summary' && <Summary record={view} />}
       </section>
     </div>
   );

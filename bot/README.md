@@ -28,7 +28,9 @@ tests match the node's Ukrainian log lines, so switching it to `en` needs the te
 
 | File | What's in it |
 |---|---|
-| `src/strategy.ts` | strategy: a mirror head with a style (`ZARIA_PRESET`, `полудень` by default) and a pulse - a safe order first in the frame after 2 ticks without an accepted order (the head is silent or was rejected), so the slot doesn't pass to the nakaz (P2-04) |
+| `src/combo.ts` | the battle preset `сплав`: two heads in one seat - the economy of `combo/economy.ts`, the Klinoks of `combo/blades.ts` - under the pulse of `strategy.ts`; the belief diary is the economy head's |
+| `src/combo/economy.ts`, `src/combo/blades.ts` | the two heads of `сплав`, brought from the lab's sparring bots `lab/ext/a4` and `lab/ext/a3` (written from the part 2 documents) |
+| `src/strategy.ts` | strategy: `сплав` (`ZARIA_PRESET` empty) or a mirror head with a style (`полудень` and the others) - a safe order first in the frame after 2 ticks without an accepted order (the head is silent or was rejected), so the slot doesn't pass to the nakaz (P2-04) |
 | `src/tactics.ts` | tactics inside the head and after it (see the index at the top of the file) |
 | `src/styles.ts` | head styles: the catalogue (5 SDK archetypes, 3 engine styles, our mixes) and the string `base+knob=number,...` |
 | `src/wire.ts` | everything around the strategy: connection and reconnect options, belief diary, head snapshot for the service port |
@@ -41,6 +43,21 @@ tests match the node's Ukrainian log lines, so switching it to `en` needs the te
 `records/` - local pack records; not committed to the repository.
 
 Style names (`полудень`, `світанок`, `рівний`, ...) and the engine's words (`ткач`, `клинок`, `різчик`, nakaz sample names) stay in Ukrainian: they are names and values of the game, not text.
+
+## Battle preset: сплав
+
+Since 06.10 the bot plays `сплав`: the economy head (Tkachs, yard, bidding, scans, pacts, cries) and the Klinok head think on the same observe frame, and the frame takes the economy's Tkach and unit-less orders and the Klinok head's Klinok orders - Klinok rams first, then the economy, then the other Klinok orders, within the order cap and the channel (`src/combo.ts`). Each head gets back only the verdicts of its own orders. The pair runs under our pulse: neither head has one, and without it the nakaz took the slot for 0.2-1.4 ticks per pack in the lab.
+
+Why this pair - the lab measurements of 04-06.10, paired difference vs `полудень` with the battle tactics on fresh valleys:
+
+| pool | `сплав` (economy a4 + Klinoks a3) | a3 alone (TTKKK) | our economy + a2 Klinoks |
+|---|---|---|---|
+| strong, 120 valleys | **+0.99 ± 0.11** | +0.97 ± 0.12 | +0.81 ± 0.11 |
+| mixed, 120 | +0.41 ± 0.09 | +0.43 ± 0.09 | +0.36 ± 0.08 |
+| foreign, 120 | **+0.32 ± 0.06** (recheck +0.26) | +0.31 ± 0.06 | +0.16 ± 0.07 |
+| 14 external bots, 40 | **+1.57 ± 0.19** (recheck +1.43) | +1.18 ± 0.24 | +0.95 ± 0.21 |
+
+0.3-0.4 rejected orders per pack. The pair our economy + a1 Klinoks was as strong on the strong pool but sent 27-175 rejected rams per pack. The mirror-head tactics (`ZARIA_TACTICS`) don't apply to `сплав`; they stay for the mirror styles, on which the lab measures them.
 
 ## Head styles
 

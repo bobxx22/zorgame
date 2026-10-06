@@ -12,9 +12,10 @@
                    drops the wire itself: playing the wrong world is worse
                    than not playing
      ZARIA_BELIEF  belief diary file (NDJSON); empty - don't write
-     ZARIA_PRESET  head style (styles.ts): a catalogue name or base+knob=number,...;
-                   default and for an unknown one - полудень
-     ZARIA_TACTICS tactics on top of the head, comma separated (strategy.ts):
+     ZARIA_PRESET  what plays: сплав (combo.ts, two heads under the pulse) or a mirror
+                   head style (styles.ts): a catalogue name or base+knob=number,...;
+                   default and for an unknown one - сплав
+     ZARIA_TACTICS tactics on top of a mirror head, comma separated (strategy.ts):
                    fill:<nakaz>[:N], nopact, nofeed:T, k0:T, ram:R, hunt:R,
                    cherta, stay:K, yardcap, nohook; none - no tactics;
                    unset or empty - fill:own:6,nofeed:1200,nohook,cherta,hunt:12

@@ -504,3 +504,91 @@ progress {
 .stats td {
   white-space: nowrap;
 }
+
+/* language switch */
+.lang {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+/* play mode */
+.row {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.map canvas.pick {
+  cursor: crosshair;
+}
+
+.card.compact {
+  padding: 10px 12px;
+  margin-bottom: 0;
+}
+
+.card h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.stats-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.stats-line b {
+  color: var(--amber);
+}
+
+.note {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--amber);
+  border-radius: 8px;
+  color: var(--amber);
+}
+
+.advice {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.advice li {
+  margin-bottom: 8px;
+}
+
+.advice .why {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.grid.units tbody tr {
+  cursor: pointer;
+}
+
+.log li.denied {
+  color: var(--bad);
+}

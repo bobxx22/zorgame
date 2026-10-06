@@ -1,8 +1,8 @@
 /* lab :: mix
    A mixed bot: one source runs the economy (Tkachs, yard, bidding, scan,
    pacts, cries), another - the Klinoks. Sources are external bots (lab/ext,
-   with settings after @) or our battle bot (ours; ours@duck+dawn:40 - the
-   battle bot plus more tactics). Name: "e=a3,k=ours".
+   with settings after @) or our mirror head полудень with the battle tactics (ours;
+   ours@duck+dawn:40 - plus more tactics). Name: "e=a3,k=ours".
 
    Both sources see the same frame and think on their own; from their orders
    the frame takes Tkach orders and all orders without a unit from the economy
@@ -14,7 +14,7 @@
 import { decodeManifest, decodeObserve, decodeOrders, decodeVerdicts, encodeOrders, encodeVerdicts, orderCap, orderCost, orderScale } from '@zoria/protocol';
 import type { ChannelCfg, Hex, Manifest, Order, SlotName, Verdict } from '@zoria/protocol';
 import type { WireBot } from '@zoria/sdk';
-import { costAt, createStrategy, DEFAULT_PRESET, DEFAULT_TACTICS, parseTactics } from '../../bot/dist/strategy.js';
+import { costAt, createStrategy, DEFAULT_TACTICS, HEAD_PRESET, parseTactics } from '../../bot/dist/strategy.js';
 import { isExtBot, makeExtBot } from './ext.ts';
 
 interface MixSpec {
@@ -45,7 +45,7 @@ function oursTactics(name: string): string | null {
 
 function source(name: string): WireBot {
   const ours = name === 'ours' || name.startsWith('ours@') ? oursTactics(name) : null;
-  return ours !== null ? createStrategy(DEFAULT_PRESET, () => undefined, parseTactics(ours)) : makeExtBot(name);
+  return ours !== null ? createStrategy(HEAD_PRESET, () => undefined, parseTactics(ours)) : makeExtBot(name);
 }
 
 export function makeMixBot(name: string): WireBot {

@@ -1,9 +1,11 @@
 /* Lab: #/ - runs, #/tournaments - tournaments, #/tournament/<id> - tournament summary,
-   #/run/<id>/<match> - match viewer. */
+   #/run/<id>/<match> - match viewer, #/play - a game against bots, #/play/<id> - the game. */
 
 import { useEffect, useState } from 'react';
 import type { RunMeta } from '../shared/record.ts';
 import { api } from './lib/api.ts';
+import { setLang, tr, useLang } from './lib/i18n.ts';
+import { PlayPage } from './play/PlayPage.tsx';
 import { RunsPage } from './runs/RunsPage.tsx';
 import { TournamentsPage, TournamentView } from './tournaments/TournamentsPage.tsx';
 import { Viewer } from './viewer/Viewer.tsx';
@@ -12,7 +14,8 @@ type Route =
   | { page: 'runs' }
   | { page: 'tournaments' }
   | { page: 'tournament'; id: string }
-  | { page: 'run'; id: string; match: number };
+  | { page: 'run'; id: string; match: number }
+  | { page: 'play'; id: string | null };
 
 function parse(hash: string): Route {
   const run = /^#\/run\/([a-z0-9-]+)\/(\d)$/.exec(hash);
@@ -20,10 +23,13 @@ function parse(hash: string): Route {
   const tournament = /^#\/tournament\/([a-z0-9-]+)$/.exec(hash);
   if (tournament) return { page: 'tournament', id: tournament[1]! };
   if (hash === '#/tournaments') return { page: 'tournaments' };
+  const play = /^#\/play(?:\/([a-z0-9-]+))?$/.exec(hash);
+  if (play) return { page: 'play', id: play[1] ?? null };
   return { page: 'runs' };
 }
 
 export function App() {
+  const lang = useLang();
   const [route, setRoute] = useState<Route>(() => parse(location.hash));
   const [run, setRun] = useState<RunMeta | null>(null);
 
@@ -48,37 +54,41 @@ export function App() {
   const go = (hash: string) => {
     location.hash = hash;
   };
-  const section = route.page === 'tournaments' || route.page === 'tournament' || (route.page === 'run' && run?.tournament) ? 'tournaments' : 'runs';
+  const section =
+    route.page === 'play' ? 'play' : route.page === 'tournaments' || route.page === 'tournament' || (route.page === 'run' && run?.tournament) ? 'tournaments' : 'runs';
 
   return (
     <div className="app">
       <header className="bar">
         <a href="#/" className="brand">
-          ZORYA · lab
+          {tr('ZORYA · lab', 'ЗОРЯ · лабораторія')}
         </a>
         <nav className="nav">
           <a href="#/" className={section === 'runs' ? 'on' : ''}>
-            Runs
+            {tr('Runs', 'Запуски')}
           </a>
           <a href="#/tournaments" className={section === 'tournaments' ? 'on' : ''}>
-            Tournaments
+            {tr('Tournaments', 'Турніри')}
+          </a>
+          <a href="#/play" className={section === 'play' ? 'on' : ''}>
+            {tr('Play', 'Зіграти')}
           </a>
         </nav>
         {route.page === 'run' && run && (
           <nav className="matches">
             {run.tournament && (
               <a href={`#/tournament/${run.tournament.id}`} className="muted">
-                ← to the tournament
+                {tr('← to the tournament', '← до турніру')}
               </a>
             )}
             <span className="muted">
-              valley {run.request.seed} · {run.request.ticks} ticks ·
+              {tr('valley', 'долина')} {run.request.seed} · {run.request.ticks} {tr('ticks', 'тактів')} ·
             </span>
             {Array.from({ length: run.request.matches }, (_, i) => {
               const m = run.matches?.[i];
               return (
                 <button key={i} className={route.match === i + 1 ? 'on' : ''} onClick={() => go(`#/run/${run.id}/${i + 1}`)}>
-                  match {i + 1}
+                  {tr('match', 'партія')} {i + 1}
                   {m && (
                     <span className="muted">
                       {' '}
@@ -92,16 +102,29 @@ export function App() {
                 </button>
               );
             })}
-            {run.shares && <span className="muted">shares per pack: {run.request.lineup.map((_, i) => `${i + 1}:${run.shares![i]}`).join(' ')}</span>}
+            {run.shares && (
+              <span className="muted">
+                {tr('shares per pack', 'частки за пакет')}: {run.request.lineup.map((_, i) => `${i + 1}:${run.shares![i]}`).join(' ')}
+              </span>
+            )}
           </nav>
         )}
+        <span className="lang">
+          <button className={'mini' + (lang === 'en' ? ' on' : '')} onClick={() => setLang('en')}>
+            EN
+          </button>
+          <button className={'mini' + (lang === 'uk' ? ' on' : '')} onClick={() => setLang('uk')}>
+            УК
+          </button>
+        </span>
       </header>
       <main>
         {route.page === 'runs' && <RunsPage onOpen={(id, match) => go(`#/run/${id}/${match}`)} />}
         {route.page === 'tournaments' && <TournamentsPage onOpen={(id) => go(`#/tournament/${id}`)} />}
         {route.page === 'tournament' && <TournamentView id={route.id} onRun={(runId) => go(`#/run/${runId}/1`)} />}
         {route.page === 'run' && run && <Viewer run={run} match={route.match} />}
-        {route.page === 'run' && !run && <p className="muted">Reading the run…</p>}
+        {route.page === 'run' && !run && <p className="muted">{tr('Reading the run…', 'Читаю запуск…')}</p>}
+        {route.page === 'play' && <PlayPage id={route.id} />}
       </main>
     </div>
   );

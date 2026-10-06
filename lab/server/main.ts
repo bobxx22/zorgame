@@ -12,7 +12,12 @@
      GET    /api/tournaments         tournaments
      POST   /api/tournaments         a new tournament (TournamentRequest)
      GET    /api/tournaments/:id     tournament summary (TournamentView)
-     DELETE /api/tournaments/:id     delete a tournament and its runs */
+     DELETE /api/tournaments/:id     delete a tournament and its runs
+     GET    /api/play                play-mode games (PlayState without the turn)
+     POST   /api/play                a new game against bots (PlayRequest); answers at the first decision tick
+     GET    /api/play/:id            the game's state; ?wait=1 - long poll until the next decision tick
+     POST   /api/play/:id/act        the human's move (PlayAction); answers at the next decision tick
+     DELETE /api/play/:id            close the game */
 
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -28,6 +33,7 @@ import { DEFAULT_PRESET, DEFAULT_TACTICS, FILL_CHARTERS, NAKAZ_HEADS, presets } 
 import type { LabOptions, RunMeta, RunRequest, SeatSpec } from '../shared/record.ts';
 import { EXT_BOTS } from './ext.ts';
 import { deleteRun, listRuns, matchFile, newRunId, parseRequest, readMeta, saveMeta } from './runs.ts';
+import { actPlay, closePlay, playState, playStates, startPlay, waitPlay } from './sessions.ts';
 import { deleteTournament, listTournaments, parseTournament, planTournament, readTournament, viewTournament } from './tournaments.ts';
 import type { WorkerJob, WorkerMessage } from './worker.ts';
 
@@ -172,6 +178,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const [, what, id, sub, n] = parts;
   if (req.method === 'GET' && what === 'options') return json(res, 200, options);
   if (what === 'tournaments') return tournaments(req, res, id);
+  if (what === 'play') return play(req, res, id, sub, url.searchParams.get('wait') === '1');
   if (what !== 'runs') return json(res, 404, { error: 'path' });
 
   if (!id) {
@@ -261,6 +268,25 @@ async function tournaments(req: IncomingMessage, res: ServerResponse, id: string
     return json(res, 200, { deleted: id });
   }
   return json(res, 404, { error: 'path' });
+}
+
+async function play(req: IncomingMessage, res: ServerResponse, id: string | undefined, sub: string | undefined, wait: boolean): Promise<void> {
+  try {
+    if (!id) {
+      if (req.method === 'GET') return json(res, 200, playStates());
+      if (req.method === 'POST') return json(res, 201, await startPlay(await readBody(req), options));
+      return json(res, 404, { error: 'path' });
+    }
+    if (req.method === 'POST' && sub === 'act') return json(res, 200, await actPlay(id, await readBody(req)));
+    if (req.method === 'DELETE' && !sub) return json(res, closePlay(id) ? 200 : 404, { closed: id });
+    if (req.method === 'GET' && !sub) {
+      const state = wait ? await waitPlay(id) : playState(id);
+      return state ? json(res, 200, state) : json(res, 404, { error: 'game' });
+    }
+    return json(res, 404, { error: 'path' });
+  } catch (e) {
+    return json(res, 400, { error: e instanceof Error ? e.message : String(e) });
+  }
 }
 
 /* runs that broke off together with the previous server */

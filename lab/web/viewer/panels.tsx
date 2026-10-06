@@ -5,7 +5,8 @@ import { useMemo, useState } from 'react';
 import { NF, P, SLOTS, TASKS } from '../../shared/record.ts';
 import type { Actor, Frame, MatchRecord, Slot } from '../../shared/record.ts';
 import { hexKey } from '../lib/hex.ts';
-import { ACTOR_COLOR, DENY, EVENT_NAME, eventText, fmt, orderText, TERRAIN_NAME, FIND_NAME } from '../lib/look.ts';
+import { tr } from '../lib/i18n.ts';
+import { ACTOR_COLOR, clsName, denyWord, eventName, eventText, findName, fmt, orderText, terrainName } from '../lib/look.ts';
 
 const Dot = ({ a }: { a: Actor }) => <span className="dot" style={{ background: ACTOR_COLOR[a] }} />;
 
@@ -15,13 +16,13 @@ export function Players({ record, frame, focus, onFocus }: { record: MatchRecord
     <table className="grid">
       <thead>
         <tr>
-          <th>seat</th>
-          <th>who</th>
-          <th title="score: minutes + contracts - pact tax">score</th>
-          <th>charge</th>
-          <th title="lit / total needles">needles</th>
-          <th>units</th>
-          <th title="channel: left / tick budget">channel</th>
+          <th>{tr('seat', 'місце')}</th>
+          <th>{tr('who', 'хто')}</th>
+          <th title={tr('score: minutes + contracts - pact tax', 'рахунок: хвилини + контракти - податок угоди')}>{tr('score', 'рахунок')}</th>
+          <th>{tr('charge', 'заряд')}</th>
+          <th title={tr('lit / total needles', 'горить / усього голок')}>{tr('needles', 'голки')}</th>
+          <th>{tr('units', 'юніти')}</th>
+          <th title={tr('channel: left / tick budget', 'канал: залишок / бюджет такту')}>{tr('channel', 'канал')}</th>
         </tr>
       </thead>
       <tbody>
@@ -32,7 +33,7 @@ export function Players({ record, frame, focus, onFocus }: { record: MatchRecord
               <td>{i + 1}</td>
               <td>
                 <Dot a={s} /> {s} · {record.meta.labels[s]}
-                {record.meta.ours === s && <b className="tag">ours</b>}
+                {record.meta.ours === s && <b className="tag">{tr('ours', 'наш')}</b>}
               </td>
               <td className="num">{fmt(row[P.score])}</td>
               <td className="num">{fmt(row[P.energy], 0)}</td>
@@ -49,7 +50,7 @@ export function Players({ record, frame, focus, onFocus }: { record: MatchRecord
         <tr className="keeper">
           <td>—</td>
           <td>
-            <Dot a="K" /> Keeper
+            <Dot a="K" /> {tr('Keeper', 'Ключник')}
           </td>
           <td />
           <td className="num">{fmt(frame.p.K[P.energy], 0)}</td>
@@ -65,11 +66,11 @@ export function Players({ record, frame, focus, onFocus }: { record: MatchRecord
 }
 
 type Metric = 'score' | 'energy' | 'lit' | 'units';
-const METRIC: Record<Metric, { i: number; name: string }> = {
-  score: { i: P.score, name: 'score' },
-  energy: { i: P.energy, name: 'charge' },
-  lit: { i: P.lit, name: 'lit needles' },
-  units: { i: P.units, name: 'units' },
+const METRIC: Record<Metric, { i: number; name: [string, string] }> = {
+  score: { i: P.score, name: ['score', 'рахунок'] },
+  energy: { i: P.energy, name: ['charge', 'заряд'] },
+  lit: { i: P.lit, name: ['lit needles', 'горить голок'] },
+  units: { i: P.units, name: ['units', 'юніти'] },
 };
 
 export function Chart({ record, t, onSeek }: { record: MatchRecord; t: number; onSeek: (t: number) => void }) {
@@ -98,10 +99,10 @@ export function Chart({ record, t, onSeek }: { record: MatchRecord; t: number; o
       <div className="seg">
         {(Object.keys(METRIC) as Metric[]).map((m) => (
           <button key={m} className={m === metric ? 'on' : ''} onClick={() => setMetric(m)}>
-            {METRIC[m].name}
+            {tr(...METRIC[m].name)}
           </button>
         ))}
-        <span className="muted">max {fmt(series.max, metric === 'score' ? 1 : 0)}</span>
+        <span className="muted">{tr('max', 'макс')} {fmt(series.max, metric === 'score' ? 1 : 0)}</span>
       </div>
       <svg
         viewBox={`0 0 ${W} ${H}`}
@@ -149,18 +150,18 @@ export function Events({ record, t, onSeek }: { record: MatchRecord; t: number; 
                 setHidden(next);
               }}
             />
-            {EVENT_NAME[type] ?? type}
+            {eventName(type)}
           </label>
         ))}
       </div>
       <div className="filters">
         {(['all', ...SLOTS, 'K'] as const).map((a) => (
           <button key={a} className={who === a ? 'on' : ''} onClick={() => setWho(a)}>
-            {a === 'all' ? 'all' : a}
+            {a === 'all' ? tr('all', 'усі') : a}
           </button>
         ))}
         <label>
-          <input type="checkbox" checked={future} onChange={() => setFuture(!future)} /> whole match
+          <input type="checkbox" checked={future} onChange={() => setFuture(!future)} /> {tr('whole match', 'уся партія')}
         </label>
       </div>
       <ol className="log">
@@ -192,9 +193,9 @@ export function Orders({ record, slot, t, onSeek }: { record: MatchRecord; slot:
     <div className="orders">
       <div className="filters">
         <label>
-          <input type="checkbox" checked={onlyDenied} onChange={() => setOnlyDenied(!onlyDenied)} /> rejections only (per match: {totalDenied})
+          <input type="checkbox" checked={onlyDenied} onChange={() => setOnlyDenied(!onlyDenied)} /> {tr('rejections only', 'лише відмови')} ({tr('per match', 'за партію')}: {totalDenied})
         </label>
-        {ours && <span className="muted">pulse - dashed, filler nakaz orders - green</span>}
+        {ours && <span className="muted">{tr('pulse - dashed, filler nakaz orders - green', 'пульс - пунктир, команди наказу-заповнювача - зелені')}</span>}
       </div>
       <ol className="log">
         {[...rows].reverse().map((f) => {
@@ -203,7 +204,7 @@ export function Orders({ record, slot, t, onSeek }: { record: MatchRecord; slot:
           return (
             <li key={f.t} className={f.t === t ? 'now' : ''} onClick={() => onSeek(f.t)}>
               <span className="t">{f.t}</span>
-              {orders.length === 0 && <span className="muted">silence</span>}
+              {orders.length === 0 && <span className="muted">{tr('silence', 'мовчання')}</span>}
               <span className="cmds">
                 {orders.map((o, i) => {
                   const code = denied.get(i);
@@ -212,10 +213,10 @@ export function Orders({ record, slot, t, onSeek }: { record: MatchRecord; slot:
                     <span
                       key={i}
                       className={'cmd' + (code !== undefined ? ' denied' : '') + (src === 'pulse' ? ' pulse' : '') + (src === 'fill' ? ' fill' : '')}
-                      title={src === 'fill' ? 'filler nakaz' : src === 'pulse' ? 'pulse' : undefined}
+                      title={src === 'fill' ? tr('filler nakaz', 'наказ-заповнювач') : src === 'pulse' ? tr('pulse', 'пульс') : undefined}
                     >
                       {orderText(o)}
-                      {code !== undefined && <b> ✗ {DENY[code] ?? code}</b>}
+                      {code !== undefined && <b> ✗ {denyWord(code)}</b>}
                     </span>
                   );
                 })}
@@ -228,7 +229,15 @@ export function Orders({ record, slot, t, onSeek }: { record: MatchRecord; slot:
   );
 }
 
-const BREAKDOWN: Record<string, string> = { network: 'network', orders: 'contracts', stolen: 'jamming loot', pactTax: 'pact tax', jams: 'jams', rams: 'rams', total: 'total' };
+const BREAKDOWN: Record<string, [string, string]> = {
+  network: ['network', 'мережа'],
+  orders: ['contracts', 'контракти'],
+  stolen: ['jamming loot', 'здобич глушіння'],
+  pactTax: ['pact tax', 'податок угоди'],
+  jams: ['jams', 'глушінь'],
+  rams: ['rams', 'таранів'],
+  total: ['total', 'разом'],
+};
 
 export function Summary({ record }: { record: MatchRecord }) {
   const rows = [...record.result].sort((a, b) => a.place - b.place);
@@ -238,12 +247,12 @@ export function Summary({ record }: { record: MatchRecord }) {
       <table className="grid">
         <thead>
           <tr>
-            <th>seat</th>
-            <th>who</th>
-            <th>share</th>
-            <th>score</th>
+            <th>{tr('seat', 'місце')}</th>
+            <th>{tr('who', 'хто')}</th>
+            <th>{tr('share', 'частка')}</th>
+            <th>{tr('score', 'рахунок')}</th>
             {keys.map((k) => (
-              <th key={k}>{BREAKDOWN[k]}</th>
+              <th key={k}>{BREAKDOWN[k] ? tr(...BREAKDOWN[k]) : k}</th>
             ))}
           </tr>
         </thead>
@@ -268,15 +277,17 @@ export function Summary({ record }: { record: MatchRecord }) {
       <table className="grid">
         <thead>
           <tr>
-            <th>who</th>
-            <th>lit</th>
-            <th>needles</th>
-            <th>charge</th>
-            <th>orders</th>
-            <th>rejections</th>
-            <th>pulses</th>
-            <th title="ticks when a nakaz inside the bot filled idle time">filled</th>
-            <th title="ticks when the nakaz ran the slot: the bot was silent for 6 ticks or longer (rules 23.2)">under nakaz</th>
+            <th>{tr('who', 'хто')}</th>
+            <th>{tr('lit', 'горить')}</th>
+            <th>{tr('needles', 'голок')}</th>
+            <th>{tr('charge', 'заряд')}</th>
+            <th>{tr('orders', 'команд')}</th>
+            <th>{tr('rejections', 'відмов')}</th>
+            <th>{tr('pulses', 'пульсів')}</th>
+            <th title={tr('ticks when a nakaz inside the bot filled idle time', 'тактів, коли простій заповнював наказ усередині бота')}>{tr('filled', 'заповнено')}</th>
+            <th title={tr('ticks when the nakaz ran the slot: the bot was silent for 6 ticks or longer (rules 23.2)', 'такти, коли слот вів наказ: бот мовчав 6 тактів і довше (правила 23.2)')}>
+              {tr('under nakaz', 'під наказом')}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -294,7 +305,7 @@ export function Summary({ record }: { record: MatchRecord }) {
               <td className="num">{r.fills ?? 0}</td>
               <td className={'num' + (r.nakazTicks > 0 ? ' bad' : '')} title={r.nakazEpisodes.map((e) => `${e.from}-${e.to}`).join(', ')}>
                 {r.nakazTicks}
-                {r.nakazEpisodes.length > 0 && <span className="muted"> ({r.nakazEpisodes.length} ep.)</span>}
+                {r.nakazEpisodes.length > 0 && <span className="muted"> ({r.nakazEpisodes.length} {tr('ep.', 'еп.')})</span>}
               </td>
             </tr>
           ))}
@@ -306,7 +317,7 @@ export function Summary({ record }: { record: MatchRecord }) {
 
 export function CellInfo({ record, frame, cell }: { record: MatchRecord; frame: Frame; cell: [number, number] | null }) {
   const info = useMemo(() => new Map(record.static.cells.map(([q, r, type, level]) => [hexKey(q, r), { type, level }])), [record]);
-  if (!cell) return <div className="cellinfo muted">hover over a cell</div>;
+  if (!cell) return <div className="cellinfo muted">{tr('hover over a cell', 'наведіть на соту')}</div>;
   const key = hexKey(cell[0], cell[1]);
   const c = info.get(key);
   const needle = frame.n.find(([k]) => k === key);
@@ -319,30 +330,39 @@ export function CellInfo({ record, frame, cell }: { record: MatchRecord; frame: 
       <b>
         ({cell[0]}, {cell[1]})
       </b>{' '}
-      {TERRAIN_NAME[record.static.types[c?.type ?? 0] ?? 'bare']}, level {c?.level}
+      {terrainName(record.static.types[c?.type ?? 0] ?? 'bare')}, {tr('level', 'рівень')} {c?.level}
       {needle && (
         <div>
-          needle <Dot a={needle[1]} /> {needle[1]} · {needle[2] > 0 ? `lit ${fmt(needle[2], 2)}` : 'dark'}
-          {needle[3] & NF.jam ? ' · jammed' : ''}
-          {needle[3] & NF.crown ? ' · crown' : ''}
-          {needle[3] & NF.fed ? ' · fed' : ''}
-          {ruin?.ring ? ' · ring' : ''}
-          {ruin?.start ? ' · start' : ''}
+          {tr('needle', 'голка')} <Dot a={needle[1]} /> {needle[1]} · {needle[2] > 0 ? `${tr('lit', 'горить')} ${fmt(needle[2], 2)}` : tr('dark', 'темна')}
+          {needle[3] & NF.jam ? ' · ' + tr('jammed', 'заглушена') : ''}
+          {needle[3] & NF.crown ? ' · ' + tr('crown', 'корона') : ''}
+          {needle[3] & NF.fed ? ' · ' + tr('fed', 'живиться') : ''}
+          {ruin?.ring ? ' · ' + tr('ring', 'кільце') : ''}
+          {ruin?.start ? ' · ' + tr('start', 'стартова') : ''}
         </div>
       )}
-      {!needle && ruin && <div>ruin (unowned){ruin.ring ? ' · ring' : ''}</div>}
+      {!needle && ruin && (
+        <div>
+          {tr('ruin (unowned)', 'руїна (нічия)')}
+          {ruin.ring ? ' · ' + tr('ring', 'кільце') : ''}
+        </div>
+      )}
       {heat.map(([, a, p]) => (
         <div key={a}>
-          heated by <Dot a={a} /> {a}: {fmt(p, 1)} ticks
+          {tr('heated by', 'гріє')} <Dot a={a} /> {a}: {fmt(p, 1)} {tr('ticks', 'тактів')}
         </div>
       ))}
-      {units.map(([id, owner, cls, , , task, tq, tr]) => (
+      {units.map(([id, owner, cls, , , task, tq, tr2]) => (
         <div key={id}>
-          <Dot a={owner} /> {id} · {cls ? 'Klinok' : 'Tkach'}
-          {task ? ` · ${TASKS[task]} → (${tq}, ${tr})` : ' · no task'}
+          <Dot a={owner} /> {id} · {clsName(cls)}
+          {task ? ` · ${TASKS[task]} → (${tq}, ${tr2})` : ' · ' + tr('no task', 'без завдання')}
         </div>
       ))}
-      {find && <div>find: {FIND_NAME[find.kind] ?? find.kind}</div>}
+      {find && (
+        <div>
+          {tr('find', 'знахідка')}: {findName(find.kind)}
+        </div>
+      )}
     </div>
   );
 }

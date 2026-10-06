@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { seatText } from '../../shared/record.ts';
+import { lang, tr } from '../lib/i18n.ts';
 import type { LabOptions, SeatSpec, TournamentRequest, TournamentView, VariantStats } from '../../shared/record.ts';
 import { api } from '../lib/api.ts';
 import { fmt } from '../lib/look.ts';
@@ -67,10 +68,12 @@ export function TournamentsPage({ onOpen }: { onOpen: (id: string) => void }) {
   return (
     <div className="runs">
       <section className="card">
-        <h2>New tournament</h2>
+        <h2>{tr('New tournament', 'Новий турнір')}</h2>
         <p className="muted">
-          Each variant plays a pack in participant 1's seat on the same valleys and against the same opponent pairs. The comparison is paired: on each valley
-          the variant's share minus variant 1's share, so the randomness of the valley and the opponents cancels out. A pack's share is 0 to 9, the fair middle is 6.
+          {tr(
+            "Each variant plays a pack in participant 1's seat on the same valleys and against the same opponent pairs. The comparison is paired: on each valley the variant's share minus variant 1's share, so the randomness of the valley and the opponents cancels out. A pack's share is 0 to 9, the fair middle is 6.",
+            'Кожен варіант грає пакет на місці учасника 1 на тих самих долинах і проти тих самих пар суперників. Порівняння парне: на кожній долині частка варіанта мінус частка варіанта 1, тож випадковість долини і суперників віднімається. Частка пакета - від 0 до 9, чесна середина - 6.',
+          )}
         </p>
         {options && (
           <>
@@ -78,7 +81,7 @@ export function TournamentsPage({ onOpen }: { onOpen: (id: string) => void }) {
               {variants.map((v, i) => (
                 <div key={i} className="variant-row">
                   <SeatEditor
-                    label={`variant ${i + 1}${i === 0 ? ' (reference)' : ''}`}
+                    label={`${tr('variant', 'варіант')} ${i + 1}${i === 0 ? tr(' (reference)', ' (еталон)') : ''}`}
                     options={options}
                     value={v}
                     onChange={(next) => setVariants(variants.map((x, j) => (j === i ? next : x)))}
@@ -90,17 +93,19 @@ export function TournamentsPage({ onOpen }: { onOpen: (id: string) => void }) {
               ))}
               <div>
                 <button className="mini" disabled={variants.length >= 8} onClick={() => setVariants([...variants, { kind: 'ours', name: 'полудень' }])}>
-                  + variant
+                  + {tr('variant', 'варіант')}
                 </button>
               </div>
             </div>
-            <h3>Opponents (pairs from the pool in turn: {pairs})</h3>
+            <h3>
+              {tr('Opponents (pairs from the pool in turn', 'Суперники (пари з пулу по черзі')}: {pairs})
+            </h3>
             <div className="pool">
               {options.archetypes.map((name) => {
                 const s: SeatSpec = { kind: 'archetype', name };
                 return (
                   <label key={'a' + name}>
-                    <input type="checkbox" checked={inPool(s)} onChange={() => toggle(s)} /> archetype · {name}
+                    <input type="checkbox" checked={inPool(s)} onChange={() => toggle(s)} /> {tr('archetype', 'архетип')} · {name}
                   </label>
                 );
               })}
@@ -108,7 +113,7 @@ export function TournamentsPage({ onOpen }: { onOpen: (id: string) => void }) {
                 const s: SeatSpec = { kind: 'nakaz', name };
                 return (
                   <label key={'n' + name}>
-                    <input type="checkbox" checked={inPool(s)} onChange={() => toggle(s)} /> nakaz · {name}
+                    <input type="checkbox" checked={inPool(s)} onChange={() => toggle(s)} /> {tr('nakaz', 'наказ')} · {name}
                   </label>
                 );
               })}
@@ -116,34 +121,34 @@ export function TournamentsPage({ onOpen }: { onOpen: (id: string) => void }) {
                 const s: SeatSpec = { kind: 'ext', name };
                 return (
                   <label key={'l' + name}>
-                    <input type="checkbox" checked={inPool(s)} onChange={() => toggle(s)} /> external · {name}
+                    <input type="checkbox" checked={inPool(s)} onChange={() => toggle(s)} /> {tr('external', 'зовнішній')} · {name}
                   </label>
                 );
               })}
             </div>
             <div className="form" style={{ marginTop: 12 }}>
               <label className="field">
-                <span>name</span>
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. idle filling" />
+                <span>{tr('name', 'назва')}</span>
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder={tr('e.g. idle filling', 'напр. заповнення простою')} />
               </label>
               <label className="field">
-                <span>valleys: from the lot</span>
+                <span>{tr('valleys: from the lot', 'долини: з жереба')}</span>
                 <input type="number" value={seedFrom} onChange={(e) => setSeedFrom(Number(e.target.value))} />
               </label>
               <label className="field">
-                <span>how many valleys</span>
+                <span>{tr('how many valleys', 'скільки долин')}</span>
                 <input type="number" min={1} max={200} value={seeds} onChange={(e) => setSeeds(Math.max(1, Math.min(200, Number(e.target.value) || 1)))} />
               </label>
               <label className="field">
-                <span>ticks per match</span>
+                <span>{tr('ticks per match', 'тактів у партії')}</span>
                 <select value={ticks} onChange={(e) => setTicks(Number(e.target.value))}>
-                  <option value={1200}>1200 (full)</option>
+                  <option value={1200}>1200 ({tr('full', 'повна')})</option>
                   <option value={600}>600</option>
                   <option value={300}>300</option>
                 </select>
               </label>
               <button className="primary" disabled={pool.length === 0} onClick={() => void start()}>
-                Start: {packs} packs, ~{minutes} min
+                {tr('Start', 'Почати')}: {packs} {tr('packs', 'пакетів')}, ~{minutes} {tr('min', 'хв')}
               </button>
             </div>
           </>
@@ -152,26 +157,26 @@ export function TournamentsPage({ onOpen }: { onOpen: (id: string) => void }) {
       </section>
 
       <section className="card">
-        <h2>Tournaments</h2>
-        {list.length === 0 && <p className="muted">None yet.</p>}
+        <h2>{tr('Tournaments', 'Турніри')}</h2>
+        {list.length === 0 && <p className="muted">{tr('None yet.', 'Ще жодного.')}</p>}
         <table className="grid">
           <thead>
             <tr>
-              <th>when</th>
-              <th>name</th>
-              <th>variants: share per pack</th>
-              <th>status</th>
+              <th>{tr('when', 'коли')}</th>
+              <th>{tr('name', 'назва')}</th>
+              <th>{tr('variants: share per pack', 'варіанти: частка за пакет')}</th>
+              <th>{tr('status', 'стан')}</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {list.map((t) => (
               <tr key={t.tournament.id}>
-                <td>{new Date(t.tournament.createdAt).toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                <td>{new Date(t.tournament.createdAt).toLocaleString(lang() === 'uk' ? 'uk-UA' : 'en-GB', { dateStyle: 'short', timeStyle: 'short' })}</td>
                 <td>
-                  <a href={`#/tournament/${t.tournament.id}`}>{t.tournament.request.name || 'untitled'}</a>
+                  <a href={`#/tournament/${t.tournament.id}`}>{t.tournament.request.name || tr('untitled', 'без назви')}</a>
                   <div className="muted">
-                    {t.tournament.request.seeds} valleys · {t.tournament.request.ticks} t
+                    {t.tournament.request.seeds} {tr('valleys', 'долин')} · {t.tournament.request.ticks} {tr('t', 'т')}
                   </div>
                 </td>
                 <td>
@@ -183,12 +188,12 @@ export function TournamentsPage({ onOpen }: { onOpen: (id: string) => void }) {
                 </td>
                 <td>
                   {t.status.done} / {t.status.done + t.status.queued + t.status.running + t.status.failed}
-                  {t.status.failed > 0 && <span className="error"> · errors {t.status.failed}</span>}
+                  {t.status.failed > 0 && <span className="error"> · {tr('errors', 'помилок')} {t.status.failed}</span>}
                 </td>
                 <td>
                   <button
                     className="mini"
-                    title="delete the tournament and its runs"
+                    title={tr('delete the tournament and its runs', 'видалити турнір і його запуски')}
                     onClick={() => void api.removeTournament(t.tournament.id).then(() => setList(list.filter((x) => x.tournament.id !== t.tournament.id)))}
                   >
                     ✕
@@ -240,7 +245,7 @@ export function TournamentView({ id, onRun }: { id: string; onRun: (runId: strin
   }, [id, busy]);
 
   if (error) return <p className="error">{error}</p>;
-  if (!view) return <p className="muted">Reading the tournament…</p>;
+  if (!view) return <p className="muted">{tr('Reading the tournament…', 'Читаю турнір…')}</p>;
   const t = view.tournament;
   const total = view.status.done + view.status.queued + view.status.running + view.status.failed;
   const best = [...view.stats].filter((s) => s.done > 0).sort((a, b) => b.mean - a.mean)[0];
@@ -248,31 +253,33 @@ export function TournamentView({ id, onRun }: { id: string; onRun: (runId: strin
   return (
     <div className="runs">
       <section className="card">
-        <h2>{t.request.name || 'Tournament'}</h2>
+        <h2>{t.request.name || tr('Tournament', 'Турнір')}</h2>
         <p className="muted">
-          {t.request.seeds} valleys from lot {t.request.seedFrom} · {t.request.ticks} ticks · opponents: {t.request.opponents.map(seatText).join(', ')} · played{' '}
-          {view.status.done} of {total}
-          {view.status.running > 0 && ` · playing ${view.status.running}`}
-          {view.status.failed > 0 && <span className="error"> · errors {view.status.failed}</span>}
+          {t.request.seeds} {tr('valleys from lot', 'долин із жереба')} {t.request.seedFrom} · {t.request.ticks} {tr('ticks', 'тактів')} · {tr('opponents', 'суперники')}:{' '}
+          {t.request.opponents.map((s) => seatText(s, lang())).join(', ')} · {tr('played', 'зіграно')} {view.status.done} {tr('of', 'з')} {total}
+          {view.status.running > 0 && ` · ${tr('playing', 'грає')} ${view.status.running}`}
+          {view.status.failed > 0 && <span className="error"> · {tr('errors', 'помилок')} {view.status.failed}</span>}
         </p>
         {view.status.done < total && <progress max={total} value={view.status.done} style={{ width: 320 }} />}
         <table className="grid stats">
           <thead>
             <tr>
-              <th>variant</th>
-              <th title="average share per pack ± standard error; 0-9, middle 6">share</th>
-              <th title="paired difference vs variant 1 on the same valleys; green - more than two errors">Δ vs 1</th>
-              <th>min-max</th>
-              <th title="places in matches: first / second / third, %">places 1/2/3</th>
-              <th>score</th>
-              <th title="the opponents' score in the same matches">opponents</th>
-              <th>network</th>
-              <th>contracts</th>
-              <th>loot</th>
-              <th>tax</th>
-              <th>rejections</th>
-              <th title="ticks when a nakaz inside the bot filled idle time">filled</th>
-              <th title="ticks under the node's nakaz (a match defect)">under nakaz</th>
+              <th>{tr('variant', 'варіант')}</th>
+              <th title={tr('average share per pack ± standard error; 0-9, middle 6', 'середня частка за пакет ± стандартна похибка; 0-9, середина 6')}>{tr('share', 'частка')}</th>
+              <th title={tr('paired difference vs variant 1 on the same valleys; green - more than two errors', 'парна різниця з варіантом 1 на тих самих долинах; зелене - більше двох похибок')}>
+                {tr('Δ vs 1', 'Δ до 1')}
+              </th>
+              <th>{tr('min-max', 'мін-макс')}</th>
+              <th title={tr('places in matches: first / second / third, %', 'місця в партіях: перше / друге / третє, %')}>{tr('places 1/2/3', 'місця 1/2/3')}</th>
+              <th>{tr('score', 'рахунок')}</th>
+              <th title={tr("the opponents' score in the same matches", 'рахунок суперників у тих самих партіях')}>{tr('opponents', 'суперники')}</th>
+              <th>{tr('network', 'мережа')}</th>
+              <th>{tr('contracts', 'контракти')}</th>
+              <th>{tr('loot', 'здобич')}</th>
+              <th>{tr('tax', 'податок')}</th>
+              <th>{tr('rejections', 'відмов')}</th>
+              <th title={tr('ticks when a nakaz inside the bot filled idle time', 'тактів, коли простій заповнював наказ усередині бота')}>{tr('filled', 'заповнено')}</th>
+              <th title={tr("ticks under the node's nakaz (a match defect)", 'тактів під наказом вузла (дефект партії)')}>{tr('under nakaz', 'під наказом')}</th>
             </tr>
           </thead>
           <tbody>
@@ -283,7 +290,7 @@ export function TournamentView({ id, onRun }: { id: string; onRun: (runId: strin
                   <td>
                     {s.variant + 1}. {s.label}
                     <div className="muted">
-                      {s.done} / {s.total} packs
+                      {s.done} / {s.total} {tr('packs', 'пакетів')}
                     </div>
                   </td>
                   <td className="num">
@@ -309,13 +316,13 @@ export function TournamentView({ id, onRun }: { id: string; onRun: (runId: strin
       </section>
 
       <section className="card">
-        <h2>Valleys</h2>
-        <p className="muted">The variant's share per pack on each valley. Click - open the pack on the map.</p>
+        <h2>{tr('Valleys', 'Долини')}</h2>
+        <p className="muted">{tr("The variant's share per pack on each valley. Click - open the pack on the map.", 'Частка варіанта за пакет на кожній долині. Клік - відкрити пакет на карті.')}</p>
         <table className="grid heat">
           <thead>
             <tr>
-              <th>valley</th>
-              <th>opponents</th>
+              <th>{tr('valley', 'долина')}</th>
+              <th>{tr('opponents', 'суперники')}</th>
               {t.request.variants.map((_, v) => (
                 <th key={v} className="num">
                   {v + 1}
@@ -327,7 +334,7 @@ export function TournamentView({ id, onRun }: { id: string; onRun: (runId: strin
             {view.grid.map((row, i) => (
               <tr key={i}>
                 <td className="num">{t.request.seedFrom + i}</td>
-                <td className="muted">{t.pairs[i]?.map(seatText).join(' + ')}</td>
+                <td className="muted">{t.pairs[i]?.map((s) => seatText(s, lang())).join(' + ')}</td>
                 {row.map((v, j) => (
                   <td key={j} className="cell" style={{ background: cellColor(v) }} onClick={() => t.runs[j]?.[i] && onRun(t.runs[j]![i]!)}>
                     {v ?? '·'}

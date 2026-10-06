@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { seatText } from '../../shared/record.ts';
 import type { LabOptions, RunMeta, RunRequest, SeatSpec } from '../../shared/record.ts';
 import { api } from '../lib/api.ts';
+import { lang, tr } from '../lib/i18n.ts';
 import { SeatEditor } from './SeatEditor.tsx';
 
 const DEFAULT_LINEUP: RunRequest['lineup'] = [
@@ -87,39 +88,42 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
   return (
     <div className="runs">
       <section className="card">
-        <h2>New match</h2>
+        <h2>{tr('New match', 'Нова партія')}</h2>
         <p className="muted">
-          Matches are played by the same engine as the node ({options?.engine.slice(0, 12) ?? '…'}), in process without a network. Our bot is the built bot/dist: an
-          archetype head, the pulse and tactics to choose. A pack is three matches of one valley with seat rotation (rules 25.1).
+          {tr('Matches are played by the same engine as the node', 'Партії грає той самий рушій, що й вузол')} ({options?.engine.slice(0, 12) ?? '…'}),{' '}
+          {tr(
+            'in process without a network. Our bot is the built bot/dist: an archetype head, the pulse and tactics to choose. A pack is three matches of one valley with seat rotation (rules 25.1).',
+            'у процесі без мережі. Наш бот - зібраний bot/dist: голова архетипу, пульс і надбудови на вибір. Пакет - три партії однієї долини з пересадкою по місцях (правила 25.1).',
+          )}
         </p>
         {options && (
           <div className="form">
             <label className="field">
-              <span>valley lot</span>
+              <span>{tr('valley lot', 'жереб долини')}</span>
               <input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value))} />
               <button className="mini" onClick={() => setSeed(Math.floor(Math.random() * 100000))}>
-                random
+                {tr('random', 'випадковий')}
               </button>
             </label>
             <label className="field">
-              <span>ticks per match</span>
+              <span>{tr('ticks per match', 'тактів у партії')}</span>
               <select value={ticks} onChange={(e) => setTicks(Number(e.target.value))}>
-                <option value={1200}>1200 (full)</option>
+                <option value={1200}>1200 ({tr('full', 'повна')})</option>
                 <option value={600}>600</option>
-                <option value={300}>300 (quick)</option>
+                <option value={300}>300 ({tr('quick', 'швидко')})</option>
               </select>
             </label>
             <label className="field">
-              <span>size</span>
+              <span>{tr('size', 'обсяг')}</span>
               <select value={matches} onChange={(e) => setMatches(Number(e.target.value) === 1 ? 1 : 3)}>
-                <option value={3}>a pack of 3 matches</option>
-                <option value={1}>a single match</option>
+                <option value={3}>{tr('a pack of 3 matches', 'пакет із 3 партій')}</option>
+                <option value={1}>{tr('a single match', 'одна партія')}</option>
               </select>
             </label>
             {lineup.map((seat, i) => (
               <SeatEditor
                 key={i}
-                label={`participant ${i + 1}`}
+                label={`${tr('participant', 'учасник')} ${i + 1}`}
                 options={options}
                 value={seat}
                 onChange={(next) => {
@@ -130,14 +134,17 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
               />
             ))}
             <button className="primary" onClick={() => void start()}>
-              Play
+              {tr('Play', 'Зіграти')}
             </button>
             <button
               className="primary"
               onClick={() => void startRandom()}
-              title="participant 1 - as chosen; the other two are random from all catalogue styles (our bot with the default tactics), SDK archetypes and nakaz samples; the valley is random too"
+              title={tr(
+                'participant 1 - as chosen; the other two are random from all catalogue styles (our bot with the default tactics), SDK archetypes, nakaz samples and external bots; the valley is random too',
+                'учасник 1 - як вибрано; двоє інших - випадкові з усіх стилів каталогу (наш бот із типовими надбудовами), архетипів SDK, зразків наказу і зовнішніх ботів; долина теж випадкова',
+              )}
             >
-              Play with random ones
+              {tr('Play with random ones', 'Зіграти з випадковими')}
             </button>
           </div>
         )}
@@ -145,47 +152,47 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
       </section>
 
       <section className="card">
-        <h2>Runs</h2>
-        {runs.length === 0 && <p className="muted">Nothing played yet.</p>}
+        <h2>{tr('Runs', 'Запуски')}</h2>
+        {runs.length === 0 && <p className="muted">{tr('Nothing played yet.', 'Ще нічого не зіграно.')}</p>}
         <table className="grid runlist">
           <thead>
             <tr>
-              <th>when</th>
-              <th>valley</th>
-              <th>participants (shares per pack)</th>
-              <th>status</th>
-              <th>matches</th>
+              <th>{tr('when', 'коли')}</th>
+              <th>{tr('valley', 'долина')}</th>
+              <th>{tr('participants (shares per pack)', 'учасники (частки за пакет)')}</th>
+              <th>{tr('status', 'стан')}</th>
+              <th>{tr('matches', 'партії')}</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {runs.map((run) => (
               <tr key={run.id}>
-                <td>{new Date(run.createdAt).toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'medium' })}</td>
+                <td>{new Date(run.createdAt).toLocaleString(lang() === 'uk' ? 'uk-UA' : 'en-GB', { dateStyle: 'short', timeStyle: 'medium' })}</td>
                 <td className="num">
-                  {run.request.seed} · {run.request.ticks} t
+                  {run.request.seed} · {run.request.ticks} {tr('t', 'т')}
                 </td>
                 <td>
                   {run.request.lineup.map((seat, i) => (
-                    <div key={i} className={seat.kind === 'ours' ? 'ours' : ''}>
-                      {i + 1}. {seatText(seat)}
+                    <div key={i} className={seat.kind === 'ours' || seat.kind === 'human' ? 'ours' : ''}>
+                      {i + 1}. {seatText(seat, lang())}
                       {run.shares && <b className="share"> {run.shares[i]}</b>}
                     </div>
                   ))}
                 </td>
                 <td>
-                  {run.status === 'done' && `done in ${((run.ms ?? 0) / 1000).toFixed(0)} s`}
-                  {run.status === 'queued' && 'queued'}
+                  {run.status === 'done' && (run.ms ? `${tr('done in', 'готово за')} ${(run.ms / 1000).toFixed(0)} ${tr('s', 'с')}` : tr('done', 'готово'))}
+                  {run.status === 'queued' && tr('queued', 'у черзі')}
                   {run.status === 'running' && (
                     <span>
-                      match {Math.min(run.progress.match + 1, run.request.matches)} / {run.request.matches}, tick {run.progress.t}
+                      {tr('match', 'партія')} {Math.min(run.progress.match + 1, run.request.matches)} / {run.request.matches}, {tr('tick', 'такт')} {run.progress.t}
                       <progress
                         max={run.request.matches * run.request.ticks}
                         value={run.progress.match * run.request.ticks + run.progress.t}
                       />
                     </span>
                   )}
-                  {run.status === 'failed' && <span className="error" title={run.error}>error</span>}
+                  {run.status === 'failed' && <span className="error" title={run.error}>{tr('error', 'помилка')}</span>}
                 </td>
                 <td>
                   {Array.from({ length: run.request.matches }, (_, i) => {
@@ -198,7 +205,7 @@ export function RunsPage({ onOpen }: { onOpen: (id: string, match: number) => vo
                   })}
                 </td>
                 <td>
-                  <button className="mini" disabled={run.status === 'running' || run.status === 'queued'} onClick={() => void remove(run.id)} title="delete the run">
+                  <button className="mini" disabled={run.status === 'running' || run.status === 'queued'} onClick={() => void remove(run.id)} title={tr('delete the run', 'видалити запуск')}>
                     ✕
                   </button>
                 </td>

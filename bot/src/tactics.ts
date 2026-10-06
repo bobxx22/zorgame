@@ -61,6 +61,12 @@
                +0.02 ± 0.04, but ~0.1 rejections per pack - not in battle yet.
      yardcap   off. Don't order a unit above the swarm weight (for a nakaz
                head). −0.02 ± 0.02.
+     scout:N   off, being measured (06.10). In the first ticks no needle's
+               picture is 40 ticks old yet, so the head scans only after
+               movement blips (×10) - and blips exist only 3-5 cells from our
+               own eyes, many of them the world's ghosts or the Keeper's units.
+               scout:N spends the same free ears on the rivals: tracks the
+               units seen lately, otherwise checks the contested ruins.
 
    Always, when there is at least one tactic after the head (AfterHead):
      syncMirror  before the head's decision writes into the mirror the finds
@@ -272,6 +278,13 @@ export function ramOrder(
   return channelLeft(obs, orders, world) >= cost ? ram : null;
 }
 
+/* scout: a rival unit not seen for this many ticks is lost; a ruin is looked at again no sooner
+   than this; only ruins we would reach within the horizon; a race closer than the margin is contested */
+const SCOUT_LOST = 12;
+const SCOUT_RECHECK = 6;
+const SCOUT_HORIZON = 40;
+const SCOUT_MARGIN = 10;
+
 /* world numbers the tactics read (AfterHead.num): self-check at start */
 export const CFG_KEYS = [
   'heatNeedle', 'heatDark', 'heatEnemy', 'autonomy', 'stepTkach', 'stepKlinok', 'capGrace',
@@ -327,6 +340,11 @@ export class AfterHead {
   private readonly looters = new Map<string, { ring: Hex; stand: Hex }>();
   /* duck: a Tkach that stepped off a needle because of an enemy Klinok -> until which tick it stays aside */
   private readonly ducking = new Map<string, number>();
+  /* scout: the rivals' hearths, the valley's ruins, rival units seen lately and when we last looked */
+  private readonly rivalHearths: Hex[] = [];
+  private readonly ruins: Hex[];
+  private readonly seenFoe = new Map<string, { q: number; r: number; t: number; cls: ClsName }>();
+  private readonly lookedAt = new Map<string, number>();
   private t = 0;
 
   constructor(
@@ -349,6 +367,12 @@ export class AfterHead {
     this.dawnAt = typeof man.dawn?.at === 'number' ? man.dawn.at : null;
     this.ringEdge = man.needles.filter((n) => n.ring && hexDist(n, man.citadel) === man.cherta).map((n) => ({ q: n.q, r: n.r }));
     this.finds = man.finds.filter((f) => f.kind === 'cache' || f.kind === 'flare');
+    /* seat i belongs to slot perm[i]: the rivals' hearths are the seats of the other two slots */
+    (man.seats ?? []).forEach((h, i) => {
+      const owner = man.perm?.[i];
+      if (owner && owner !== slot) this.rivalHearths.push({ q: h.q, r: h.r });
+    });
+    this.ruins = man.needles.filter((n) => !n.start && !n.ring).map((n) => ({ q: n.q, r: n.r }));
     /* the new world of 05.10 may rename a number - then the tactic would
        quietly count with the fallback value. No key - once to the log */
     const missing = CFG_KEYS.filter((k) => typeof this.cfg[k] !== 'number');
@@ -418,6 +442,8 @@ export class AfterHead {
     }
     for (const id of [...this.foeAt.keys()]) if (!seen.has(id)) this.foeAt.delete(id);
     for (const [id] of this.hunts) if (!alive.has(id)) this.hunts.delete(id);
+    for (const f of obs.foe) if (f.p !== 'K') this.seenFoe.set(f.id, { q: f.q, r: f.r, t: obs.t, cls: f.cls });
+    for (const [id, s] of [...this.seenFoe]) if (obs.t - s.t > SCOUT_LOST) this.seenFoe.delete(id);
   }
 
   private underLine(h: Hex, obs: Observe): boolean {
@@ -530,6 +556,8 @@ export class AfterHead {
     if (this.tactics.loot !== null) out = this.lootRing(obs, out, this.tactics.loot);
 
     if (this.tactics.duck) out = this.duckTkachs(obs, out);
+
+    if (this.tactics.scout !== null) out = this.scout(obs, out, this.tactics.scout);
 
     if (this.tactics.hunt !== null) {
       for (const [hunter, target] of [...this.hunts]) {
@@ -793,6 +821,71 @@ export class AfterHead {
       this.ducking.set(u.id, t + 6);
     }
     return out;
+  }
+
+  /* scout:N - the head's scans in the first ticks follow blips, and blips appear only next
+     to our own eyes (3-5 cells, many of them ghosts). Here the free ears look at the rivals:
+       1. tracking: a rival unit seen lately and not visible now is looked at again where it
+          was last seen - a Tkach every 3 ticks (one cell per 2 ticks keeps it inside a
+          radius-3 snapshot), a Klinok every 2; the ones close to our Tkachs' goals first;
+       2. forecast: a ruin we would reach no later than about when a rival could (its first
+          Tkach leaves the yard on tick 1 + droneBuild and walks a cell per stepTkach ticks),
+          once a rival could already be near it; our Tkachs' goals first, then the closest race.
+     The scan replaces the head's scan of this tick; with nothing to look at the head's stays.
+     The snapshot arrives on the next tick (the world's subScan), so one scan per tick is enough */
+  private scout(obs: Observe, entries: Tagged[], N: number): Tagged[] {
+    if (obs.t > N) return entries;
+    const target = this.scoutTarget(obs);
+    if (!target) return entries;
+    const order: Order = { kind: 'scan', q: target.at.q, r: target.at.r, rad: this.num('scanRad', 3) };
+    if (orderCost(this.world.cfg, 'scan', target.at, obs.t, this.world.storms) > obs.pulse.ear) return entries;
+    const rest = entries.filter((e) => e.order.kind !== 'scan');
+    if (rest.length + 1 > orderCap(this.world.cfg, obs.pulse.chanAt)) return entries;
+    this.lookedAt.set(target.key, obs.t);
+    return [...rest, { order, from: 'tactic', at: 0 }];
+  }
+
+  private scoutTarget(obs: Observe): { at: Hex; key: string } | null {
+    const t = obs.t;
+    const step = this.num('stepTkach', 2);
+    const tkachs = obs.mine.units.filter((u) => u.cls === 'ткач');
+    const goals = tkachs.flatMap((u) => {
+      const g = u.task?.site ?? u.task?.goal;
+      return g ? [g] : [];
+    });
+    const nearGoal = (h: Hex, d: number) => goals.some((g) => hexDist(g, h) <= d);
+    const visible = new Set(obs.foe.map((f) => f.id));
+    let best: { at: Hex; key: string; score: number } | null = null;
+    const offer = (at: Hex, key: string, score: number) => {
+      if (!best || score > best.score) best = { at, key, score };
+    };
+
+    /* 1. tracking */
+    for (const [id, s] of this.seenFoe) {
+      if (visible.has(id)) continue;
+      const every = s.cls === 'ткач' ? 3 : 2;
+      const key = 'unit:' + id;
+      if (t - s.t < every || t - (this.lookedAt.get(key) ?? -1e9) < every) continue;
+      offer({ q: s.q, r: s.r }, key, 10 + (s.cls === 'ткач' ? 2 : 1) + (nearGoal(s, 6) ? 4 : 0) - (t - s.t) / SCOUT_LOST);
+    }
+    if (best) return best;
+
+    /* 2. forecast */
+    if (!this.rivalHearths.length) return null;
+    const born = 1 + this.num('droneBuild', 4);
+    for (const r of this.ruins) {
+      const owner = this.owners.at(r);
+      if (owner !== null) continue; /* ours, a rival's or the Keeper's already - nothing to race for */
+      const key = cell(r);
+      if (t - (this.lookedAt.get(key) ?? -1e9) < SCOUT_RECHECK) continue;
+      const ours = tkachs.length ? t + step * Math.min(...tkachs.map((u) => hexDist(u, r))) : t + born + step * hexDist(this.world.hearth, r);
+      const rival = Math.min(...this.rivalHearths.map((h) => born + step * hexDist(h, r)));
+      if (ours - t > SCOUT_HORIZON) continue; /* not in our plans soon */
+      if (rival > ours + SCOUT_MARGIN) continue; /* we are there well before anyone */
+      if (t < rival - 2 * step) continue; /* no rival can be within two cells of it yet */
+      offer(r, key, (nearGoal(r, 0) ? 3 : 1) + 1 / (1 + Math.abs(ours - rival)));
+    }
+    return best;
   }
 
   /* how much charge a cache gives now: above the cap burns (rules 16.3) */

@@ -13,7 +13,7 @@ import type { SampleName } from '@zoria/sdk/nakaz';
 import { decodeManifest, decodeObserve, decodeOrders } from '@zoria/protocol';
 import type { Order } from '@zoria/protocol';
 import { createStrategy, DEFAULT_TACTICS, parseTactics } from '../../bot/dist/strategy.js';
-import type { PulseStrategy } from '../../bot/dist/strategy.js';
+import type { BattleStrategy } from '../../bot/dist/strategy.js';
 import { seatText, SLOTS, TASKS } from '../shared/record.ts';
 import { makeExtBot } from './ext.ts';
 import { makeMixBot } from './mix.ts';
@@ -37,14 +37,14 @@ const ACTORS: readonly Actor[] = ['A', 'B', 'C', 'K'];
 
 /* our bot: a WireBot that remembers the last observe frame */
 interface Ours extends WireBot {
-  strategy: PulseStrategy;
+  strategy: BattleStrategy;
   lastObserve: Uint8Array | null;
 }
 
 /* a seat's nakaz, as the node takes it: our bot - bot/nakaz.yaml, an archetype - "черепаха"
    (kit/src/rival.mjs), a nakaz - itself */
 export function seatNakaz(spec: SeatSpec): string {
-  if (spec.kind === 'ours' || spec.kind === 'our-nakaz') return readFileSync(OUR_NAKAZ, 'utf8');
+  if (spec.kind === 'ours' || spec.kind === 'our-nakaz' || spec.kind === 'human') return readFileSync(OUR_NAKAZ, 'utf8');
   if (spec.kind === 'nakaz') return NAKAZ_SAMPLES[spec.name as SampleName];
   return NAKAZ_SAMPLES['черепаха'];
 }
@@ -55,6 +55,7 @@ export function makeBot(spec: SeatSpec): WireBot | Ours {
   if (spec.kind === 'mix') return makeMixBot(spec.name);
   if (spec.kind === 'nakaz') return createNakazSparring(NAKAZ_SAMPLES[spec.name as SampleName]);
   if (spec.kind === 'our-nakaz') return createNakazSparring(readFileSync(OUR_NAKAZ, 'utf8'));
+  if (spec.kind === 'human') throw new Error('a human seat needs its bot from the play session');
   /* without the tactics field - as in battle; a bare head is set by an explicit none */
   const strategy = createStrategy(spec.name, () => undefined, parseTactics(spec.tactics ?? DEFAULT_TACTICS));
   const ours: Ours = {
@@ -74,7 +75,7 @@ export function makeBot(spec: SeatSpec): WireBot | Ours {
   return ours;
 }
 
-function staticOf(manifest: Uint8Array): MatchStatic {
+export function staticOf(manifest: Uint8Array): MatchStatic {
   const m = decodeManifest(manifest);
   if (!m) throw new Error('manifest does not decode');
   const R = m.terrain.radius - 1;
@@ -215,6 +216,12 @@ export interface MatchProgress {
   (t: number): void;
 }
 
+/* play mode: bots by lineup position instead of makeBot (the human's seat), every frame as soon as it is built */
+export interface MatchHooks {
+  bots?: Partial<Record<number, WireBot>>;
+  onFrame?: (frame: Frame) => void;
+}
+
 /* one match: the pack's participants sit in seats by the rotation of rules 25.1 */
 export function recordMatch(
   index: number,
@@ -222,16 +229,19 @@ export function recordMatch(
   ticks: number,
   lineup: readonly [SeatSpec, SeatSpec, SeatSpec],
   onTick: MatchProgress = () => undefined,
+  hooks: MatchHooks = {},
 ): MatchRecord {
   const seating = {} as Record<Slot, number>;
   const labels = {} as Record<Slot, string>;
   const bots: Partial<Record<Slot, WireBot>> = {};
   const guards = new Map<Slot, NakazGuard>();
   let ours: { slot: Slot; bot: Ours } | null = null;
+  let human: Slot | null = null;
   for (let k = 0; k < 3; k++) {
     const slot = SLOTS[(k + index) % 3]!;
     const spec = lineup[k]!;
-    const bot = makeBot(spec);
+    const bot = hooks.bots?.[k] ?? makeBot(spec);
+    if (spec.kind === 'human') human = slot;
     seating[slot] = k;
     labels[slot] = seatText(spec);
     /* as on the node: six ticks of silence - and the seat's nakaz runs the slot (rules 23.2) */
@@ -263,6 +273,7 @@ export function recordMatch(
   const frames: Frame[] = [];
   let logSeen = E.SIM.log.length;
   frames.push(frameOf(E, 0, [], tapped, denied));
+  hooks.onFrame?.(frames[0]!);
 
   while (!match.done()) {
     tapped.clear();
@@ -285,6 +296,7 @@ export function recordMatch(
       frame.src = [...ours.bot.strategy.lastSources];
     }
     frames.push(frame);
+    hooks.onFrame?.(frame);
     if (t % 25 === 0) onTick(t);
   }
 
@@ -324,7 +336,7 @@ export function recordMatch(
 
   return {
     v: 1,
-    meta: { index, seed, ticks, engine: E.ENGINE_HASH, seating, labels, ours: ours?.slot ?? null },
+    meta: { index, seed, ticks, engine: E.ENGINE_HASH, seating, labels, ours: human ?? ours?.slot ?? null },
     static: stat,
     frames,
     result,

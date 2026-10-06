@@ -13,7 +13,7 @@ test('the SDK archetypes are in the catalog unchanged, every style is full and w
     assert.deepEqual(Object.keys(st).sort(), keys.sort(), name);
     for (const k of KNOBS) assert.ok(st[k] >= 0 && st[k] <= KNOB_MAX[k], name + '.' + k);
   }
-  assert.deepEqual(presets(), Object.keys(STYLES));
+  assert.deepEqual(presets(), ['сплав', ...Object.keys(STYLES)]);
 });
 
 // the catalog is the head's decisions: every number is pinned here, so a changed weight fails
@@ -62,16 +62,16 @@ test('land is set only explicitly: only полудень carries it, a string ma
   assert.equal(styleSpec('широблог', STYLES['широблог']), 'широблог');
 });
 
-test('the default is полудень with fill:own:6,nofeed:1200,nohook,cherta,hunt:12; an empty ZARIA_TACTICS means the default, none means bare', () => {
-  assert.equal(DEFAULT_PRESET, 'полудень');
+test('the battle preset is сплав; the default tactics of the mirror head are fill:own:6,nofeed:1200,nohook,cherta,hunt:12; an empty ZARIA_TACTICS means the default, none means bare', () => {
+  assert.equal(DEFAULT_PRESET, 'сплав');
   assert.equal(DEFAULT_TACTICS, 'fill:own:6,nofeed:1200,nohook,cherta,hunt:12');
   const saved = process.env['ZARIA_TACTICS'];
   try {
     for (const [env, want] of [
-      [undefined, { fill: { charter: 'own', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: null, hunt: 12, cherta: true, stay: null, yardCap: false, noHook: true, cache: null, dawn: null, loot: null, duck: false, surplus: null, engine: {} }],
-      ['', { fill: { charter: 'own', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: null, hunt: 12, cherta: true, stay: null, yardCap: false, noHook: true, cache: null, dawn: null, loot: null, duck: false, surplus: null, engine: {} }],
+      [undefined, { fill: { charter: 'own', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: null, hunt: 12, cherta: true, stay: null, yardCap: false, noHook: true, cache: null, dawn: null, loot: null, duck: false, scout: null, surplus: null, engine: {} }],
+      ['', { fill: { charter: 'own', after: 6 }, noPact: false, noFeed: 1200, k0: null, ram: null, hunt: 12, cherta: true, stay: null, yardCap: false, noHook: true, cache: null, dawn: null, loot: null, duck: false, scout: null, surplus: null, engine: {} }],
       ['none', NO_TACTICS],
-      ['nopact', { fill: null, noPact: true, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, dawn: null, loot: null, duck: false, surplus: null, engine: {} }],
+      ['nopact', { fill: null, noPact: true, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, dawn: null, loot: null, duck: false, scout: null, surplus: null, engine: {} }],
     ]) {
       if (env === undefined) delete process.env['ZARIA_TACTICS'];
       else process.env['ZARIA_TACTICS'] = env;

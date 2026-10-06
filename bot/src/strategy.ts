@@ -41,6 +41,7 @@ import {
 import type { ChannelCfg, Hex, Manifest, Observe, Order, SlotName, Verdict } from '@zoria/protocol';
 import { errText } from './errors.js';
 import { parseStyle, STYLES } from './styles.js';
+import { ComboStrategy } from './combo.js';
 import { AfterHead, hookHead, ramOrder } from './tactics.js';
 
 export interface Strategy extends WireBot {
@@ -166,6 +167,13 @@ export function pulseOrder(obs: Observe, orders: readonly Order[], focus: Watch 
                          Klinok closer than ours steps to an adjacent cell: a
                          ram on a Tkach without work is a trade (11.7), not a
                          clean one (idea from an external bot, 04.10);
+     scout:N           - for the first N ticks the scans go where the rivals
+                         are, not after blips next to us: rival units seen
+                         lately are tracked (a Tkach every 3 ticks, a Klinok
+                         every 2), otherwise the ruins a rival can reach about
+                         as soon as we can are checked, those our Tkachs head
+                         to first; nothing to look at - the head's scan stays
+                         (idea from playing in the lab, 06.10);
      gap:N, catch:x,   - numbers of the "built-in heads" from the manifest
      bopen:x, rfloor:x   (rules, A.1) in our own mirror: guardGap, catchFloor,
                          buildOpen, raidFloor. They don't change the laws of
@@ -190,6 +198,7 @@ export interface Tactics {
   dawn: number | null;
   loot: number | null;
   duck: boolean;
+  scout: number | null;
   surplus: { at: number; build: number } | null;
   /* SIM_CFG key -> value in the head's mirror */
   engine: Readonly<Record<string, number>>;
@@ -203,7 +212,7 @@ export const ENGINE_KNOBS: Readonly<Record<string, { key: string; min: number; m
   rfloor: { key: 'raidFloor', min: 0, max: 2, int: false },
 };
 
-export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, dawn: null, loot: null, duck: false, surplus: null, engine: {} };
+export const NO_TACTICS: Tactics = { fill: null, noPact: false, noFeed: null, k0: null, ram: null, hunt: null, cherta: false, stay: null, yardCap: false, noHook: false, cache: null, dawn: null, loot: null, duck: false, scout: null, surplus: null, engine: {} };
 
 /* submission: the organizers don't set ZARIA_TACTICS, so the battle runs with
    this string. An empty variable (the stack often sets it so) - this string
@@ -244,6 +253,7 @@ export function parseTactics(spec: string | readonly string[] | undefined, log: 
     else if (name === 'dawn' && after === undefined) out.dawn = int(item, charter, 120) ?? out.dawn;
     else if (name === 'loot' && after === undefined) out.loot = int(item, charter, 3) ?? out.loot;
     else if (name === 'duck' && charter === undefined) out.duck = true;
+    else if (name === 'scout' && after === undefined) out.scout = int(item, charter, 1200) ?? out.scout;
     else if (name === 'surplus' && charter !== undefined && after !== undefined) {
       const at = Number(charter);
       const build = Number(after);
@@ -337,7 +347,7 @@ export class PulseStrategy implements Strategy {
     this.headIdle = 0;
     this.feedWarned = false;
     const t = this.tactics;
-    const needAfter = t.ram !== null || t.hunt !== null || t.stay !== null || t.cherta || t.yardCap || t.noHook || t.cache !== null || t.dawn !== null || t.loot !== null || t.duck;
+    const needAfter = t.ram !== null || t.hunt !== null || t.stay !== null || t.cherta || t.yardCap || t.noHook || t.cache !== null || t.dawn !== null || t.loot !== null || t.duck || t.scout !== null;
     this.after =
       needAfter && m && this.world
         ? new AfterHead(t, m, slot, this.world, (at, obs) => this.links(at, obs), (a, b, cls) => this.pathOk(a, b, cls), this.log)
@@ -495,19 +505,29 @@ export class PulseStrategy implements Strategy {
   }
 }
 
-/* names in the style catalogue: by them the service knob for changing the
-   preset decides whether such a preset exists */
+/* сплав - two heads in one seat (combo.ts): the economy of one, the Klinoks of
+   another, under our pulse. The battle preset since 06.10: the best candidate
+   of the 04-06.10 lab measurements on every pool, +0.32…+1.57 share per pack
+   vs полудень with the battle tactics. The tactics (ZARIA_TACTICS) are not
+   for it: they work inside and after the mirror head, and сплав has none */
+export const COMBO_PRESET = 'сплав';
+
+/* names in the catalogue: by them the service knob for changing the preset
+   decides whether such a preset exists */
 export function presets(): string[] {
-  return Object.keys(STYLES);
+  return [COMBO_PRESET, ...Object.keys(STYLES)];
 }
 
 /* полудень - the winner of the 01.10 search (styles.ts), searched together
    with the tactics nofeed:1200 and ram:6. With them vs світанок with
    fill:own:6, which played in battle before: +1.55 ± 0.21 share per pack on
    60 fresh valleys vs the mixed pool (our bot, рівний, облягач, опортуніст,
-   рейдер, a nakaz bot), better against each of them. Re-measure after the
-   05.10 world shift */
-export const DEFAULT_PRESET = 'полудень';
+   рейдер, a nakaz bot), better against each of them. The battle preset until
+   06.10; the lab still measures mirror-head tactics on it */
+export const HEAD_PRESET = 'полудень';
+
+/* the battle preset: ZARIA_PRESET empty or unknown */
+export const DEFAULT_PRESET = COMBO_PRESET;
 
 /* Nakaz head: "nakaz:<SDK sample or own>" - instead of the mirror, a nakaz
    thinks inside the bot (like the filler, but all the time). The pulse and
@@ -520,9 +540,9 @@ export function nakazHeadOf(preset: string): string | null {
   return NAKAZ_HEADS.includes(preset) ? preset.slice('nakaz:'.length) : null;
 }
 
-/* preset - a catalogue style, a "base+knob=number" string or a nakaz head */
+/* preset - сплав, a catalogue style, a "base+knob=number" string or a nakaz head */
 export function isPreset(preset: string): boolean {
-  return parseStyle(preset) !== null || nakazHeadOf(preset) !== null;
+  return preset === COMBO_PRESET || parseStyle(preset) !== null || nakazHeadOf(preset) !== null;
 }
 
 /* an unknown name (typo, cmd code page) doesn't bring the bot down before the
@@ -545,14 +565,19 @@ function nakazHead(text: string): Head {
   };
 }
 
+/* what plays a seat: the mirror head under the pulse with tactics, or сплав; both
+   tell the lab the pulse and the order sources of the last frame */
+export type BattleStrategy = PulseStrategy | ComboStrategy;
+
 export function createStrategy(
   preset = process.env['ZARIA_PRESET'],
   log: (line: string) => void = () => undefined,
   tactics: Tactics = parseTactics(process.env['ZARIA_TACTICS'] || DEFAULT_TACTICS, log),
-): PulseStrategy {
+): BattleStrategy {
   const chosen = presetOrDefault(preset, log);
+  if (chosen === COMBO_PRESET) return new ComboStrategy(log);
   const nakaz = nakazHeadOf(chosen);
-  const head: Head = nakaz ? nakazHead(charterText(nakaz)) : new MirrorBot(createEngine, { ...(parseStyle(chosen) ?? STYLES[DEFAULT_PRESET]!) });
+  const head: Head = nakaz ? nakazHead(charterText(nakaz)) : new MirrorBot(createEngine, { ...(parseStyle(chosen) ?? STYLES[HEAD_PRESET]!) });
   let filler: WireBot | null = null;
   if (tactics.fill) {
     try {

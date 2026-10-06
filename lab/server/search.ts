@@ -223,7 +223,7 @@ if (f['resume']) {
   if (cfg.mode === 'search' && cfg.start.some((x) => (x.startsWith('ext:') || x.startsWith('mix:')))) throw new Error('--start ext:<name> / mix:<name> - only with --eval: an external bot is not mutated');
   cfg.opponents = poolOf(cfg.pool);
   for (const spec of cfg.start) if (!candidateOf(spec)) throw new Error('--start: unclear candidate ' + spec);
-  if (!Object.hasOwn(STYLES, cfg.base)) throw new Error('--base: one of ' + Object.keys(STYLES).join(', '));
+  if (!isPreset(cfg.base) || cfg.base.startsWith('nakaz:')) throw new Error('--base: сплав or one of ' + Object.keys(STYLES).join(', '));
   if (!Number.isInteger(cfg.from) || cfg.from < 0 || cfg.from > 2 ** 30) throw new Error('--from');
   if (!Number.isInteger(cfg.ticks) || cfg.ticks < 10 || cfg.ticks > 1200) throw new Error('--ticks');
   if (!Number.isInteger(cfg.validate) || cfg.validate < 10 || cfg.validate > 400) throw new Error('--validate: 10-400');
