@@ -1,5 +1,9 @@
 {
   "devDependencies": {
     "@zoria/kit": "^1.1.1"
+  },
+  "scripts": {
+    "hooks": "git config core.hooksPath .githooks",
+    "check-secrets": "node scripts/check-secrets.mjs"
   }
 }

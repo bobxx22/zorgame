@@ -12,7 +12,7 @@ import { createNakazSparring, NAKAZ_SAMPLES, NakazGuard } from '@zoria/sdk/nakaz
 import type { SampleName } from '@zoria/sdk/nakaz';
 import { decodeManifest, decodeObserve, decodeOrders } from '@zoria/protocol';
 import type { Order } from '@zoria/protocol';
-import { createStrategy, DEFAULT_TACTICS, parseTactics } from '../../bot/dist/strategy.js';
+import { createStrategy, defaultTacticsOf, parseTactics } from '../../bot/dist/strategy.js';
 import type { BattleStrategy } from '../../bot/dist/strategy.js';
 import { seatText, SLOTS, TASKS } from '../shared/record.ts';
 import { makeExtBot } from './ext.ts';
@@ -57,7 +57,7 @@ export function makeBot(spec: SeatSpec): WireBot | Ours {
   if (spec.kind === 'our-nakaz') return createNakazSparring(readFileSync(OUR_NAKAZ, 'utf8'));
   if (spec.kind === 'human') throw new Error('a human seat needs its bot from the play session');
   /* without the tactics field - as in battle; a bare head is set by an explicit none */
-  const strategy = createStrategy(spec.name, () => undefined, parseTactics(spec.tactics ?? DEFAULT_TACTICS));
+  const strategy = createStrategy(spec.name, () => undefined, parseTactics(spec.tactics ?? defaultTacticsOf(spec.name)));
   const ours: Ours = {
     strategy,
     lastObserve: null,

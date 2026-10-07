@@ -40,8 +40,11 @@ import {
 } from '@zoria/protocol';
 import type { ChannelCfg, Hex, Manifest, Observe, Order, SlotName, Verdict } from '@zoria/protocol';
 import { errText } from './errors.js';
+import { fault } from './faults.js';
 import { parseStyle, STYLES } from './styles.js';
 import { ComboStrategy } from './combo.js';
+import { bladesKnobsOk } from './combo/blades.js';
+import { economyParams } from './combo/economy.js';
 import { AfterHead, hookHead, ramOrder } from './tactics.js';
 
 export interface Strategy extends WireBot {
@@ -472,7 +475,8 @@ export class PulseStrategy implements Strategy {
     try {
       if (!E.canPass(to.q, to.r)) return false;
       return E.botPath({ q: from.q, r: from.r }, { q: to.q, r: to.r }, 400, { q: from.q, r: from.r, cls, p: this.slot }) !== null;
-    } catch {
+    } catch (e) {
+      fault('mirror.pathOk', e);
       return false;
     }
   }
@@ -511,6 +515,23 @@ export class PulseStrategy implements Strategy {
    vs полудень with the battle tactics. The tactics (ZARIA_TACTICS) are not
    for it: they work inside and after the mirror head, and сплав has none */
 export const COMBO_PRESET = 'сплав';
+/* сплав plays without tactics: they were made for the mirror head */
+export const COMBO_TACTICS = 'none';
+
+/* "сплав" or a variant for the lab "сплав:<economy>:<blades>": the economy head's preset or
+   knobs ("хижий", "alpha=0.6+risk=0.8"), the Klinok head's knobs ("guard=0+hunt=0");
+   an empty part - the head's default; null - not сплав or a part that does not parse */
+export function comboParts(preset: string): { economy: string; blades: string } | null {
+  if (preset === COMBO_PRESET) return { economy: '', blades: '' };
+  if (!preset.startsWith(COMBO_PRESET + ':')) return null;
+  const [economy = '', blades = '', ...rest] = preset.slice(COMBO_PRESET.length + 1).split(':');
+  const k = blades.replace(/\+/g, ';');
+  if (rest.length || economyParams(economy) === null || !bladesKnobsOk(k)) return null;
+  return { economy, blades: k };
+}
+
+/* the tactics a preset plays with when none are given */
+export const defaultTacticsOf = (preset: string): string => (comboParts(preset) ? COMBO_TACTICS : DEFAULT_TACTICS);
 
 /* names in the catalogue: by them the service knob for changing the preset
    decides whether such a preset exists */
@@ -542,7 +563,7 @@ export function nakazHeadOf(preset: string): string | null {
 
 /* preset - сплав, a catalogue style, a "base+knob=number" string or a nakaz head */
 export function isPreset(preset: string): boolean {
-  return preset === COMBO_PRESET || parseStyle(preset) !== null || nakazHeadOf(preset) !== null;
+  return comboParts(preset) !== null || parseStyle(preset) !== null || nakazHeadOf(preset) !== null;
 }
 
 /* an unknown name (typo, cmd code page) doesn't bring the bot down before the
@@ -572,10 +593,12 @@ export type BattleStrategy = PulseStrategy | ComboStrategy;
 export function createStrategy(
   preset = process.env['ZARIA_PRESET'],
   log: (line: string) => void = () => undefined,
-  tactics: Tactics = parseTactics(process.env['ZARIA_TACTICS'] || DEFAULT_TACTICS, log),
+  given?: Tactics,
 ): BattleStrategy {
   const chosen = presetOrDefault(preset, log);
-  if (chosen === COMBO_PRESET) return new ComboStrategy(log);
+  const tactics = given ?? parseTactics(process.env['ZARIA_TACTICS'] || defaultTacticsOf(chosen), log);
+  const combo = comboParts(chosen);
+  if (combo) return new ComboStrategy(log, tactics, combo.economy, combo.blades);
   const nakaz = nakazHeadOf(chosen);
   const head: Head = nakaz ? nakazHead(charterText(nakaz)) : new MirrorBot(createEngine, { ...(parseStyle(chosen) ?? STYLES[HEAD_PRESET]!) });
   let filler: WireBot | null = null;

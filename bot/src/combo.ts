@@ -27,8 +27,9 @@ import type { ChannelCfg, Hex, Manifest, Observe, Order, SlotName, Verdict } fro
 import { createStrategy as createBlades } from './combo/blades.js';
 import { createStrategy as createEconomy } from './combo/economy.js';
 import type { Strategy as EconomyHead } from './combo/economy.js';
+import { setFaultLog } from './faults.js';
 import { costAt, NO_TACTICS, PulseStrategy } from './strategy.js';
-import type { Strategy } from './strategy.js';
+import type { Strategy, Tactics } from './strategy.js';
 
 /* a unit is a Klinok: by the frame, and a new one (not in the frame yet) - by its id prefix (K-A12) */
 function klinok(order: Order, cls: ReadonlyMap<string, string>): boolean {
@@ -127,9 +128,12 @@ export class ComboStrategy implements Strategy {
   private readonly head: ComboHead;
   private readonly pulse: PulseStrategy;
 
-  constructor(log: (line: string) => void = () => undefined) {
-    this.head = new ComboHead(createEconomy(), createBlades());
-    this.pulse = new PulseStrategy(this.head, log, { tactics: NO_TACTICS });
+  /* economy - a preset of the economy head or its knobs, blades - the Klinok head's knobs
+     ("jam=0;guard=1"); tactics - those after the head that need no mirror (hunt, ram, ...) */
+  constructor(log: (line: string) => void = () => undefined, tactics: Tactics = NO_TACTICS, economy = '', blades = '') {
+    setFaultLog(log);
+    this.head = new ComboHead(createEconomy(economy || undefined), createBlades(blades || undefined));
+    this.pulse = new PulseStrategy(this.head, log, { tactics });
   }
 
   /* diagnostics for the lab, as PulseStrategy's */

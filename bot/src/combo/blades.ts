@@ -16,6 +16,7 @@
    when it is safe. Surplus energy goes to lots. Scans are paid by the ears
    only, so the head scans every tick it can, which also keeps the slot. */
 
+import { fault } from '../faults.js';
 import { createEngine } from '@zoria/engine';
 import { RulesOracle } from '@zoria/sdk';
 import type { BeliefFrame, WireBot } from '@zoria/sdk';
@@ -362,13 +363,15 @@ class Vatra implements Strategy {
         this.setup(m);
         try {
           this.oracle = new RulesOracle(createEngine, manifestBytes);
-        } catch {
+        } catch (e) {
+          fault('blades.init', e);
           this.oracle = null;
         }
         this.probeOracle();
         this.ready = true;
       }
-    } catch {
+    } catch (e) {
+      fault('blades.init', e);
       this.ready = this.man !== null;
     }
   }
@@ -390,7 +393,8 @@ class Vatra implements Strategy {
           meta = orders.map((x) => ({ kind: x.kind, unit: '', i: -1 }));
         }
       }
-    } catch {
+    } catch (e) {
+      fault('blades.tick', e);
       orders = [];
       meta = [];
       try {
@@ -398,7 +402,8 @@ class Vatra implements Strategy {
           orders = this.fallback(this.obs);
           meta = orders.map((x) => ({ kind: x.kind, unit: '', i: -1 }));
         }
-      } catch {
+      } catch (e) {
+        fault('blades.tick', e);
         orders = [];
       }
     }
@@ -406,10 +411,12 @@ class Vatra implements Strategy {
     this.sentAt = t;
     try {
       return encodeOrders(orders);
-    } catch {
+    } catch (e) {
+      fault('blades.tick', e);
       try {
         return encodeOrders([]);
-      } catch {
+      } catch (e) {
+        fault('blades.tick', e);
         return new Uint8Array(0);
       }
     }
@@ -431,7 +438,8 @@ class Vatra implements Strategy {
         if (!m) continue;
         this.onDeny(m, code);
       }
-    } catch {
+    } catch (e) {
+      fault('blades.feedback', e);
       /* verdicts are advice only */
     }
   }
@@ -473,7 +481,8 @@ class Vatra implements Strategy {
         f.pact = act ? (act.a === this.slot ? act.b : act.a) : null;
       }
       return f;
-    } catch {
+    } catch (e) {
+      fault('blades.belief', e);
       return null;
     }
   }
@@ -650,14 +659,16 @@ class Vatra implements Strategy {
         }
         if (okAll) this.lev = tmp;
       }
-    } catch {
+    } catch (e) {
+      fault('blades.probeOracle', e);
       /* keep manifest levels */
     }
     const s0 = this.man.seats[0];
     const nd = this.man.needles.find((n) => n.start !== null && s0 && hd(n.q, n.r, s0.q, s0.r) <= 1);
     try {
       if (s0 && nd) this.oracleLink = o.linkOk({ q: s0.q, r: s0.r }, { q: nd.q, r: nd.r }) === true;
-    } catch {
+    } catch (e) {
+      fault('blades.probeOracle', e);
       this.oracleLink = false;
     }
     try {
@@ -665,13 +676,15 @@ class Vatra implements Strategy {
         const p = o.path({ q: s0.q, r: s0.r }, { q: nd.q, r: nd.r }, TK);
         this.oraclePath = Array.isArray(p);
       }
-    } catch {
+    } catch (e) {
+      fault('blades.probeOracle', e);
       this.oraclePath = false;
     }
     try {
       const v = o.storm({ q: 0, r: 0 }, 1);
       this.oracleStorm = typeof v === 'boolean';
-    } catch {
+    } catch (e) {
+      fault('blades.probeOracle', e);
       this.oracleStorm = false;
     }
   }
@@ -692,7 +705,8 @@ class Vatra implements Strategy {
     if (this.oracle && this.oracleLink) {
       try {
         ok = this.oracle.linkOk({ q: cq(a), r: cr(a) }, { q: cq(b), r: cr(b) }) === true;
-      } catch {
+      } catch (e) {
+        fault('blades.link', e);
         ok = this.lineClear(a, b);
       }
     } else ok = this.lineClear(a, b);
@@ -743,13 +757,15 @@ class Vatra implements Strategy {
     if (this.oracle && this.oracleStorm) {
       try {
         v = this.oracle.storm({ q: cq(i), r: cr(i) }, this.t) === true;
-      } catch {
+      } catch (e) {
+        fault('blades.stormy', e);
         v = false;
       }
     } else {
       try {
         v = stormAt(m.storms, cq(i), cr(i), this.t);
-      } catch {
+      } catch (e) {
+        fault('blades.stormy', e);
         v = false;
       }
     }
@@ -2148,7 +2164,8 @@ class Vatra implements Strategy {
       let p: { q: number; r: number }[] | null = null;
       try {
         p = this.oracle!.path(from, { q: cq(to), r: cr(to) }, TK);
-      } catch {
+      } catch (e) {
+        fault('blades.route', e);
         return 0;
       }
       if (!p) return -1;
@@ -2416,6 +2433,11 @@ class Vatra implements Strategy {
 /* the head's names: one head, the preset only names it */
 export function presets(): string[] {
   return ['ватра'];
+}
+
+/* the knob string the Klinok head takes: "jam=0;guard=1;..." (order, jam, guard, hunt, open) */
+export function bladesKnobsOk(preset: string): boolean {
+  return preset === '' || preset.split(';').every((part) => /^(order=[TK]+|(jam|guard|hunt|open)=[01])$/.test(part));
 }
 
 export function createStrategy(preset?: string): Strategy {

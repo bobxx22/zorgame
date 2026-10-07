@@ -11,14 +11,14 @@ import { test } from 'node:test';
 const KIT = join('node_modules', '@zoria', 'kit', 'bin', 'zaria-kit.mjs');
 
 /* plays one pack of three matches and returns the console output and the pack record */
-function pack(args, env = {}) {
+function pack(args, env = {}, { fast = true, timeout = 60_000 } = {}) {
   const out = mkdtempSync(join(tmpdir(), 'zaria-e2e-'));
   try {
-    const run = spawnSync(process.execPath, ['--import', './scripts/win-fsync.mjs', KIT, 'pack', '--fast', '--seed', '5', '--out', out, ...args], {
+    const run = spawnSync(process.execPath, ['--import', './scripts/win-fsync.mjs', KIT, 'pack', ...(fast ? ['--fast'] : []), '--seed', '5', '--out', out, ...args], {
       encoding: 'utf8',
       env: { ...process.env, ZARIA_LANG: 'uk', ...env },
       // a healthy pack takes seconds; a bot that left the match makes the node wait out every tick
-      timeout: 60_000,
+      timeout,
     });
     const dir = readdirSync(out).find((name) => name.startsWith('pack-'));
     // the record is read here, before the folder goes
@@ -59,8 +59,10 @@ test('a node with another engine hash gets no oath from the bot (P2-03)', () => 
   assert.equal((text.match(/без присяги/g) ?? []).length, 3, text);
 });
 
+/* at the node's real tempo (500 ms a tick): 1.5 s of outage are three silent ticks, the nakaz needs six.
+   At full speed the same 1.5 s were sometimes more than six ticks, and the test failed on timing */
 test('a wire broken for 1.5 s mid-match is resumed, and the nakaz never takes the slot', () => {
-  const { text, json } = pack(['--ticks', '600', '--bot', 'node test/drop-bot.mjs'], { DROP_AFTER_MS: '1000', DROP_OUTAGE_MS: '1500' });
+  const { text, json } = pack(['--ticks', '40', '--bot', 'node test/drop-bot.mjs'], { DROP_AFTER_MS: '6000', DROP_OUTAGE_MS: '1500' }, { fast: false, timeout: 240_000 });
   assert.equal(bot(text).filter((line) => line.includes('match over (end)')).length, 3, text);
   assert.ok(bot(text).some((line) => /reconnects [1-9]/.test(line)), text);
   assert.doesNotMatch(text, /ваш слот вів наказ/, text);

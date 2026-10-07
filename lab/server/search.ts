@@ -39,7 +39,7 @@ import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { ENGINE_HASH } from '@zoria/engine';
 import { ARCHETYPES } from '@zoria/sdk';
-import { DEFAULT_PRESET, DEFAULT_TACTICS, isPreset, parseTactics } from '../../bot/dist/strategy.js';
+import { comboParts, DEFAULT_PRESET, DEFAULT_TACTICS, defaultTacticsOf, isPreset, parseTactics } from '../../bot/dist/strategy.js';
 import { fullStyle, KNOB_MAX, KNOBS, parseStyle, STYLES, styleSpec } from '../../bot/dist/styles.js';
 import type { Knob, Style } from '../../bot/dist/styles.js';
 import type { SeatSpec } from '../shared/record.ts';
@@ -117,7 +117,7 @@ function poolOf(pool: Config['pool']): SeatSpec[] {
     ];
   }
   if (pool === 'strong') {
-    const own = DEFAULT_TACTICS.split(',');
+    const own = defaultTacticsOf(DEFAULT_PRESET).split(',');
     const nf = ['fill:own:6', 'nofeed:1200', 'ram:6'];
     return [
       { kind: 'ours', name: DEFAULT_PRESET, tactics: own },
@@ -130,7 +130,7 @@ function poolOf(pool: Config['pool']): SeatSpec[] {
   }
   const fixed = ['fill:own:6'];
   return [
-    { kind: 'ours', name: DEFAULT_PRESET, tactics: DEFAULT_TACTICS.split(',') },
+    { kind: 'ours', name: DEFAULT_PRESET, tactics: defaultTacticsOf(DEFAULT_PRESET).split(',') },
     { kind: 'archetype', name: 'рівний' },
     { kind: 'archetype', name: 'облягач' },
     { kind: 'ours', name: 'опортуніст', tactics: fixed },
@@ -155,7 +155,8 @@ function candidateOf(spec: string): Candidate | null {
   if (spec.startsWith('ext:')) return isExtBot(spec.slice(4)) ? { preset: spec, tactics: [], ext: spec.slice(4) } : null;
   const [preset, tactics, ...rest] = spec.split('|');
   if (rest.length || !preset || !isPreset(preset)) return null;
-  if (tactics === undefined) return { preset, tactics: cfg.tactics };
+  /* without "|" - the preset's own defaults: the battle tactics of the search config for a mirror head, none for сплав */
+  if (tactics === undefined) return { preset, tactics: comboParts(preset) ? defaultTacticsOf(preset).split(',') : cfg.tactics };
   const list = tactics
     .split(',')
     .map((x) => x.trim())

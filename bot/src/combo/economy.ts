@@ -17,6 +17,7 @@
    staging plan onto the ring. The channel is budgeted so working units keep
    their hands; a cheap accepted command every few ticks keeps the slot. */
 
+import { fault } from '../faults.js';
 import { createEngine } from '@zoria/engine';
 import { RulesOracle } from '@zoria/sdk';
 import type { BeliefFrame, WireBot } from '@zoria/sdk';
@@ -423,12 +424,14 @@ class ZoriaHead implements Strategy {
         this.setup(m);
         this.ready = true;
       }
-    } catch {
+    } catch (e) {
+      fault('economy.init', e);
       this.ready = false;
     }
     try {
       this.oracle = new RulesOracle(createEngine, manifestBytes);
-    } catch {
+    } catch (e) {
+      fault('economy.init', e);
       this.oracle = null;
     }
   }
@@ -444,7 +447,8 @@ class ZoriaHead implements Strategy {
         this.orders = [];
         this.meta = [];
       }
-    } catch {
+    } catch (e) {
+      fault('economy.tick', e);
       this.fails++;
       /* a frame that keeps failing hands the slot to the nakaz instead of holding it idle */
       out = this.fails <= 3 ? this.rescue() : [];
@@ -452,7 +456,8 @@ class ZoriaHead implements Strategy {
     }
     try {
       return encodeOrders(out);
-    } catch {
+    } catch (e) {
+      fault('economy.tick', e);
       this.meta = [];
       return encodeOrders([]);
     }
@@ -498,7 +503,8 @@ class ZoriaHead implements Strategy {
           if (this.jobs.get(m.unit) === j) this.jobs.delete(m.unit);
         }
       }
-    } catch {
+    } catch (e) {
+      fault('economy.feedback', e);
       /* verdicts are advisory */
     }
   }
@@ -544,7 +550,8 @@ class ZoriaHead implements Strategy {
       f.pact = null;
       f.cries = obs.pub.cries.map((c): [string, number] => [c[0], c[1]]);
       return f;
-    } catch {
+    } catch (e) {
+      fault('economy.belief', e);
       return null;
     }
   }
@@ -726,7 +733,8 @@ class ZoriaHead implements Strategy {
     if (this.oracle) {
       try {
         ok = this.oracle.linkOk({ q: qOf(a), r: rOf(a) }, { q: qOf(b), r: rOf(b) });
-      } catch {
+      } catch (e) {
+        fault('economy.linkOk', e);
         ok = this.lineClear(a, b);
       }
     } else {
@@ -767,7 +775,8 @@ class ZoriaHead implements Strategy {
     if (this.oracle) {
       try {
         return this.oracle.storm({ q, r }, this.t);
-      } catch {
+      } catch (e) {
+        fault('economy.storm', e);
         /* fall through to the spot model */
       }
     }
@@ -775,7 +784,8 @@ class ZoriaHead implements Strategy {
     if (!m || !m.storms || !m.storms.length) return false;
     try {
       return stormAt(m.storms, q, r, this.t);
-    } catch {
+    } catch (e) {
+      fault('economy.storm', e);
       return false;
     }
   }
@@ -1089,7 +1099,8 @@ class ZoriaHead implements Strategy {
         this.orders.push({ kind: 'watch', q: qOf(this.hearth), r: rOf(this.hearth), keep: 0 });
         this.meta.push({ unit: '', kind: 'watch', job: null, lot: -1, cls: '' });
       }
-    } catch {
+    } catch (e) {
+      fault('economy.rescue', e);
       this.orders = [];
       this.meta = [];
     }
@@ -2740,7 +2751,26 @@ export function presets(): string[] {
   return Object.keys(PRESETS);
 }
 
+/* a preset name or knobs on top of рівний: "alpha=0.6+risk=0.8" (also with ";") */
+export function economyParams(preset?: string): Params | null {
+  if (preset === undefined || preset === '') return PRESETS['рівний']!;
+  const named = PRESETS[preset];
+  if (named) return named;
+  const p: Params = { ...PRESETS['рівний']! };
+  for (const part of preset.split(/[+;]/)) {
+    const [k, v] = part.split('=');
+    const n = Number(v);
+    if (v === undefined || !/^\d+(\.\d+)?$/.test(v)) return null;
+    if (k === 'alpha' && n <= 2) p.alpha = n;
+    else if (k === 'jam' && n <= 3) p.jam = n;
+    else if (k === 'bid' && n <= 3) p.bid = n;
+    else if (k === 'risk' && n <= 1) p.risk = n;
+    else if (k === 'ram' && (n === 0 || n === 1)) p.ram = n === 1;
+    else return null;
+  }
+  return p;
+}
+
 export function createStrategy(preset?: string): Strategy {
-  const p = (preset !== undefined ? PRESETS[preset] : undefined) ?? PRESETS['рівний']!;
-  return new ZoriaHead(p);
+  return new ZoriaHead(economyParams(preset) ?? PRESETS['рівний']!);
 }

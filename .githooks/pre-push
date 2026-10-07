@@ -1,0 +1,8 @@
+#!/bin/sh
+# P4-06: push protection for a personal private repository (addendum 13) - no push
+# while a secret is in the tree, the staged commit or the history (scripts/check-secrets.mjs).
+# Turned on once per clone: npm run hooks
+node scripts/check-secrets.mjs || {
+  echo "push stopped: scripts/check-secrets.mjs found a secret (P4-06)" >&2
+  exit 1
+}
