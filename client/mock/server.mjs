@@ -294,7 +294,10 @@ const server = createServer(async (req, res) => {
     return
   }
   log(method, path, result.status, result.body?.error?.code ?? '')
-  if (result.body === null) {
+  if (result.bytes) {
+    res.writeHead(result.status, { 'Content-Type': 'application/octet-stream', 'Content-Length': result.bytes.length, ETag: `"${result.etag}"` })
+    res.end(result.bytes)
+  } else if (result.body === null) {
     res.writeHead(result.status)
     res.end()
   } else {

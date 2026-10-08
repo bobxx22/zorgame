@@ -1,5 +1,6 @@
 // Participant routes of the mock stand: config, register, login, logout, me,
-// repository, summary, news, letters, task parts, developer check.
+// repository, summary, news, letters, task parts, developer check, and through
+// games.mjs the submission state and one's own games with their records.
 // In-memory only; restarting the mock forgets everything.
 //
 //   MOCK_INVITATION=STAND-2026    application code the stand accepts (like the training one)
@@ -12,6 +13,7 @@
 //   MOCK_ERRATA_SEC=240           seconds after registration until part 2 gets an erratum
 
 import { randomBytes, randomUUID } from 'node:crypto'
+import { gamesOf, packOf, recordOf, stackOf } from './games.mjs'
 
 const LOSE = Number(process.env.MOCK_LOSE ?? 0.15)
 const BUSY = Number(process.env.MOCK_BUSY ?? 0.1)
@@ -343,7 +345,7 @@ function summary(a) {
   }
 }
 
-const AUTH_ROUTES = /^\/(auth\/logout|me(\/repository|\/summary)?|news|inbox(\/[^/]+(\/read)?)?|stages(\/[^/]+(\/ack)?)?|developer\/check)$/
+const AUTH_ROUTES = /^\/(auth\/logout|me(\/repository|\/summary|\/stack|\/games(\/[^/]+\/(pack|records\/[^/]+))?)?|news|inbox(\/[^/]+(\/read)?)?|stages(\/[^/]+(\/ack)?)?|developer\/check)$/
 
 /**
  * Handles a participant route in the window or after it. Returns null for an
@@ -388,6 +390,19 @@ export function participant({ req, url, method, path, body, phase, opensAt }) {
     return { status: 200, body: { repository: { ...a.repository } } }
   }
   if (method === 'GET' && path === '/me/summary') return { status: 200, body: summary(a) }
+  if (method === 'GET' && path === '/me/stack') return { status: 200, body: stackOf() }
+  if (method === 'GET' && path === '/me/games') return { status: 200, body: gamesOf() }
+
+  const gameMatch = /^\/me\/games\/([^/]+)\/(pack|records\/([^/]+))$/.exec(path)
+  if (gameMatch && method === 'GET') {
+    const id = decodeURIComponent(gameMatch[1])
+    if (gameMatch[2] === 'pack') {
+      const view = packOf(a, id)
+      return view ? { status: 200, body: view } : fail(404, 'not-found')
+    }
+    const record = recordOf(id, decodeURIComponent(gameMatch[3]))
+    return record ? { status: 200, bytes: record.bytes, etag: record.etag, body: null } : fail(404, 'not-found')
+  }
 
   if (method === 'GET' && (path === '/news' || path === '/inbox')) {
     const p = paging(url)

@@ -1,10 +1,12 @@
 import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router'
 import { ContactPage } from '../pages/ContactPage'
 import { EtherPage } from '../pages/EtherPage'
+import { GamesPage } from '../pages/GamesPage'
 import { InboxPage } from '../pages/InboxPage'
 import { NewsPage } from '../pages/NewsPage'
 import { RollPage } from '../pages/RollPage'
 import { StagePage, StagesPage } from '../pages/StagesPage'
+import { SubmissionPage } from '../pages/SubmissionPage'
 import { RadioProvider } from '../sound/RadioProvider'
 import { AuthProvider } from './AuthProvider'
 import { CabinetProvider } from './CabinetProvider'
@@ -41,6 +43,9 @@ export function App() {
                         <Route path="news" element={<NewsPage />} />
                         <Route path="stages" element={<StagesPage />} />
                         <Route path="stages/:id" element={<StagePage />} />
+                        <Route path="submission" element={<SubmissionPage />} />
+                        <Route path="games" element={<GamesPage />} />
+                        <Route path="games/:id" element={<GamesPage />} />
                         <Route path="roll" element={<RollPage />} />
                         <Route path="*" element={<Navigate to="/" replace />} />
                       </Route>

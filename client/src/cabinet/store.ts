@@ -4,6 +4,7 @@ import { isAbortError, systemClock, type Clock } from '../api/clock'
 import { parseRepositoryEnvelope, type Repository } from '../auth/schemas'
 import type { EtherPhase } from '../ether/frame'
 import { readAllPages } from './paging'
+import { parseGames, parsePackView, parseStack, type GameRow, type PackView, type Stack } from './submission'
 import {
   parseMessage,
   parseNews,
@@ -290,6 +291,23 @@ export class CabinetStore {
     if (result.error.kind === 'http' && result.error.status === 404) return 'missing'
     this.#fail(result)
     return null
+  }
+
+  /**
+   * Parts 3 and 4: the submission's verdicts and one's own games. Read when their
+   * screens open or on demand, not polled: they change a few times a day. A failure
+   * is the screen's own business and does not become the cabinet's problem line.
+   */
+  readStack(): Promise<ApiResult<Stack>> {
+    return this.#call({ path: '/me/stack', parse: parseStack, retry: READ, ...withSignal(this.#run?.signal) })
+  }
+
+  readGames(): Promise<ApiResult<{ items: GameRow[]; skipped: number }>> {
+    return this.#call({ path: '/me/games', parse: parseGames, retry: READ, ...withSignal(this.#run?.signal) })
+  }
+
+  readGamePack(id: string): Promise<ApiResult<PackView>> {
+    return this.#call({ path: `/me/games/${encodeURIComponent(id)}/pack`, parse: parsePackView, retry: READ, ...withSignal(this.#run?.signal) })
   }
 
   /** Reading a letter does not mark it; this does (CL-29). */

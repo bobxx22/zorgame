@@ -11,7 +11,8 @@ export function utcOffsetLabel(at: Date, timeZone: string = localTimeZone()): st
   const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' }).formatToParts(at)
   const name = parts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT'
   const offset = name.replace(/^GMT/, '')
-  if (!offset) return 'UTC'
+  /* ICU 78 (Node 24.19, newer browsers) names UTC itself "GMT+00:00", older ones "GMT" */
+  if (!offset || /^[+-]0?0(:00)?$/.test(offset)) return 'UTC'
   return 'UTC' + offset.replace(/^([+-])0?(\d+):00$/, '$1$2').replace(/^([+-])0?(\d+):(\d\d)$/, '$1$2:$3')
 }
 

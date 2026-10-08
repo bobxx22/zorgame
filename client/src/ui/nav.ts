@@ -11,7 +11,10 @@ export interface NavItem {
   count?: NavCount
 }
 
-/** The bar: one item per screen, as the site's bar has one per section. */
+/**
+ * The bar: one item per screen, as the site's bar has one per section. It is full at
+ * 1280 px; the screens of parts 3-4 (submission, games) live in the rail and the sheet.
+ */
 export const NAV_TOP: readonly NavItem[] = [
   { to: '/', label: 'Ефір', icon: 'mast', end: true },
   { to: '/contact', label: "Вихід на зв'язок", icon: 'repo' },
@@ -39,6 +42,8 @@ export const NAV_GROUPS: readonly { title: string; items: readonly NavItem[] }[]
     items: [
       { to: '/inbox', label: 'Листи', icon: 'mail', count: 'unread' },
       { to: '/stages', label: 'Частини завдання', icon: 'parts', count: 'stages' },
+      { to: '/submission', label: 'Здача і вердикт', icon: 'code' },
+      { to: '/games', label: 'Ігри і записи', icon: 'calendar' },
       { to: '/news', label: 'Оголошення', icon: 'news' },
     ],
   },
