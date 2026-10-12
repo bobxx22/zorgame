@@ -3,8 +3,8 @@
    the engine in the worker and delivered in chunks) and the channel of every
    slot (taken from the journal as is). Everything is answered from memory. */
 
-import { indexAt, newChanges, pushChange, valueAt, type Changes } from './changes.ts'
-import type { DenyRow, FrameRow, MatchMeta, TruthChunk } from './wire.ts'
+import { changesOf, indexAt, newChanges, pushChange, valueAt, type Changes } from './changes.ts'
+import { cellQ, cellR, packCell, type DenyRow, type FrameRow, type MatchMeta, type TruthChunk } from './wire.ts'
 
 export interface UnitTrack {
   owner: string
@@ -20,10 +20,6 @@ export interface UnitAt {
   q: number
   r: number
 }
-
-const packCell = (q: number, r: number): number => (q + 128) * 256 + (r + 128)
-const cellQ = (packed: number): number => (packed >> 8) - 128
-const cellR = (packed: number): number => (packed & 255) - 128
 
 export class MatchIndex {
   readonly meta: MatchMeta
@@ -86,8 +82,8 @@ export class MatchIndex {
         this.#needles[t * 3 + s] = chunk.needles[src + s] ?? 0
       }
     }
-    for (const [t, cell, who] of chunk.own) pushChange(this.#changes(this.own, cell), t, who)
-    for (const [t, cell, on] of chunk.lit) pushChange(this.#changes(this.lit, cell), t, on)
+    for (const [t, cell, who] of chunk.own) pushChange(changesOf(this.own, cell), t, who)
+    for (const [t, cell, on] of chunk.lit) pushChange(changesOf(this.lit, cell), t, on)
     for (const [t, id, owner, cls, q, r, alive] of chunk.units) {
       let track = this.units.get(id)
       if (!track) {
@@ -176,14 +172,5 @@ export class MatchIndex {
   /** A number that is equal for two ticks exactly when nothing on the field changed between them. */
   changeStamp(t: number): number {
     return indexAt(this.#changed, t)
-  }
-
-  #changes<T>(map: Map<string, Changes<T>>, cell: string): Changes<T> {
-    let c = map.get(cell)
-    if (!c) {
-      c = newChanges<T>()
-      map.set(cell, c)
-    }
-    return c
   }
 }

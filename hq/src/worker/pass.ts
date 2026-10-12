@@ -11,7 +11,7 @@
 import { createEngine } from '@zoria/engine'
 import { DENY_CODES, decodeManifest, decodeOrders, readRunLog, type Manifest, type SlotName } from '@zoria/protocol'
 import { JournalCursor, type EngineFull, type JournalParts } from '@zoria/sdk'
-import { SLOTS, slotIndex, type DenyRow, type FrameRow, type LitRow, type MatchMeta, type OwnRow, type TruthChunk, type UnitRow } from '../model/wire.ts'
+import { SLOTS, packCell, slotIndex, type DenyRow, type FrameRow, type LitRow, type MatchMeta, type OwnRow, type TruthChunk, type UnitRow } from '../model/wire.ts'
 
 /* the pass never goes back, so the cursor keeps only its first checkpoint */
 const NO_CHECKPOINTS = 1_000_000_000
@@ -175,7 +175,7 @@ export class Pass {
     for (const u of units) {
       if (u.dead) continue
       seen.add(u.id)
-      const at = (u.q + 128) * 256 + (u.r + 128)
+      const at = packCell(u.q, u.r)
       if (this.#units.get(u.id) === at) continue
       this.#units.set(u.id, at)
       rows.push([t, u.id, u.p, u.cls, u.q, u.r, true])

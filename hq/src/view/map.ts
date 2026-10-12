@@ -1,9 +1,15 @@
 /* hq :: view/map
-   The valley: terrain and needle sites on a canvas that is painted once per
-   match, and over it the layer that changes with the tick - who owns a needle,
-   whether it is lit, where the units stand, what the focus bot believed.
+   The valley on one opaque canvas. Terrain and needle sites are painted once
+   per match into a canvas that is never shown; every repaint of the visible
+   one starts by copying it and then draws what changes with the tick - who
+   owns a needle, whether it is lit, where the units stand, what the focus bot
+   believed.
 
-   The layer on top is repainted only when what it shows has changed: a tick in
+   One opaque canvas, not two stacked ones: a second layer with alpha is
+   blended over the first by the compositor on every frame, and without a
+   graphics card that blending costs more than everything the show computes.
+
+   The canvas is repainted only when what it shows has changed: a tick in
    which nothing moved costs nothing. */
 
 import type { Mode } from '../app/answers.ts'
@@ -57,18 +63,19 @@ export class ValleyMap {
   #painted = ''
   onPick: (cell: string) => void = () => undefined
 
-  constructor(box: HTMLElement, base: HTMLCanvasElement, top: HTMLCanvasElement) {
-    const b = base.getContext('2d', { alpha: false })
-    const t = top.getContext('2d')
+  constructor(box: HTMLElement, canvas: HTMLCanvasElement) {
+    const b = document.createElement('canvas').getContext('2d', { alpha: false })
+    const t = canvas.getContext('2d', { alpha: false })
     if (!b || !t) throw new Error('the canvas is not available')
     this.#base = b
     this.#top = t
     this.#box = box
-    top.addEventListener('click', (event) => {
+    canvas.addEventListener('click', (event) => {
       const cell = this.#cellAt(event.offsetX, event.offsetY)
       if (cell) this.onPick(cell)
     })
     this.#resize(20)
+    this.#paintBase(null)
   }
 
   paint(scene: Scene): void {
@@ -212,9 +219,10 @@ export class ValleyMap {
 
   #paintTop(scene: Scene): void {
     const ctx = this.#top
+    /* the valley as it was painted for this match, pixel for pixel; then what the tick adds */
     ctx.save()
     ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+    ctx.drawImage(this.#base.canvas, 0, 0)
     ctx.restore()
     const { index, belief, tick, mode } = scene
     if (!index) return

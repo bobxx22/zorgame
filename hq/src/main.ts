@@ -25,6 +25,10 @@ const KEEPER = '#cdd6dc'
 const PLAY_SPEED = 30
 /* a pause of the controls this long is used to compute the matches not looked at yet */
 const IDLE_MS = 1500
+/* The show says `ready` when the pack it opens with has been computed, and no later than this
+   long after the page started: the opening budget is 15 s (HQ contract, 4.4), and a show that
+   is not ready by then ends the acceptance run with no report at all. */
+const READY_DEADLINE_MS = 8000
 
 /* an element of the page by its id, of the kind the code expects */
 function byId<T extends HTMLElement>(id: string, kind: abstract new () => T): T {
@@ -40,7 +44,7 @@ class Show {
   readonly #host: ShowHost
   readonly #library: Library
   readonly #anchors = new Anchors(document)
-  readonly #map = new ValleyMap(byId('map', HTMLElement), byId('mapBase', HTMLCanvasElement), byId('mapTop', HTMLCanvasElement))
+  readonly #map = new ValleyMap(byId('map', HTMLElement), byId('mapCanvas', HTMLCanvasElement))
   readonly #strip = new ChannelStrip(byId('strip', HTMLElement), byId('stripChart', HTMLCanvasElement), byId('stripCursor', HTMLElement))
   readonly #note = byId('note', HTMLElement)
   readonly #play = byId('play', HTMLButtonElement)
@@ -60,6 +64,17 @@ class Show {
   #noteShown = ''
   #abShown = ''
   #idle: ReturnType<typeof setTimeout> | null = null
+  /** the pack whose computation `ready` waits for; null once the show is ready or never waited */
+  #hold: string | null = null
+  #deadline: ReturnType<typeof setTimeout> | null = null
+  /** what the last frame showed of the match on screen: a change of a match repaints only when this changes */
+  #shown = ''
+  #frameId = 0
+  #stopped = false
+  /** ends the listeners of the page */
+  readonly #abort = new AbortController()
+  /** ends the subscriptions to the host */
+  readonly #off: (() => void)[] = []
 
   readonly #view: View = { packId: null, match: 1, tick: 0, mode: 'truth', focus: '', cell: '', unit: '', order: 0, promote: '-', live: null }
 
@@ -72,22 +87,38 @@ class Show {
 
   /** Something changed: repaint in the next animation frame, once. */
   readonly invalidate = (): void => {
-    if (this.#queued) return
+    if (this.#queued || this.#stopped) return
     this.#queued = true
-    requestAnimationFrame(this.#frame)
+    this.#frameId = requestAnimationFrame(this.#frame)
+  }
+
+  /**
+   * A match changed in the library. The page is repainted only when that shows: the truth of the
+   * tick on screen has arrived, the strip has grown by a step, the match ended or failed. A chunk
+   * of a match that is not on screen costs no frame - while the frames are being measured the
+   * engine may still be computing.
+   */
+  readonly changed = (match: MatchData): void => {
+    if (!this.#readySent && this.#opened()) this.invalidate()
+    else if (match === this.#match() && this.#stamp(match) !== this.#shown) this.invalidate()
   }
 
   /** `early` - what the broadcast sent while the show was still starting, in the order it came. */
   start(early: readonly LiveEvent[] = []): void {
     const host = this.#host
     setLang(host.lang, document)
-    host.on('lang', (lang: Lang) => {
-      setLang(lang, document)
-      this.#paintLegend()
-      this.invalidate()
-    })
-    if (host.mode === 'record') this.#openPacks(host.packs().map(readEntry), host)
-    else if (host.mode === 'live') this.#openLive(early)
+    this.#off.push(
+      host.on('lang', (lang: Lang) => {
+        setLang(lang, document)
+        this.#paintLegend()
+        this.invalidate()
+      }),
+    )
+    if (host.mode === 'record') {
+      this.#openPacks(host.packs().map(readEntry), host, true)
+      /* the deadline of `ready` needs a frame of its own: no chunk may arrive at that moment */
+      if (this.#hold !== null) this.#deadline = setTimeout(this.invalidate, Math.max(0, READY_DEADLINE_MS - performance.now()) + 1)
+    } else if (host.mode === 'live') this.#openLive(early)
     else this.#problem = tr('noHost')
     byId('openBox', HTMLElement).hidden = host.mode !== 'none'
     this.#strip.fit()
@@ -118,14 +149,19 @@ class Show {
 
   /* ---- record ---- */
 
-  #openPacks(entries: readonly (PackEntry | null)[], files: FileSource): void {
+  /* `opening` - the packs the page starts with: the first one is computed whole before `ready` */
+  #openPacks(entries: readonly (PackEntry | null)[], files: FileSource, opening = false): void {
     this.#files = files
     this.#packs = entries.filter((e): e is PackEntry => e !== null)
     setOptions(fieldOf(document, 'go-pack') as HTMLSelectElement | null, this.#packs.map((p) => ({ value: p.id, label: p.title })))
     setOptions(byId('presets', HTMLDataListElement), [...new Set(this.#packs.map((p) => p.preset).filter((p) => p !== ''))].map((p) => ({ value: p, label: p })))
     const first = this.#packs[0]
-    if (first) this.#usePack(first.id)
-    else this.#problem = tr('badPack')
+    if (!first) {
+      this.#problem = tr('badPack')
+      return
+    }
+    if (opening) this.#hold = first.id
+    this.#usePack(first.id)
   }
 
   #usePack(id: string): void {
@@ -134,7 +170,7 @@ class Show {
     const view = this.#view
     view.packId = id
     view.live = null
-    this.#library.openPack(entry, this.#files)
+    this.#library.openPack(entry, this.#files, this.#hold === id)
     const roster = entry.pack.roster
     setOptions(fieldOf(document, 'go-focus') as HTMLSelectElement | null, roster.map((nick) => ({ value: nick, label: nick })))
     if (!roster.includes(view.focus)) view.focus = roster[focusSeat(entry.pack)] ?? roster[0] ?? ''
@@ -168,8 +204,7 @@ class Show {
       view.live.shares = Array.isArray(end.shares) ? end.shares : null
       this.invalidate()
     }
-    this.#host.on('tick', onTick)
-    this.#host.on('end', onEnd)
+    this.#off.push(this.#host.on('tick', onTick), this.#host.on('end', onEnd))
     for (const event of early) {
       if (event.type === 'tick') onTick(event.tick)
       else onEnd(event.end)
@@ -181,12 +216,18 @@ class Show {
 
   #bind(): void {
     const view = this.#view
+    const signal = this.#abort.signal
     const act = (name: string, fn: (value: string) => void): void => {
-      bindControl(document, name, (value) => {
-        fn(value)
-        this.#rest()
-        this.invalidate()
-      })
+      bindControl(
+        document,
+        name,
+        (value) => {
+          fn(value)
+          this.#rest()
+          this.invalidate()
+        },
+        signal,
+      )
     }
     act('go-pack', (v) => {
       this.#usePack(v)
@@ -223,16 +264,24 @@ class Show {
       this.#promote()
     })
 
-    this.#play.addEventListener('click', () => {
-      this.#playing = !this.#playing
-      this.#playedAt = 0
-      if (this.#playing && view.tick >= this.#lastTick()) view.tick = 0
-      this.invalidate()
-    })
-    this.#follow.addEventListener('click', () => {
-      this.#following = true
-      this.invalidate()
-    })
+    this.#play.addEventListener(
+      'click',
+      () => {
+        this.#playing = !this.#playing
+        this.#playedAt = 0
+        if (this.#playing && view.tick >= this.#lastTick()) view.tick = 0
+        this.invalidate()
+      },
+      { signal },
+    )
+    this.#follow.addEventListener(
+      'click',
+      () => {
+        this.#following = true
+        this.invalidate()
+      },
+      { signal },
+    )
     this.#map.onPick = (cell) => {
       view.cell = cell
       const field = fieldOf(document, 'go-cell')
@@ -243,14 +292,22 @@ class Show {
       this.#seek(tick)
       this.invalidate()
     }
-    byId('openFiles', HTMLInputElement).addEventListener('change', (event) => {
-      const input = event.currentTarget as HTMLInputElement
-      this.#openLocal([...(input.files ?? [])])
-    })
-    window.addEventListener('resize', () => {
-      this.#strip.fit()
-      this.invalidate()
-    })
+    byId('openFiles', HTMLInputElement).addEventListener(
+      'change',
+      (event) => {
+        const input = event.currentTarget as HTMLInputElement
+        this.#openLocal([...(input.files ?? [])])
+      },
+      { signal },
+    )
+    window.addEventListener(
+      'resize',
+      () => {
+        this.#strip.fit()
+        this.invalidate()
+      },
+      { signal },
+    )
   }
 
   /* the controls were touched: the pause starts over, and with it the wait for the idle work */
@@ -264,8 +321,31 @@ class Show {
 
   /** The page is going away: nothing of the show may fire after it. */
   stop(): void {
+    this.#stopped = true
+    cancelAnimationFrame(this.#frameId)
     if (this.#idle !== null) clearTimeout(this.#idle)
     this.#idle = null
+    if (this.#deadline !== null) clearTimeout(this.#deadline)
+    this.#deadline = null
+    /* an answer to a promotion that is still on its way belongs to nobody now */
+    this.#promoteSeq += 1
+    this.#abort.abort()
+    for (const off of this.#off.splice(0)) off()
+  }
+
+  /* whether the show may say `ready`: nothing is waited for, or it has been computed, or the deadline has come */
+  #opened(): boolean {
+    return this.#hold === null || this.#library.settled(this.#hold) || performance.now() >= READY_DEADLINE_MS
+  }
+
+  /* what the page shows of a match besides the view itself; equal strings - nothing to repaint */
+  #stamp(match: MatchData | null): string {
+    if (!match) return '-'
+    const index = match.index
+    const tick = this.#view.tick
+    /* on the broadcast every tick shows; in a record the strip grows in steps (view/strip.ts) */
+    const reach = !index ? '-' : this.#view.live || index.done === index.meta.ticks ? String(index.done) : String(Math.floor(index.done / 100))
+    return `${index ? 1 : 0}/${index?.known(tick) ? 1 : 0}/${reach}/${index?.framesTo ?? 0}/${match.belief ? match.belief.skipped : -1}/${match.problem ?? ''}`
   }
 
   #seek(tick: number): void {
@@ -298,17 +378,18 @@ class Show {
 
   #openLocal(files: File[]): void {
     if (files.length === 0) return
-    LocalRecord.read(files)
-      .then(
-        (record) => {
-          this.#problem = ''
-          this.#openPacks([record.entry], record)
-        },
-        (error: unknown) => {
-          this.#problem = error instanceof Error ? tr(error.message) : String(error)
-        },
-      )
-      .finally(this.invalidate)
+    LocalRecord.read(files).then(
+      (record) => {
+        if (this.#stopped) return
+        this.#problem = ''
+        this.#openPacks([record.entry], record)
+        this.invalidate()
+      },
+      (error: unknown) => {
+        this.#problem = error instanceof Error ? tr(error.message) : String(error)
+        this.invalidate()
+      },
+    )
   }
 
   /* ---- painting ---- */
@@ -334,6 +415,7 @@ class Show {
 
   readonly #frame = (now: number): void => {
     this.#queued = false
+    if (this.#stopped) return
     const view = this.#view
     if (!view.live) this.#library.want(view.packId, view.match)
     const match = this.#match()
@@ -359,11 +441,16 @@ class Show {
     this.#strip.paint(index, slotIndex(focusSlot(view, sources.pack)), view.tick)
     this.#paintControls(match)
     this.#paintCompare()
+    this.#shown = this.#stamp(match)
 
-    if (!this.#readySent || (view.live && view.tick !== this.#readyTick)) {
-      /* the first frame is on the page; on the broadcast every shown tick is a liveness mark (contract 6.3) */
+    if (this.#readySent ? view.live !== null && view.tick !== this.#readyTick : this.#opened()) {
+      /* The first `ready`: the page is painted and the pack it opened with is computed. On the
+         broadcast every shown tick is a liveness mark after that (contract 6.3). */
       this.#readySent = true
       this.#readyTick = view.tick
+      this.#hold = null
+      if (this.#deadline !== null) clearTimeout(this.#deadline)
+      this.#deadline = null
       this.#host.ready(view.tick)
     }
     if (this.#playing) this.invalidate()
@@ -418,7 +505,7 @@ class Show {
     this.#follow.hidden = view.live === null || this.#following
 
     const skipped = match?.belief?.skipped ?? 0
-    const note = match?.problem ? tr('matchProblem') + match.problem : skipped > 0 ? tr('diarySkipped') + String(skipped) : this.#problem
+    const note = match?.problem ? tr('matchProblem') + match.problem : skipped > 0 ? `${tr('diarySkipped')}${skipped} (${match?.belief?.skippedWhy ?? ''})` : this.#problem
     if (note !== this.#noteShown) {
       this.#noteShown = note
       this.#note.textContent = note
@@ -433,13 +520,15 @@ async function main(): Promise<void> {
   let show: Show | null = null
   const library = new Library(
     () => new Worker(url),
-    () => show?.invalidate(),
+    (match) => show?.changed(match),
   )
-  window.addEventListener('pagehide', () => {
+  /* everything the page holds: the show's timers and listeners, the workers, the worker's text */
+  const release = (): void => {
     show?.stop()
     library.close()
     URL.revokeObjectURL(url)
-  })
+  }
+  window.addEventListener('pagehide', release, { once: true })
   /* The broadcast does not wait for the show: its ticks start the moment the host is
      greeted. Until the workers are up they are kept here, and none is lost - a tick
      that never reached the engine would leave it playing a different match. */
@@ -449,10 +538,17 @@ async function main(): Promise<void> {
     window.ZARIA_HQ?.on('tick', (tick) => early.push({ type: 'tick', tick })),
     window.ZARIA_HQ?.on('end', (end) => early.push({ type: 'end', end })),
   ]
-  const [host] = await Promise.all([opening, library.ready])
-  show = new Show(host, library)
-  show.start(early)
-  for (const off of keep) off?.()
+  try {
+    const [host] = await Promise.all([opening, library.ready])
+    show = new Show(host, library)
+    show.start(early)
+  } catch (error) {
+    /* the show did not start: leave nothing running behind the note on the page */
+    release()
+    throw error
+  } finally {
+    for (const off of keep) off?.()
+  }
 }
 
 main().catch((error: unknown) => {

@@ -14,6 +14,16 @@ export function newChanges<T>(): Changes<T> {
   return { t: [], v: [] }
 }
 
+/** The change list of a key, created on first use. */
+export function changesOf<T>(map: Map<string, Changes<T>>, key: string): Changes<T> {
+  let c = map.get(key)
+  if (!c) {
+    c = newChanges<T>()
+    map.set(key, c)
+  }
+  return c
+}
+
 /** Records that the value is `v` from tick `t` on; a repeat of the current value is not a change. */
 export function pushChange<T>(c: Changes<T>, t: number, v: T): void {
   const last = c.t.length - 1

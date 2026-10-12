@@ -38,23 +38,31 @@ export class Anchors {
 /**
  * Binds a control: a field answers to typing, a change and Enter (the driver
  * does all three, a person does any), a button to a click with its own
- * `data-zaria-value`.
+ * `data-zaria-value`. The listeners live until `signal` is aborted.
  */
-export function bindControl(root: ParentNode, name: string, act: (value: string) => void): void {
+export function bindControl(root: ParentNode, name: string, act: (value: string) => void, signal: AbortSignal): void {
   for (const el of root.querySelectorAll<HTMLElement>(`[data-zaria="${name}"]`)) {
     if (isField(el)) {
       const run = (): void => {
         act(el.value)
       }
-      el.addEventListener('input', run)
-      el.addEventListener('change', run)
-      el.addEventListener('keydown', (event) => {
-        if ((event as KeyboardEvent).key === 'Enter') run()
-      })
+      el.addEventListener('input', run, { signal })
+      el.addEventListener('change', run, { signal })
+      el.addEventListener(
+        'keydown',
+        (event) => {
+          if ((event as KeyboardEvent).key === 'Enter') run()
+        },
+        { signal },
+      )
     } else if (el instanceof HTMLButtonElement) {
-      el.addEventListener('click', () => {
-        act(el.dataset.zariaValue ?? '')
-      })
+      el.addEventListener(
+        'click',
+        () => {
+          act(el.dataset.zariaValue ?? '')
+        },
+        { signal },
+      )
     }
   }
 }

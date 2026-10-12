@@ -10,6 +10,11 @@ export function slotIndex(slot: string): number {
   return slot === 'A' ? 0 : slot === 'B' ? 1 : slot === 'C' ? 2 : -1
 }
 
+/** A cell as one number, for the place of a unit: q and r lie well inside -128..127. */
+export const packCell = (q: number, r: number): number => (q + 128) * 256 + (r + 128)
+export const cellQ = (packed: number): number => (packed >> 8) - 128
+export const cellR = (packed: number): number => (packed & 255) - 128
+
 export interface NeedleSite {
   q: number
   r: number

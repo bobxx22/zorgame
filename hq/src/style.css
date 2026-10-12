@@ -42,18 +42,20 @@ button,input,select{font:inherit;color:inherit}
 /* ===== deck ===== */
 .deck{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 620px;gap:var(--s4);padding:var(--s4);overflow:auto}
 .field{min-width:0;display:flex;flex-direction:column;gap:var(--s2);contain:layout style}
-.map{position:relative;align-self:center;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);contain:strict}
-.map canvas{position:absolute;left:0;top:0}
-.map #mapTop{cursor:crosshair}
+/* No paint containment on the boxes with a radius: it clips their contents to the rounded box, and the
+   contents are canvases and text that change on every tick. Without a graphics card the compositor paid
+   for that clip on every frame. Layout and size containment stay: a new number never moves the page. */
+.map{position:relative;align-self:center;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);contain:layout size style}
+.map canvas{position:absolute;left:0;top:0;cursor:crosshair}
 .legend{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);min-height:20px;color:var(--t2);font-size:12px;contain:layout style}
 .legend i{display:inline-block;width:10px;height:10px;margin-right:6px;border-radius:50%;vertical-align:-1px}
-.strip{position:relative;height:72px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);cursor:pointer;contain:strict}
+.strip{position:relative;height:72px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);cursor:pointer;contain:layout size style}
 .strip canvas{position:absolute;left:0;top:0}
 .cursor{position:absolute;left:0;top:0;width:1px;height:100%;background:var(--hi);will-change:transform;pointer-events:none}
 .hint{margin:0;color:var(--t3);font-size:12px}
 
 .panes{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);align-content:start}
-.pane{padding:var(--s3) var(--s4) var(--s4);background:var(--win2);border:1px solid var(--line);border-radius:var(--r);contain:layout style paint}
+.pane{padding:var(--s3) var(--s4) var(--s4);background:var(--win2);border:1px solid var(--line);border-radius:var(--r);contain:layout style}
 .pane h2{margin:0 0 var(--s2);font:600 12px/1.4 var(--fb);letter-spacing:.08em;text-transform:uppercase;color:var(--amber)}
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3);margin:var(--s2) 0}
 .grid{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:2px var(--s3);margin:0}

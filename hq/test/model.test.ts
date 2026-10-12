@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { BeliefIndex, readDiary } from '../src/model/belief.ts'
-import { newChanges, pushChange, valueAt } from '../src/model/changes.ts'
+import { changesOf, newChanges, pushChange, valueAt } from '../src/model/changes.ts'
 import { MatchIndex } from '../src/model/match.ts'
 import { compare, comparedPair, readEntry, slotOf, type PackEntry } from '../src/model/pack.ts'
 import type { MatchMeta, TruthChunk } from '../src/model/wire.ts'
@@ -25,6 +25,16 @@ test('a second change in the same tick replaces the first', () => {
   pushChange(c, 4, 1)
   pushChange(c, 4, 2)
   assert.deepEqual([c.t, c.v], [[4], [2]])
+})
+
+test('the change list of a key is made once and found again', () => {
+  const map = new Map<string, ReturnType<typeof newChanges<string>>>()
+  const first = changesOf(map, '1,1')
+  pushChange(first, 2, 'a')
+  assert.equal(changesOf(map, '1,1'), first)
+  assert.equal(valueAt(changesOf(map, '1,1'), 2), 'a')
+  assert.equal(changesOf(map, '2,2').t.length, 0)
+  assert.equal(map.size, 2)
 })
 
 test('the belief is the last full frame plus the changes after it', () => {
@@ -80,6 +90,32 @@ test('a diary line that is not a frame is counted, a line from the past is not p
   const b = readDiary('{"t":3,"own":{"1,1":"A"}}\nnot json\n{"no":"tick"}\n{"t":2,"own":{"1,1":"B"}}\n')
   assert.equal(b.skipped, 3)
   assert.equal(b.ownerAt('1,1', 3), 'A')
+})
+
+test('a line of the diary comes as text or already parsed; the first reason of an unread one is kept', () => {
+  const b = new BeliefIndex()
+  b.pushLine('{"t":1,"own":{"1,1":"A"}}')
+  b.pushLine({ t: 2, own: { '1,1': 'B' } })
+  assert.equal(b.ownerAt('1,1', 1), 'A')
+  assert.equal(b.ownerAt('1,1', 2), 'B')
+  assert.equal(b.skipped, 0)
+  b.pushLine({ own: {} })
+  b.pushLine('{"t":')
+  assert.equal(b.skipped, 2)
+  assert.equal(b.skippedWhy, 'a line without a tick')
+})
+
+test('two contacts with a unit in one tick: the later one is the memory', () => {
+  const b = new BeliefIndex()
+  b.push({
+    t: 5,
+    foe: [
+      ['K-1', 'K', 1, 1],
+      ['K-1', 'K', 2, 2],
+    ],
+  })
+  assert.deepEqual(b.contact('K-1', 5), { t: 5, slot: 'K', q: 2, r: 2 })
+  assert.deepEqual(b.unitsSeen(4), [])
 })
 
 test('the change stamp of the belief moves only on a frame that changed something', () => {

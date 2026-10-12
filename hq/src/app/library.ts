@@ -7,12 +7,12 @@
    and are reused for every match after that: starting one later would be a
    request from the show, and the show makes none (HQ contract, 1.2).
 
-   A match is computed when the show first stands on it, not when its file
-   arrives: three engines running side by side would take the processor from
-   the page exactly while it is being looked at. The rest is computed in the
-   pauses, one match at a time (`fillIdle`). */
+   The pack the show opens with is computed at once, all three matches side by
+   side, inside the opening budget: after `ready` every answer about it is a
+   lookup, whatever the machine. A pack opened later is computed match by
+   match, when the show first stands on one, and in the pauses (`fillIdle`). */
 
-import { BeliefIndex, readDiary, readFrame } from '../model/belief.ts'
+import { BeliefIndex, readDiary } from '../model/belief.ts'
 import { MatchIndex } from '../model/match.ts'
 import type { PackEntry } from '../model/pack.ts'
 import type { FromWorker, ToWorker } from '../model/wire.ts'
@@ -27,6 +27,9 @@ export interface MatchData {
 export interface FileSource {
   file(id: string, name: string): Promise<ArrayBuffer | string>
 }
+
+/** Told about every change of a match: a file read, a chunk of the truth, the end, a failure. */
+export type OnChange = (match: MatchData) => void
 
 /* matches of one pack are computed side by side */
 const POOL = 3
@@ -49,7 +52,7 @@ class MatchFeed implements MatchData {
   open = true
   /** hands the journal to a worker; null before the file has arrived and after the hand-over */
   begin: (() => void) | null = null
-  /** the show already stands on this match: begin as soon as the file arrives */
+  /** the show needs this match: begin as soon as the file arrives */
   wanted = false
 
   take(message: JobAnswer): void {
@@ -71,6 +74,8 @@ class MatchFeed implements MatchData {
 
 interface Seat {
   worker: Worker
+  /** the worker has said it is up: only such a seat is given matches */
+  loaded: boolean
   /** jobs this worker has been given and has not finished */
   load: number
 }
@@ -81,60 +86,65 @@ class Pool {
   readonly ready: Promise<void>
   readonly #seats: Seat[] = []
   readonly #jobs = new Map<number, { feed: MatchFeed; seat: Seat }>()
-  readonly #onChange: () => void
+  readonly #onChange: OnChange
+  /* ends the wait for the workers: they are all up, or the pool is closed */
+  #settle: () => void = () => undefined
+  /** why a worker could not be started, when the sandbox refused one */
+  #refused = ''
   #seq = 0
 
-  constructor(spawn: () => Worker, onChange: () => void) {
+  constructor(spawn: () => Worker, onChange: OnChange) {
     this.#onChange = onChange
     let waiting = 0
-    let settle: () => void = () => undefined
-    const up = (): void => {
+    const up = (seat: Seat): void => {
+      if (seat.loaded) return
+      seat.loaded = true
       waiting -= 1
-      if (waiting <= 0) settle()
+      if (waiting <= 0) this.#settle()
     }
     for (let i = 0; i < POOL; i++) {
       let worker: Worker
       try {
         worker = spawn()
-      } catch {
-        /* the sandbox forbids workers: the matches will say so on the page (NO_WORKERS) */
+      } catch (error) {
+        /* the sandbox forbids workers: the matches say so on the page, with this reason */
+        this.#refused = why(error)
         break
       }
-      const seat: Seat = { worker, load: 0 }
-      let loaded = false
+      const seat: Seat = { worker, loaded: false, load: 0 }
       waiting += 1
       worker.onmessage = (event: MessageEvent<FromWorker>) => {
         const message = event.data
-        if (message.type === 'up') {
-          if (!loaded) up()
-          loaded = true
-          return
-        }
-        this.#take(message)
+        if (message.type === 'up') up(seat)
+        else this.#take(message)
       }
       worker.onerror = (event) => {
         event.preventDefault()
-        if (!loaded) up()
-        loaded = true
+        const loaded = seat.loaded
         this.#drop(seat, event.message || 'a worker of the show stopped')
+        /* a worker that died before it loaded is not waited for */
+        if (!loaded) {
+          waiting -= 1
+          if (waiting <= 0) this.#settle()
+        }
       }
       this.#seats.push(seat)
     }
     this.ready = new Promise((resolve) => {
       const timer = setTimeout(resolve, UP_WAIT_MS)
-      settle = () => {
+      this.#settle = () => {
         clearTimeout(timer)
         resolve()
       }
-      if (waiting <= 0) settle()
+      if (waiting <= 0) this.#settle()
     })
   }
 
-  /** Gives the match to the least loaded worker; returns how to talk to it, or null when there is none. */
+  /** Gives the match to the least loaded worker that is up; returns how to talk to it, or null when there is none. */
   assign(feed: MatchFeed): Send | null {
-    const seat = this.#seats.reduce<Seat | null>((best, s) => (best === null || s.load < best.load ? s : best), null)
+    const seat = this.#seats.reduce<Seat | null>((best, s) => (s.loaded && (best === null || s.load < best.load) ? s : best), null)
     if (!seat) {
-      feed.fail(NO_WORKERS)
+      feed.fail(this.#refused === '' ? NO_WORKERS : `${NO_WORKERS}: ${this.#refused}`)
       return null
     }
     const job = ++this.#seq
@@ -151,6 +161,7 @@ class Pool {
   }
 
   close(): void {
+    this.#settle()
     for (const seat of this.#seats) seat.worker.terminate()
     this.#seats.length = 0
     this.#jobs.clear()
@@ -164,7 +175,7 @@ class Pool {
       held.seat.load -= 1
       this.#jobs.delete(message.job)
     }
-    this.#onChange()
+    this.#onChange(held.feed)
   }
 
   /* a worker died: its matches cannot be finished, and it takes no more */
@@ -174,23 +185,25 @@ class Pool {
     if (at >= 0) this.#seats.splice(at, 1)
     for (const [job, held] of this.#jobs) {
       if (held.seat !== seat) continue
-      held.feed.fail(problem)
       this.#jobs.delete(job)
+      held.feed.fail(problem)
+      this.#onChange(held.feed)
     }
-    this.#onChange()
   }
 }
 
 export class Library {
   readonly #pool: Pool
-  readonly #onChange: () => void
+  readonly #onChange: OnChange
   readonly #packs = new Map<string, MatchFeed[]>()
   #live: MatchFeed | null = null
   #liveSend: Send | null = null
   /** the last tick of the broadcast that was forwarded to the engine */
   #liveAt = 0
+  /** the page is going away: nothing is started or reported any more */
+  #closed = false
 
-  constructor(spawn: () => Worker, onChange: () => void) {
+  constructor(spawn: () => Worker, onChange: OnChange) {
     this.#onChange = onChange
     this.#pool = new Pool(spawn, onChange)
   }
@@ -207,6 +220,12 @@ export class Library {
 
   get live(): MatchData | null {
     return this.#live
+  }
+
+  /** Whether every match of the pack has been computed to its end or has failed. */
+  settled(packId: string | null): boolean {
+    const feeds = packId === null ? undefined : this.#packs.get(packId)
+    return feeds !== undefined && feeds.every((feed) => !feed.open)
   }
 
   /** The show stands on this match: its truth is computed now. */
@@ -236,15 +255,25 @@ export class Library {
     begin?.()
   }
 
-  /** Starts reading the three matches of a pack; a pack already opened is left as it is. */
-  openPack(entry: PackEntry, source: FileSource): void {
+  /**
+   * Starts reading the three matches of a pack; a pack already opened is left as it is.
+   * `eager` - compute all three at once, without waiting for the show to stand on them.
+   */
+  openPack(entry: PackEntry, source: FileSource, eager = false): void {
     if (this.#packs.has(entry.id)) return
     const feeds = entry.pack.matches.map((match, i) => {
       const feed = new MatchFeed()
-      this.#readMatch(feed, entry, match.file, i, source).then(this.#onChange, (error: unknown) => {
-        feed.fail(why(error))
-        this.#onChange()
-      })
+      feed.wanted = eager
+      this.#readMatch(feed, entry, match.file, i, source).then(
+        () => {
+          if (!this.#closed) this.#onChange(feed)
+        },
+        (error: unknown) => {
+          if (this.#closed) return
+          feed.fail(why(error))
+          this.#onChange(feed)
+        },
+      )
       return feed
     })
     this.#packs.set(entry.id, feeds)
@@ -266,36 +295,26 @@ export class Library {
     /* the engine replays the frames tick by tick: a tick that did not arrive leaves it in another world */
     if (t !== this.#liveAt + 1 && feed.problem === null) feed.problem = `the broadcast skipped from tick ${this.#liveAt} to tick ${t}`
     this.#liveAt = t
-    if (belief !== null && belief !== undefined && feed.belief) {
-      const frame = readFrame(typeof belief === 'string' ? parseLine(belief) : belief)
-      if (frame) feed.belief.push(frame)
-      else feed.belief.skipped += 1
-    }
+    if (belief !== null && belief !== undefined) feed.belief?.pushLine(belief)
     this.#liveSend?.({ type: 'tick', t, submits, denies })
   }
 
   /** Stops every worker: the page is going away. */
   close(): void {
+    this.#closed = true
     this.#pool.close()
   }
 
   async #readMatch(feed: MatchFeed, entry: PackEntry, file: string, i: number, source: FileSource): Promise<void> {
     const diary = entry.pack.belief?.files[i]
     const [runlog, text] = await Promise.all([source.file(entry.id, file), diary ? source.file(entry.id, diary) : null])
+    /* the page went away while the files were on their way: there is nobody to compute for */
+    if (this.#closed) return
     if (typeof runlog === 'string') throw new Error(`${file} arrived as text, a journal is bytes`)
     if (typeof text === 'string') feed.belief = readDiary(text)
     feed.begin = () => {
       this.#pool.assign(feed)?.({ type: 'open', runlog }, [runlog])
     }
     if (feed.wanted) this.#begin(feed)
-  }
-}
-
-/* a diary line that is not JSON is not a frame: liveTick counts it as unread */
-function parseLine(line: string): unknown {
-  try {
-    return JSON.parse(line)
-  } catch {
-    return undefined
   }
 }

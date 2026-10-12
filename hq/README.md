@@ -52,10 +52,18 @@ is a binary search, and no frame ever waits for the engine.
 | `dev-host.mjs` | a show host for the desk; not part of the built show |
 | `Dockerfile`, `serve.mjs` | the `hq` service of the submission stack |
 
-Three workers are started when the page loads, before the show tells the host
-it is ready, and are reused: starting one later would be a request from the
-show. A match is computed when the show first stands on it; the others are
-computed in the pauses.
+Three workers are started when the page loads and are reused: starting one
+later would be a request from the show. The pack the show opens with is
+computed whole, three matches side by side, before the show tells the host it
+is ready (and no later than 8 s after the page started: the opening budget is
+15 s). After `ready` every answer about that pack is a lookup, on any machine,
+and no engine runs while frames are measured. A pack opened later is computed
+match by match, when the show first stands on one, and in the pauses.
+
+The page repaints only for what shows: a chunk of the truth for a match that is
+not on screen costs no frame. The valley is one opaque canvas, and the boxes
+with rounded corners have no paint containment: without a graphics card the
+compositor pays for every blended layer and every rounded clip on every frame.
 
 On the broadcast the same pass runs over a journal that grows with every tick.
 The show stands on the last tick whose truth has arrived, so the tick and the

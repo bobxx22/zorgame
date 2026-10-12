@@ -4,6 +4,8 @@
    in a match, and the comparison of two packs of one seed played by different
    presets (Ш4). */
 
+import { isRecord } from './guards.ts'
+
 export const SCORE_ITEMS = ['network', 'orders', 'stolen', 'pactTax'] as const
 export type ScoreItem = (typeof SCORE_ITEMS)[number]
 
@@ -33,10 +35,6 @@ export interface PackEntry {
   title: string
   preset: string
   pack: PackSummary
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
