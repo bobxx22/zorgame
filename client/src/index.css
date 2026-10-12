@@ -557,3 +557,6 @@ input:disabled{opacity:.55}
   .inline-form{flex-direction:column}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* the raw answer of a route the public contract does not describe yet */
+.raw{margin:var(--s2) 0 0;padding:var(--s3);max-height:420px;overflow:auto;background:var(--win2);border:1px solid var(--line);border-radius:var(--r);font:400 12px/1.5 var(--fm);color:var(--t2);white-space:pre}

@@ -90,14 +90,22 @@ export function parseStack(v: unknown): Stack | null {
 
 /* ===== games ===== */
 
+/**
+ * One game of GET /me/games as the network answers (seen 11.10.2026): `round` and `roundTitle`,
+ * `group` and `lane` counted from 0, `startsAt` (null until the network names the hour),
+ * `state` (`scheduled`, `played`), `opponents` as {username, displayName}, and for a played
+ * pack `result` with our `share` and the pack's `shares` in the order of the trio.
+ */
 export interface GameRow {
   id: string
-  /** when the pack was played or scheduled */
+  /** the start of the pack's slot; null while the network has not named it */
   at: string | null
-  /** round, group, lane - whatever the answer names */
+  /** the round in words, the group and the lane counted from 1 - as letters and the schedule count them */
   title: string
+  /** the server's word: scheduled, played, ... */
+  state: string
   opponents: string[]
-  /** the pack's result in words: our share and the pack's shares, or a place */
+  /** the pack's result in words: our share and the pack's shares, or a place; empty before the result */
   result: string
   raw: Record<string, unknown>
 }
@@ -108,7 +116,17 @@ const first = (v: Record<string, unknown>, keys: readonly string[]): unknown => 
 }
 
 const nameOf = (v: unknown): string =>
-  typeof v === 'string' ? v : isRecord(v) ? text(first(v, ['nick', 'login', 'name', 'displayName', 'id'])) : ''
+  typeof v === 'string' ? v : isRecord(v) ? text(first(v, ['displayName', 'nick', 'name', 'username', 'login', 'id'])) : ''
+
+/* a rival as people know them: the display name, and the login next to it when it differs */
+function rivalOf(v: unknown): string {
+  const name = nameOf(v)
+  const login = isRecord(v) ? text(first(v, ['username', 'login', 'member'])) : ''
+  return login !== '' && name !== '' && login !== name ? `${name} (${login})` : name
+}
+
+/* the answer counts groups and lanes from 0, people count them from 1 */
+const ordinal = (v: unknown): string => (typeof v === 'number' ? String(v + 1) : text(v))
 
 function resultOf(v: Record<string, unknown>): string {
   const r = first(v, ['result', 'pack', 'outcome'])
@@ -124,28 +142,33 @@ function resultOf(v: Record<string, unknown>): string {
   return parts.join(', ')
 }
 
-const TITLE_PARTS = ['коло ', 'група ', 'доріжка '] as const
-
 function parseGame(v: unknown): GameRow | null {
   if (!isRecord(v)) return null
   const id = text(first(v, ['id', 'gameId', 'packId']))
   if (!id) return null
-  const title = [first(v, ['round', 'roundTitle', 'circle']), first(v, ['group']), first(v, ['lane'])]
-    .map((x, i) => (x === undefined ? '' : `${TITLE_PARTS[i] ?? ''}${text(x)}`))
+  const round = first(v, ['round', 'circle'])
+  const group = first(v, ['group'])
+  const lane = first(v, ['lane'])
+  const title = [
+    text(first(v, ['roundTitle'])) || (round === undefined ? '' : `коло ${text(round)}`),
+    group === undefined ? '' : `група ${ordinal(group)}`,
+    lane === undefined ? '' : `доріжка ${ordinal(lane)}`,
+  ]
     .filter(Boolean)
     .join(', ')
   return {
     id,
-    at: textOrNull(first(v, ['at', 'startedAt', 'startAt', 'playedAt', 'time', 'closedAt'])),
+    at: textOrNull(first(v, ['startsAt', 'at', 'startedAt', 'startAt', 'playedAt', 'time'])),
     title: title || text(first(v, ['title', 'name'])),
-    opponents: list(first(v, ['opponents', 'rivals', 'vs'])).map(nameOf).filter(Boolean),
+    state: text(first(v, ['state', 'status'])),
+    opponents: list(first(v, ['opponents', 'rivals', 'vs'])).map(rivalOf).filter(Boolean),
     result: resultOf(v),
     raw: v,
   }
 }
 
-/** A list as an array, {items} (the network's paging) or {games}. */
-export function parseGames(v: unknown): { items: GameRow[]; skipped: number } | null {
+/** A list as an array, {items} (the network's paging) or {games}; `raw` is the answer as it came. */
+export function parseGames(v: unknown): { items: GameRow[]; skipped: number; raw: unknown } | null {
   const raw = Array.isArray(v) ? v : isRecord(v) ? (Array.isArray(v.items) ? v.items : Array.isArray(v.games) ? v.games : null) : null
   if (!raw) return null
   const items: GameRow[] = []
@@ -155,7 +178,7 @@ export function parseGames(v: unknown): { items: GameRow[]; skipped: number } | 
     if (parsed) items.push(parsed)
     else skipped += 1
   }
-  return { items, skipped }
+  return { items, skipped, raw: v }
 }
 
 /* ===== one pack ===== */
@@ -178,12 +201,15 @@ export interface PackMatch {
 /**
  * pack.json of the pack (part3/03-record.md 6.2), indexed by participant in roster order:
  * rotations[match][participant] is the slot, shareParts[participant][match] the share it took,
- * absent[participant][match] - the seat that never took the oath.
+ * absent[participant][match] - the seat that never took the oath, wire[participant][match] -
+ * the node's counters of that seat's wire (`missed` - ticks answered after the deadline or not
+ * at all, `garbage`, `phantom`, `badResume` - the anomalies of scoring 8.3).
  */
 export interface PackSummary {
   shares: number[]
   shareParts: number[][]
   absent: boolean[][]
+  wire: Record<string, number>[][]
   roster: string[]
   rotations: string[][]
   matches: PackMatch[]
@@ -193,8 +219,17 @@ export interface PackSummary {
 
 export interface PackView {
   pack: PackSummary | null
+  /** the summary as the server gave it: saved next to the records it is their pack.json */
+  summary: Record<string, unknown> | null
   records: RecordFile[]
   raw: Record<string, unknown>
+}
+
+/* the counters of one seat in one match that are not zero */
+function counters(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (isRecord(v)) for (const [name, n] of Object.entries(v)) if (typeof n === 'number' && n !== 0) out[name] = n
+  return out
 }
 
 function parseSummary(v: unknown): PackSummary | null {
@@ -203,6 +238,7 @@ function parseSummary(v: unknown): PackSummary | null {
     shares: v.shares.map((s) => (typeof s === 'number' ? s : 0)),
     shareParts: list(v.shareParts).map((r) => list(r).map((s) => (typeof s === 'number' ? s : 0))),
     absent: list(v.absent).map((r) => list(r).map((a) => a === true)),
+    wire: list(v.wire).map((r) => list(r).map(counters)),
     roster: list(v.roster).map(nameOf),
     rotations: list(v.rotations).map((r) => list(r).map(text)),
     matches: list(v.matches).flatMap((m) =>
@@ -217,7 +253,9 @@ function parseSummary(v: unknown): PackSummary | null {
 
 export function parsePackView(v: unknown): PackView | null {
   if (!isRecord(v)) return null
-  const pack = parseSummary(first(v, ['pack', 'summary'])) ?? parseSummary(v)
+  /* the network puts the summary under `summary` (and the pack's name under `pack`); a local pack.json is the summary itself */
+  const source = [v.summary, v.pack, v].find((x) => isRecord(x) && Array.isArray(x.shares))
+  const pack = parseSummary(source)
   const records = list(first(v, ['records', 'files'])).flatMap((r) =>
     isRecord(r) && typeof r.file === 'string'
       ? [
@@ -232,7 +270,7 @@ export function parsePackView(v: unknown): PackView | null {
         ]
       : [],
   )
-  return { pack, records, raw: v }
+  return { pack, summary: isRecord(source) ? source : null, records, raw: v }
 }
 
 /** The names of the eleven stages of the run in the interface's language (part4/03-preflight.md 2) */

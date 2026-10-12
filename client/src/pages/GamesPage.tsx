@@ -11,6 +11,72 @@ import { CabinetDoc } from './CabinetDoc'
 
 const GAMES = [{ to: '/', label: 'Ефір' }, { to: '/games', label: 'Ігри' }] as const
 
+/**
+ * The answer as the server gave it. These routes are not in the public contract yet, so a
+ * field the client does not know is still one click away instead of being lost.
+ */
+function RawAnswer({ value }: { value: unknown }) {
+  const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no')
+  const json = JSON.stringify(value, null, 2)
+  const copy = () => {
+    try {
+      navigator.clipboard.writeText(json).then(
+        () => {
+          setCopied('yes')
+        },
+        () => {
+          setCopied('failed')
+        },
+      )
+    } catch {
+      /* no clipboard outside a secure page: the text below can still be selected by hand */
+      setCopied('failed')
+    }
+  }
+  return (
+    <details>
+      <summary>Сира відповідь сервера</summary>
+      <p>
+        <button type="button" className="btn sm" onClick={copy}>
+          {copied === 'yes' ? 'скопійовано' : 'скопіювати'}
+        </button>
+        {copied === 'failed' && <span className="note-inline"> не вдалося скопіювати - виділіть текст нижче</span>}
+      </p>
+      <pre className="raw">{json}</pre>
+    </details>
+  )
+}
+
+/* the node's wire counters of a seat in the words of the interface (scoring 8.3 and 8.5) */
+const WIRE: Readonly<Record<string, string>> = {
+  missed: 'тактів без відповіді',
+  unsent: 'кадрів не надіслав вузол',
+  garbage: 'кадрів не за схемою',
+  phantom: 'відповідей на чужий такт',
+  badResume: 'кривих печаток повернення',
+  dupsSent: 'дублів кадрів',
+  lateResume: 'пізніх повернень',
+}
+
+/** Saves a text as a file of the browser. */
+function saveText(name: string, text: string): void {
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+  link.download = name
+  link.click()
+  setTimeout(() => {
+    URL.revokeObjectURL(link.href)
+  }, 10_000)
+}
+
+/* the state of a game in the words of the interface; an unknown one is shown as the server names it */
+const GAME_STATE: Readonly<Record<string, string>> = {
+  scheduled: 'заплановано',
+  running: 'іде',
+  played: 'зіграно',
+  cancelled: 'знято',
+}
+
 const hex = (buf: ArrayBuffer): string => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
 
 /**
@@ -55,6 +121,7 @@ function GameList() {
   const store = useCabinetStore()
   const [games, setGames] = useState<GameRow[] | null>(null)
   const [skipped, setSkipped] = useState(0)
+  const [raw, setRaw] = useState<unknown>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [reading, setReading] = useState(true)
   const [round, setRound] = useState(0)
@@ -68,6 +135,7 @@ function GameList() {
       if (result.ok) {
         setGames(result.data.items)
         setSkipped(result.data.skipped)
+        setRaw(result.data.raw)
         setProblem(null)
       } else setProblem(describeFailure(result))
     })
@@ -99,6 +167,7 @@ function GameList() {
           {skipped > 0 && <p className="callout warn">Частину ігор ({skipped}) клієнт не зміг прочитати і не показує.</p>}
           {!games && !problem && <p className="note">Читаємо ігри…</p>}
           {games?.length === 0 && <p className="note">Ігор поки немає.</p>}
+          {games && <RawAnswer value={raw} />}
           {games && games.length > 0 && (
             <div className="tbl">
               <table>
@@ -114,11 +183,11 @@ function GameList() {
                   {games.map((g) => (
                     <tr key={g.id}>
                       <td data-label="Коли" className="num">
-                        <Link to={`/games/${encodeURIComponent(g.id)}`}>{formatLocal(g.at)}</Link>
+                        <Link to={`/games/${encodeURIComponent(g.id)}`}>{g.at ? formatLocal(g.at) : 'час оголосять'}</Link>
                       </td>
                       <td data-label="Що">{g.title || g.id}</td>
                       <td data-label="Суперники">{g.opponents.join(', ') || '—'}</td>
-                      <td data-label="Результат">{g.result || '—'}</td>
+                      <td data-label="Результат">{g.result || GAME_STATE[g.state] || g.state || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -205,6 +274,11 @@ function GamePack({ id }: { id: string }) {
                               {score === undefined ? '' : ` · ${score.toFixed(1)}`}
                               {part === undefined ? '' : ` · частка ${String(part)}`}
                               {pack.absent[p]?.[m] && <div className="note-inline">без присяги</div>}
+                              {Object.entries(pack.wire[p]?.[m] ?? {}).map(([name, n]) => (
+                                <div key={name} className="note-inline">
+                                  {WIRE[name] ?? name}: {n}
+                                </div>
+                              ))}
                             </td>
                           )
                         })}
@@ -214,7 +288,7 @@ function GamePack({ id }: { id: string }) {
                 </table>
               </div>
               <p className="note">
-                У клітинці партії: слот · очки · частка за партію.
+                У клітинці партії: слот · очки · частка за партію, нижче - лічильники проводу, якщо вузол щось записав.
                 {pack.seed !== null && ` Долина ${String(pack.seed)}.`}
                 {pack.ticks !== null && ` ${String(pack.ticks)} тактів.`}
               </p>
@@ -263,9 +337,19 @@ function GamePack({ id }: { id: string }) {
                       Завантажити все ({view.records.length})
                     </button>
                   </p>
-                  <p className="note">Перевіряємо sha256 кожного файлу. Покладіть їх в одну теку - її відкриє штаб.</p>
+                  {view.summary && (
+                    <p>
+                      <button type="button" className="btn sm" onClick={() => {
+                        saveText('pack.json', JSON.stringify(view.summary, null, 2))
+                      }}>
+                        Зберегти pack.json
+                      </button>
+                    </p>
+                  )}
+                  <p className="note">Перевіряємо sha256 кожного файлу. Покладіть журнали й pack.json в одну теку - її відкриє штаб.</p>
                 </>
               )}
+              <RawAnswer value={view.raw} />
             </>
           )}
         </>

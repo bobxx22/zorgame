@@ -43,6 +43,72 @@ describe('parseGames', () => {
     expect(parseGames({ nothing: [] })).toBeNull()
   })
 
+  it('reads the answer of the network: a played pack and one whose hour is not named yet', () => {
+    const answer = {
+      items: [
+        {
+          id: 'c2076e48',
+          round: 'training',
+          roundTitle: 'Тренування',
+          lane: 3,
+          seq: 3,
+          group: 0,
+          startsAt: '2026-10-07T05:03:00.000Z',
+          endsAt: '2026-10-07T05:43:00.000Z',
+          state: 'played',
+          seat: 0,
+          triple: ['own', 'zoria-obkhidnyk', 'zoria-rivnyi'],
+          opponents: [
+            { member: 'zoria-obkhidnyk', username: 'zoria-obkhidnyk', displayName: 'Обхідник' },
+            { member: 'zoria-rivnyi', username: 'zoria-rivnyi', displayName: 'Рівний' },
+          ],
+          result: { shares: [9, 5, 4], share: 9, absent: [0, 0, 0], seed: 1281353795, ticks: 1200, pack: 'g0-p3-1281353795', records: 3 },
+          decision: null,
+        },
+        {
+          id: '10a2bc3d',
+          round: 'group',
+          roundTitle: 'Груповий етап',
+          lane: 0,
+          seq: 3,
+          group: 0,
+          startMin: 120,
+          startsAt: null,
+          endsAt: null,
+          state: 'scheduled',
+          seat: 2,
+          triple: ['kvitka', 'viter', 'own'],
+          opponents: [
+            { member: 'kvitka', username: 'kvitka', displayName: 'kvitka' },
+            { member: 'viter', username: 'viter', displayName: 'Ранковий вітер' },
+          ],
+          result: null,
+          decision: null,
+        },
+      ],
+      serverTime: '2026-10-11T23:36:07.927Z',
+    }
+    const parsed = parseGames(answer)
+    expect(parsed?.raw).toBe(answer)
+    expect(parsed?.skipped).toBe(0)
+    /* groups and lanes are counted from 0 in the answer and from 1 in letters and in the schedule */
+    expect(parsed?.items[0]).toMatchObject({
+      id: 'c2076e48',
+      at: '2026-10-07T05:03:00.000Z',
+      title: 'Тренування, група 1, доріжка 4',
+      state: 'played',
+      opponents: ['Обхідник (zoria-obkhidnyk)', 'Рівний (zoria-rivnyi)'],
+      result: 'частка 9, частки 9 / 5 / 4',
+    })
+    expect(parsed?.items[1]).toMatchObject({
+      at: null,
+      title: 'Груповий етап, група 1, доріжка 1',
+      state: 'scheduled',
+      opponents: ['kvitka', 'Ранковий вітер (viter)'],
+      result: '',
+    })
+  })
+
   it('names the game, the rivals and the result from differently named fields', () => {
     const [row] = parseGames([{ gameId: 7, startedAt: '2026-10-11T21:40:00Z', round: 1, group: 'В', rivals: [{ nick: 'kvitka' }, { login: 'вітер' }], result: { share: 9, shares: [9, 5, 4] } }])?.items ?? []
     expect(row).toMatchObject({ id: '7', at: '2026-10-11T21:40:00Z', title: 'коло 1, група В', opponents: ['kvitka', 'вітер'], result: 'частка 9, частки 9 / 5 / 4' })
@@ -91,6 +157,21 @@ describe('parsePackView', () => {
       ['belief-1.ndjson', true],
     ])
     expect(view?.records[1]?.receivedAt).toBeNull()
+  })
+
+  it('reads the answer of the network: the summary under `summary`, the name of the pack under `pack`', () => {
+    const wire = [
+      [{ missed: 1, unsent: 0, garbage: 0 }, { missed: 0 }, { missed: 2 }],
+      [{ missed: 967, badResume: 1 }, {}, {}],
+      [{}, {}, {}],
+    ]
+    const view = parsePackView({ gameId: 'c6b81b74', round: 'group', group: 0, pack: 'g0-p0-1132745504', seat: 0, summary: { ...pack, wire }, records, decision: null })
+    expect(view?.pack?.shares).toEqual([9, 5, 4])
+    expect(view?.summary).toMatchObject({ seed: 7101, wire })
+    /* only what the node counted: a clean seat has no counters */
+    expect(view?.pack?.wire[0]).toEqual([{ missed: 1 }, {}, { missed: 2 }])
+    expect(view?.pack?.wire[1]?.[0]).toEqual({ missed: 967, badResume: 1 })
+    expect(view?.records).toHaveLength(2)
   })
 
   it('takes the summary at the top level, under summary, or not at all', () => {

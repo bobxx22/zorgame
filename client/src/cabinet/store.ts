@@ -302,7 +302,7 @@ export class CabinetStore {
     return this.#call({ path: '/me/stack', parse: parseStack, retry: READ, ...withSignal(this.#run?.signal) })
   }
 
-  readGames(): Promise<ApiResult<{ items: GameRow[]; skipped: number }>> {
+  readGames(): Promise<ApiResult<{ items: GameRow[]; skipped: number; raw: unknown }>> {
     return this.#call({ path: '/me/games', parse: parseGames, retry: READ, ...withSignal(this.#run?.signal) })
   }
 

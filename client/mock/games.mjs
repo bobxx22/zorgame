@@ -117,21 +117,71 @@ function packSummary(a) {
   }
 }
 
-export function gamesOf() {
+/* the shape of the network's answer as seen on 11.10.2026: groups and lanes from 0, the hour of a
+   scheduled pack may not be named yet */
+const rival = (username, displayName) => ({ member: username, username, displayName })
+
+export function gamesOf(a) {
+  const game = (id, round, roundTitle, seq, state, startsAt, opponents, result) => ({
+    id,
+    round,
+    roundTitle,
+    lane: round === 'training' ? 3 : 0,
+    seq,
+    group: 0,
+    startMin: seq * 40,
+    slotMinutes: 40,
+    startsAt,
+    endsAt: startsAt === null ? null : new Date(Date.parse(startsAt) + 40 * 60_000).toISOString(),
+    state,
+    attempt: 0,
+    seat: 0,
+    triple: [a.username, ...opponents.map((o) => o.username)],
+    opponents,
+    result,
+    decision: null,
+  })
   return {
     items: [
-      { id: SCHEDULED, at: '2026-10-11T21:40:00Z', round: 1, group: 'В', opponents: ['уранішній-вітер', 'kvitka'], result: null },
-      { id: PLAYED, at: '2026-10-07T08:03:00Z', title: 'тренувальний день', opponents: [{ nick: 'обхідник' }, { nick: 'рівний' }], result: { share: 9, shares: [9, 5, 4] } },
+      game(PLAYED, 'training', 'Тренування', 3, 'played', '2026-10-07T05:03:00.000Z', [rival('zoria-obkhidnyk', 'Обхідник'), rival('zoria-rivnyi', 'Рівний')], {
+        shares: [9, 5, 4],
+        share: 9,
+        absent: [0, 0, 0],
+        seed: 7101,
+        ticks: 1200,
+        publishedAt: '2026-10-07T05:33:52.920Z',
+        pack: 'g0-p3-7101',
+        records: 3,
+      }),
+      game(SCHEDULED, 'group', 'Груповий етап', 0, 'scheduled', '2026-10-11T21:00:00.000Z', [rival('viter', 'Ранковий вітер'), rival('kvitka', 'kvitka')], null),
+      game('group-1-r2', 'group', 'Груповий етап', 3, 'scheduled', null, [rival('pivnich', 'Північ'), rival('step', 'step')], null),
     ],
+    serverTime: new Date().toISOString(),
   }
 }
 
 export function packOf(a, id) {
-  if (id === SCHEDULED) return { pack: null, records: [] }
+  if (id === SCHEDULED || id === 'group-1-r2') return { pack: null, records: [] }
   if (id !== PLAYED) return null
+  /* the shape of the network's answer as seen on 11.10.2026: the summary under `summary`, the pack's name under `pack` */
+  const clean = { missed: 0, unsent: 0, garbage: 0, phantom: 0, badResume: 0, dupsSent: 0, lateResume: 0 }
   return {
-    pack: packSummary(a),
+    gameId: id,
+    round: 'training',
+    group: 0,
+    pack: 'g0-p3-7101',
+    seat: 0,
+    publishedAt: '2026-10-07T05:33:52.920Z',
+    summary: {
+      ...packSummary(a),
+      wire: [
+        [{ ...clean, missed: 1 }, clean, { ...clean, missed: 2 }],
+        [clean, { ...clean, missed: 909, badResume: 1 }, clean],
+        [clean, clean, clean],
+      ],
+    },
     records: FILES.map((f) => ({ file: f.file, bytes: f.bytes.length, sha256: f.sha256, receivedAt: '2026-10-07T08:31:12Z', kind: f.kind, mine: f.mine })),
+    decision: null,
   }
 }
 
