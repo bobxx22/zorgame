@@ -1,0 +1,37 @@
+{
+  "name": "zaria-hq",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zoria HQ: the show of a pack record and of a match in progress",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "host": "node dev-host.mjs",
+    "typecheck": "tsc -p .",
+    "lint": "eslint .",
+    "test": "node --test \"test/*.test.ts\"",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build && zaria-kit hq-check"
+  },
+  "zaria": {
+    "hq": "dist",
+    "lang": "uk"
+  },
+  "dependencies": {
+    "@zoria/engine": "^1.1.4",
+    "@zoria/protocol": "^1.1.4",
+    "@zoria/sdk": "^1.1.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.13.6",
+    "@zoria/kit": "^1.1.4",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "typescript": "~5.9",
+    "typescript-eslint": "^8.71.1"
+  }
+}

@@ -1,8 +1,8 @@
 # zorgame
 
-A client of the Зоря.нет network for the ZORIA contest. It listens to the ether and checks the station's seal, registers during the window with an application code, shows the repository access status, letters, news and the parts of the task. Later it will grow into a game HQ.
+A client of the Зоря.нет network for the ZORIA contest. It listens to the ether and checks the station's seal, registers during the window with an application code, shows the repository access status, letters, news and the parts of the task, the verdict of a submission and the records of its own games.
 
-The part 2 bot is in the `bot/` directory (see [Bot](#bot-part-2)), the lab for analysing its matches and comparing tactics is in `lab/` (`lab/README.md`).
+The part 2 bot is in the `bot/` directory (see [Bot](#bot-part-2)), the part 3 HQ - the show of a pack record and of a match in progress - is in `hq/` (see [HQ](#hq-part-3)), the lab for analysing matches and comparing tactics is in `lab/` (`lab/README.md`).
 
 The client's interface stays in Ukrainian (it is the part 1 product); code comments and documentation are in English. Quoted interface texts below are given as they appear in the app.
 
@@ -33,12 +33,24 @@ npm run build
 npm run preview
 ```
 
-Standalone build: a single file `client/dist-single/index.html`, everything inside (code, styles, fonts, images, sounds), opens with a double click. The file itself loads nothing extra; the client talks only to the network API. The P3-03 requirement for the HQ (not a single network request after opening) concerns part 3 and will be checked against its text; per the FAQ the HQ skeleton comes from `npx zaria-kit init hq`:
+Standalone build: a single file `client/dist-single/index.html`, everything inside (code, styles, fonts, images, sounds), opens with a double click. The file itself loads nothing extra; the client talks only to the network API:
 
 ```bash
 cd client
 npm run build:single
 ```
+
+## HQ (part 3)
+
+The show lives in `hq/` (the `zaria.hq` field of `hq/package.json` names its build directory). It is built into one self-contained `hq/dist/index.html` that makes no network request: the show host feeds it a record or a broadcast (`part3/01-hq-contract.md`). Like the bot, `npm ci` needs `ZORIA_NPM_AUTH`.
+
+```bash
+cd hq
+npm ci
+npm run build
+```
+
+Tests, the host page for the desk and the acceptance driver - `hq/README.md`.
 
 ## Bot (part 2)
 

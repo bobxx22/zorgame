@@ -99,6 +99,35 @@ services:
         max-size: '10m'
         max-file: '3'
 
+  hq:
+    build:
+      context: .
+      dockerfile: hq/Dockerfile
+      args:
+        # we set the registry secret, and only into the build: it does not
+        # end up in the image, it is not in the repository at all (02-build.md, 6.5)
+        ZORIA_NPM_AUTH: ${ZORIA_NPM_AUTH:-}
+    labels:
+      zaria.hq: '8080'
+    networks:
+      - front
+    ports:
+      - '${ZARIA_BIND:-127.0.0.1}:${ZARIA_HQ_PORT:-8180}:8080'
+    read_only: true
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
 networks:
   wire: {}
   plane:

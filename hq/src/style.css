@@ -1,0 +1,77 @@
+/* Zoria HQ. The palette and the spacing grid of the network client (client/src/index.css):
+   warm lamp-lit dark and amber. No web fonts here: the show is one file and opens
+   without the network, so it speaks in the system's own type. */
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+html{color-scheme:dark;scrollbar-color:rgba(245,235,220,.2) transparent}
+:root{
+  --void:#0d0a07;--bg:#0f0d0b;--win:#1c1a17;--win2:#15130f;--line:rgba(245,235,220,.10);--line2:rgba(245,235,220,.17);
+  --t1:rgba(242,236,226,.92);--t2:rgba(242,236,226,.62);--t3:rgba(242,236,226,.40);
+  --amber:#eeb968;--hi:#ffdf9f;--warn:#dd8b78;--ok:#9fd3a0;
+  --fb:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--fm:ui-monospace,'Cascadia Mono',Consolas,monospace;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s6:24px;--r:6px;
+}
+body{background:var(--void);color:var(--t1);font:400 14px/1.45 var(--fb);display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+[hidden]{display:none!important}
+canvas{display:block}
+button,input,select{font:inherit;color:inherit}
+
+/* ===== bar ===== */
+.bar{flex:none;display:flex;align-items:center;gap:var(--s4);min-height:52px;padding:var(--s2) var(--s4);background:var(--bg);border-bottom:1px solid var(--line);contain:layout style}
+.brand{font:700 15px/1 var(--fb);letter-spacing:.14em;color:var(--amber);white-space:nowrap}
+.brand span{margin-left:var(--s2);font-weight:400;letter-spacing:.04em;color:var(--t3)}
+.grow{flex:1}
+.fld{display:flex;align-items:center;gap:var(--s2);white-space:nowrap}
+.fld>span{color:var(--t3);font-size:12px}
+.fld input,.fld select{height:30px;padding:0 var(--s2);background:var(--win2);border:1px solid var(--line2);border-radius:var(--r);outline:none}
+.fld input:focus,.fld select:focus{border-color:var(--amber)}
+.fld input[type=number]{width:76px}
+.fld input[type=text]{width:112px}
+.btn{height:30px;padding:0 var(--s3);background:var(--win);border:1px solid var(--line2);border-radius:var(--r);cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--amber);color:var(--hi)}
+.btn.pick{display:inline-flex;align-items:center}
+.btn.pick input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.btn.on{background:rgba(238,185,104,.14);border-color:var(--amber);color:var(--hi)}
+.stat{display:flex;align-items:baseline;gap:var(--s2);color:var(--t3);font-size:12px;white-space:nowrap}
+.stat b{min-width:34px;color:var(--t1);font:600 14px/1 var(--fm)}
+
+.note{flex:none;margin:0;padding:var(--s2) var(--s4);background:rgba(221,139,120,.10);border-bottom:1px solid rgba(221,139,120,.35);color:var(--warn)}
+
+/* ===== deck ===== */
+.deck{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 620px;gap:var(--s4);padding:var(--s4);overflow:auto}
+.field{min-width:0;display:flex;flex-direction:column;gap:var(--s2);contain:layout style}
+.map{position:relative;align-self:center;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);contain:strict}
+.map canvas{position:absolute;left:0;top:0}
+.map #mapTop{cursor:crosshair}
+.legend{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);min-height:20px;color:var(--t2);font-size:12px;contain:layout style}
+.legend i{display:inline-block;width:10px;height:10px;margin-right:6px;border-radius:50%;vertical-align:-1px}
+.strip{position:relative;height:72px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);cursor:pointer;contain:strict}
+.strip canvas{position:absolute;left:0;top:0}
+.cursor{position:absolute;left:0;top:0;width:1px;height:100%;background:var(--hi);will-change:transform;pointer-events:none}
+.hint{margin:0;color:var(--t3);font-size:12px}
+
+.panes{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4);align-content:start}
+.pane{padding:var(--s3) var(--s4) var(--s4);background:var(--win2);border:1px solid var(--line);border-radius:var(--r);contain:layout style paint}
+.pane h2{margin:0 0 var(--s2);font:600 12px/1.4 var(--fb);letter-spacing:.08em;text-transform:uppercase;color:var(--amber)}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3);margin:var(--s2) 0}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:2px var(--s3);margin:0}
+.grid dt{color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grid dd{margin:0;height:20px;overflow:hidden;white-space:nowrap;text-align:right;font:600 14px/20px var(--fm);color:var(--t1);contain:strict}
+
+.ab{width:100%;margin:var(--s2) 0;border-collapse:collapse;font:400 13px/1.5 var(--fm);color:var(--t2)}
+.ab th{font:400 12px/1.5 var(--fb);color:var(--t3);text-align:right}
+.ab th:first-child,.ab td:first-child{text-align:left;font-family:var(--fb)}
+.ab td{text-align:right;border-top:1px solid var(--line)}
+.ab .top td{color:var(--hi)}
+.ab .up{color:var(--ok)}
+.ab .down{color:var(--warn)}
+
+@media (max-width:1180px){
+  .deck{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:640px){
+  .panes{grid-template-columns:1fr}
+  .bar{flex-wrap:wrap}
+}

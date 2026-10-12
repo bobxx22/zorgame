@@ -4,11 +4,12 @@
 **/node_modules
 **/dist
 records
+**/records
 *.log
 preflight.json
 hq-report.json
 .zaria-preflight
 # not part of any image: the bot lab (with its local runs) and the part 1
-# client. When the HQ grows out of the client, open the HQ part of it here
+# client. The HQ (hq/) is built from its own directory
 lab
 client
