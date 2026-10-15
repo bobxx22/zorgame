@@ -517,12 +517,19 @@ export class PulseStrategy implements Strategy {
 export const COMBO_PRESET = 'сплав';
 /* сплав plays without tactics: they were made for the mirror head */
 export const COMBO_TACTICS = 'none';
+/* the economy head of the battle сплав: its default plus the memory of deadly roads
+   (combo/economy.ts, knob roads). Lab 15.10, fresh valleys, against сплав without it:
+   ext +0.10 ± 0.05 and +0.07 ± 0.06 share per pack on 240 valleys each, strong
+   +0.15 ± 0.05 and +0.11 ± 0.05, mixed +0.10 ± 0.04; foreign -0.03 ± 0.02 on 120.
+   240 ticks of memory gave nothing, 800 the same as 480 */
+export const COMBO_ECONOMY = 'roads=480';
 
 /* "сплав" or a variant for the lab "сплав:<economy>:<blades>": the economy head's preset or
    knobs ("хижий", "alpha=0.6+risk=0.8"), the Klinok head's knobs ("guard=0+hunt=0");
-   an empty part - the head's default; null - not сплав or a part that does not parse */
+   an empty part - the head's default (so "сплав::" is сплав without COMBO_ECONOMY);
+   null - not сплав or a part that does not parse */
 export function comboParts(preset: string): { economy: string; blades: string } | null {
-  if (preset === COMBO_PRESET) return { economy: '', blades: '' };
+  if (preset === COMBO_PRESET) return { economy: COMBO_ECONOMY, blades: '' };
   if (!preset.startsWith(COMBO_PRESET + ':')) return null;
   const [economy = '', blades = '', ...rest] = preset.slice(COMBO_PRESET.length + 1).split(':');
   const k = blades.replace(/\+/g, ';');

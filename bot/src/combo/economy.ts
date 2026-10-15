@@ -54,6 +54,10 @@ function hexDist(aq: number, ar: number, bq: number, br: number): number {
   return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
 }
 const kDist = (a: number, b: number): number => hexDist(qOf(a), rOf(a), qOf(b), rOf(b));
+/* P.roads: a job within this many cells of a deadly cell counts as "at" it */
+const ROAD_NEAR = 2;
+/* P.roads: the share of a job's value left per deadly cell at it or on the way */
+const ROAD_RISK = 0.35;
 const share = (p: number, tot: number): number => (tot <= 1 ? p : p / tot);
 const idCmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -143,12 +147,17 @@ interface Params {
   ram: boolean; // ram threats to the network
   bid: number; // multiplier of lot bids
   risk: number; // discount on heating others' needles
+  /* memory of deadly roads, ticks, 0 - off: a job at a cell, or past a cell, where a
+     Tkach of ours was rammed within this many ticks is worth ROAD_RISK as much per
+     such death. The group journals of 13.10: one rival post rammed five of our
+     Tkachs in a row on one road; the head forgets a rival after 40 ticks */
+  roads: number;
 }
 
 const PRESETS: Record<string, Params> = {
-  'рівний': { alpha: 0.5, jam: 1, ram: true, bid: 1, risk: 0.7 },
-  'тихий': { alpha: 0.3, jam: 0.6, ram: true, bid: 0.8, risk: 0.5 },
-  'хижий': { alpha: 0.8, jam: 1.4, ram: true, bid: 1.2, risk: 0.85 },
+  'рівний': { alpha: 0.5, jam: 1, ram: true, bid: 1, risk: 0.7, roads: 0 },
+  'тихий': { alpha: 0.3, jam: 0.6, ram: true, bid: 0.8, risk: 0.5, roads: 0 },
+  'хижий': { alpha: 0.8, jam: 1.4, ram: true, bid: 1.2, risk: 0.85, roads: 0 },
 };
 
 interface Ndl {
@@ -353,6 +362,8 @@ class ZoriaHead implements Strategy {
   private yardT = -10;
   private threatT = -1000;
   private hunted = -1000; // last tick a rival rammed or stalked our units
+  /* where our Tkachs were rammed and when (P.roads) */
+  private readonly deaths: { k: number; t: number }[] = [];
   private wantKlinok = false;
   private lastOk = 0;
   private fails = 0;
@@ -1235,7 +1246,10 @@ class ZoriaHead implements Strategy {
           if (ev.tgt === this.slot && ev.p !== 'K') this.hunted = t;
           break;
         case 'lost':
-          if (ev.p === this.slot && ev.why === 'таран') this.hunted = t;
+          if (ev.p === this.slot && ev.why === 'таран') {
+            this.hunted = t;
+            if (this.P.roads > 0 && ev.cls === TK && inBox(ev.q, ev.r)) this.deaths.push({ k: kOf(ev.q, ev.r), t });
+          }
           break;
         default:
           break;
@@ -2410,6 +2424,7 @@ class ZoriaHead implements Strategy {
     const E = this.energy - this.buildReserve(ui.id) - this.tkachReserve();
     const rr = this.regenRate();
     const awayNow = this.zoneD[ui.k]! > 0 ? ui.u.away : 0;
+    const deadly = this.deadlyRoads(ui.k);
     let best: Cand | null = null;
     let bu = 0.00002;
     let bt = 0;
@@ -2445,6 +2460,7 @@ class ZoriaHead implements Strategy {
         const V = c.g * remA + c.bonus * (remA / Math.max(1, this.T_END - t));
         U = V / (time + 6);
       }
+      if (deadly.length) U *= this.roadRisk(ui.k, c.k, deadly);
       if (U > bu) {
         bu = U;
         best = c;
@@ -2463,6 +2479,24 @@ class ZoriaHead implements Strategy {
       lit: best.lit,
       until: t + Math.ceil(bt) + 45,
     });
+  }
+
+  /* the cells where our Tkachs were rammed lately, except next to the Tkach itself:
+     it is there already, and every job would be "past" them */
+  private deadlyRoads(from: number): number[] {
+    if (this.P.roads <= 0) return [];
+    while (this.deaths.length && this.t - this.deaths[0]!.t > this.P.roads) this.deaths.shift();
+    return this.deaths.filter((d) => kDist(from, d.k) >= 2).map((d) => d.k);
+  }
+
+  /* the share of a job's value left after the deadly cells at it or on the way to it:
+     the server walks the unit by a shortest path, so a cell is on the way when the
+     detour through it is at most one step */
+  private roadRisk(from: number, to: number, deadly: readonly number[]): number {
+    const direct = kDist(from, to);
+    let f = 1;
+    for (const d of deadly) if (kDist(to, d) <= ROAD_NEAR || kDist(from, d) + kDist(d, to) <= direct + 1) f *= ROAD_RISK;
+    return f;
   }
 
   /* ---------- commands ---------- */
@@ -2766,6 +2800,7 @@ export function economyParams(preset?: string): Params | null {
     else if (k === 'bid' && n <= 3) p.bid = n;
     else if (k === 'risk' && n <= 1) p.risk = n;
     else if (k === 'ram' && (n === 0 || n === 1)) p.ram = n === 1;
+    else if (k === 'roads' && Number.isInteger(n) && n <= 1200) p.roads = n;
     else return null;
   }
   return p;

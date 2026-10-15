@@ -29,10 +29,10 @@ function play(preset, seed, ticks, rivals) {
 }
 
 const GOLDEN = {
-  'сплав@11:облягач,проривник': { digest: '3e78940872614a40', score: 504.4, needles: 51 },
-  'сплав@29:рівний,облягач': { digest: 'b6e9eddf1d7e39e6', score: 196, needles: 17 },
-  'сплав@47:проривник,шир': { digest: '58091b72fd3c2a00', score: 556.9, needles: 56 },
-  'сплав@83:обхідник,облягач': { digest: '4acba024bf75d1b2', score: 462.5, needles: 53 },
+  'сплав@11:облягач,проривник': { digest: '5d9970bc4304903c', score: 604, needles: 61 },
+  'сплав@29:рівний,облягач': { digest: '4700539e3b38df4b', score: 255.1, needles: 19 },
+  'сплав@47:проривник,шир': { digest: '2bac67ab82ec366a', score: 496.9, needles: 49 },
+  'сплав@83:обхідник,облягач': { digest: 'afee83eced7fa552', score: 411, needles: 49 },
   'полудень@11:облягач,проривник': { digest: '7bb93ce24d5af217', score: 440.1, needles: 32 },
 };
 

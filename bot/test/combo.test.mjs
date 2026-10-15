@@ -91,3 +91,15 @@ test('a short match: сплав sends a well-formed frame every tick, keeps the 
   const belief = combo.belief(decodeObserve(lastObserve));
   assert.ok(belief && belief.t === 150 && belief.pulse, JSON.stringify(belief));
 });
+
+test('the battle сплав remembers deadly roads; the knob parses only within its bounds', async () => {
+  const { comboParts, COMBO_ECONOMY } = await import('../dist/strategy.js');
+  const { economyParams } = await import('../dist/combo/economy.js');
+  assert.equal(COMBO_ECONOMY, 'roads=480');
+  assert.deepEqual(comboParts('сплав'), { economy: 'roads=480', blades: '' });
+  assert.deepEqual(comboParts('сплав::'), { economy: '', blades: '' });
+  assert.equal(economyParams('roads=480')?.roads, 480);
+  assert.equal(economyParams('')?.roads, 0);
+  assert.equal(economyParams('roads=1201'), null);
+  assert.equal(economyParams('roads=2.5'), null);
+});
