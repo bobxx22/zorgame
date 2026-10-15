@@ -19,7 +19,7 @@
    Flags: --hours 8, --workers <cores-1>, --from 5000 (first valley),
    --validate 60 (fresh valleys), --base <battle style>, --ticks 1200,
    --start style;style;... (generation 0; default - the whole catalogue),
-   --pool arch|mixed|strong|foreign|ext (opponents), --eval 1 (no search:
+   --pool arch|mixed|strong|foreign|ext|ext:<names> (opponents), --eval 1 (no search:
    only --start and the base on fresh valleys).
 
    The mixed pool - in case a style got "tuned" to the SDK archetypes: our bot
@@ -72,7 +72,7 @@ interface Config {
   validate: number;
   tactics: string[];
   start: string[];
-  pool: 'arch' | 'mixed' | 'strong' | 'foreign' | 'ext';
+  pool: 'arch' | 'mixed' | 'strong' | 'foreign' | 'ext' | `ext:${string}`;
   /* opponents fixed at start: a change of the battle style doesn't change the pool of a resume */
   opponents: SeatSpec[];
   /* search - generations and halving; eval - only all of --start and the base on fresh valleys */
@@ -97,6 +97,8 @@ function poolOf(pool: Config['pool']): SeatSpec[] {
   if (pool === 'arch') return Object.keys(ARCHETYPES).map((name) => ({ kind: 'archetype', name }));
   /* external bots pool: all lab/ext bots (scripts/ext-build.mjs) - written from the same documents other participants have */
   if (pool === 'ext') return EXT_BOTS.map((name) => ({ kind: 'ext', name }));
+  /* a chosen part of them: "ext:a8,a9,g3" */
+  if (pool.startsWith('ext:')) return pool.slice(4).split(',').map((name) => ({ kind: 'ext', name }));
   /* strong pool: our battle bot and its closest strong neighbours (all without
      feeding) - a neutral result here is ~6 share, and small improvements don't
      hit the scale's ceiling; plus облягач and the експансія nakaz - a different
@@ -219,7 +221,9 @@ if (f['resume']) {
     build: buildOf(),
   };
   if (f['eval'] !== undefined && f['eval'] !== '1') throw new Error('--eval 1');
-  if (!['arch', 'mixed', 'strong', 'foreign', 'ext'].includes(cfg.pool)) throw new Error('--pool: arch, mixed, strong, foreign or ext');
+  const some = cfg.pool.startsWith('ext:') ? cfg.pool.slice(4).split(',') : null;
+  if (some && (some.length < 2 || !some.every(isExtBot))) throw new Error('--pool ext:<names>: two or more bots of lab/ext, comma separated');
+  if (!some && !['arch', 'mixed', 'strong', 'foreign', 'ext'].includes(cfg.pool)) throw new Error('--pool: arch, mixed, strong, foreign, ext or ext:<names>');
   if (cfg.pool === 'ext' && EXT_BOTS.length < 2) throw new Error('--pool ext: fewer than two bots in lab/ext');
   if (cfg.mode === 'search' && cfg.start.some((x) => (x.startsWith('ext:') || x.startsWith('mix:')))) throw new Error('--start ext:<name> / mix:<name> - only with --eval: an external bot is not mutated');
   cfg.opponents = poolOf(cfg.pool);
