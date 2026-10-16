@@ -540,6 +540,9 @@ async function main(): Promise<void> {
   ]
   try {
     const [host] = await Promise.all([opening, library.ready])
+    /* every worker has been started (the pool starts them once, in its constructor) and has
+       loaded or given up: the worker's text is not needed any more */
+    URL.revokeObjectURL(url)
     show = new Show(host, library)
     show.start(early)
   } catch (error) {
