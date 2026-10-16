@@ -8,6 +8,104 @@ import { Icon } from '../ui/Icon'
 import { VALLEY_SCENE } from '../ui/scenes'
 import type { RollEntry } from '../ether/frame'
 import { findOwnEntry } from './roll-match'
+import { standingOf, standingText, type Field, type Standing } from '../cabinet/field'
+import { useField } from './use-field'
+
+/** A roll name with its fate after the group stage: crossed out in red for those who left. */
+function RollName({ name, mark }: { name: string; mark: { login: string; standing: Standing } | null }) {
+  if (!mark) return <>{name}</>
+  const why = standingText(mark.standing)
+  const title = mark.login === name ? why : `${mark.login}: ${why}`
+  if (mark.standing.kind === 'second') {
+    return (
+      <span className="fate alive" title={title}>
+        {name} <span className="fate-tag">другий етап</span>
+      </span>
+    )
+  }
+  return (
+    <span className="fate gone" title={title}>
+      <span className="fate-x" aria-hidden="true">✖</span>
+      {name}
+      <span className="sr"> - {why}</span>
+    </span>
+  )
+}
+
+/** The totals of the group stage and how many roll names could be tied to a login. */
+function FieldBox({ field, problem, known, total }: { field: Field | null; problem: string | null; known: number; total: number }) {
+  return (
+    <div className="sidebox">
+      <p className="rh">Після групового етапу</p>
+      {field ? (
+        <>
+          <ul className="side-kv">
+            <li>
+              <span>другий етап</span>
+              <b className="num fate alive">{field.second.length}</b>
+            </li>
+            <li>
+              <span>вибули в групах</span>
+              <b className="num fate gone">{field.out.length}</b>
+            </li>
+            <li>
+              <span>не допущені</span>
+              <b className="num fate gone">{field.struck.length}</b>
+            </li>
+            <li>
+              <span>зареєстровано</span>
+              <b className="num">{field.registered}</b>
+            </li>
+          </ul>
+          <p>
+            Журнал показує імена, а підсумки - логіни. Впізнано {known} з {total}: ім'я збігається з логіном або
+            людина траплялася вам в іграх. Решта рядків без позначки.
+          </p>
+        </>
+      ) : (
+        <p>{problem ? `Підсумків немає: ${problem}.` : 'Читаємо підсумки з сайту…'}</p>
+      )}
+    </div>
+  )
+}
+
+function standingFor(field: Field, login: string): string {
+  const standing = field.byLogin.get(login)
+  return standing ? standingText(standing) : login
+}
+
+/** Everyone of the draw by login: the full answer, also for the names the roll could not tie. */
+function FieldLists({ field }: { field: Field }) {
+  const rows: [string, readonly string[], string][] = [
+    ['Другий етап', field.second, 'alive'],
+    ['Вибули в груповому етапі', field.out, 'gone'],
+    ['Не допущені до групового етапу', field.struck, 'gone'],
+  ]
+  return (
+    <details className="field-lists">
+      <summary>Усі учасники за логінами</summary>
+      {rows.map(([title, logins, look]) => (
+        <section key={title}>
+          <h3>
+            {title}: {logins.length}
+          </h3>
+          <p className="field-names">
+            {logins.map((login) => (
+              <span key={login} className={cls('fate', look)} title={standingFor(field, login)}>
+                {look === 'gone' && (
+                  <span className="fate-x" aria-hidden="true">
+                    ✖
+                  </span>
+                )}
+                {login}
+              </span>
+            ))}
+          </p>
+        </section>
+      ))}
+    </details>
+  )
+}
 
 /** Public roll of the window: number, local time, display name (CL-34). */
 export function RollPage() {
@@ -27,6 +125,14 @@ export function RollPage() {
     typed === null ? entry.n === own?.n : needle !== '' && entry.name.toLowerCase() === needle
   const hits = roll ? roll.entries.filter(isHit) : []
   const found = hits[0]
+  const { field, aliases, problem } = useField()
+  const markOf = (entry: RollEntry) => {
+    if (!field) return null
+    /* one's own line: the session knows its login, whatever the display name */
+    const mine = session && own && entry.n === own.n ? field.byLogin.get(session.user.username) : undefined
+    return session && mine ? { login: session.user.username, standing: mine } : standingOf(field, entry.name, aliases)
+  }
+  const known = roll && field ? roll.entries.filter((entry) => markOf(entry) !== null).length : 0
 
   return (
     <DocPage
@@ -50,28 +156,31 @@ export function RollPage() {
         </>
       }
       toc={
-        <div className="sidebox">
-          <p className="rh">Ви в журналі</p>
-          {found ? (
-            <ul className="side-kv">
-              <li>
-                <span>номер</span>
-                <b className="num">{found.n}</b>
-              </li>
-              <li>
-                <span>вихід</span>
-                <b className="num">{formatLocal(found.at)}</b>
-              </li>
-              <li>
-                <span>від відкриття</span>
-                <b className="num">{formatDuration(found.sinceOpen * 1000)}</b>
-              </li>
-            </ul>
-          ) : (
-            <p>{needle ? 'Такого імені в журналі поки немає.' : 'Введіть своє ім’я в журналі, щоб знайти рядок.'}</p>
-          )}
-          {hits.length > 1 && <p>Це ім’я в журналі не одне: рядків {hits.length}. Свій - той, що за часом реєстрації.</p>}
-        </div>
+        <>
+          <div className="sidebox">
+            <p className="rh">Ви в журналі</p>
+            {found ? (
+              <ul className="side-kv">
+                <li>
+                  <span>номер</span>
+                  <b className="num">{found.n}</b>
+                </li>
+                <li>
+                  <span>вихід</span>
+                  <b className="num">{formatLocal(found.at)}</b>
+                </li>
+                <li>
+                  <span>від відкриття</span>
+                  <b className="num">{formatDuration(found.sinceOpen * 1000)}</b>
+                </li>
+              </ul>
+            ) : (
+              <p>{needle ? 'Такого імені в журналі поки немає.' : 'Введіть своє ім’я в журналі, щоб знайти рядок.'}</p>
+            )}
+            {hits.length > 1 && <p>Це ім’я в журналі не одне: рядків {hits.length}. Свій - той, що за часом реєстрації.</p>}
+          </div>
+          <FieldBox field={field} problem={problem} known={known} total={roll?.entries.length ?? 0} />
+        </>
       }
     >
       <figure className="art">
@@ -115,13 +224,16 @@ export function RollPage() {
                   <td data-label="Від відкриття" className="num">
                     {formatDuration(entry.sinceOpen * 1000)}
                   </td>
-                  <td data-label="Ім'я">{entry.name}</td>
+                  <td data-label="Ім'я">
+                    <RollName name={entry.name} mark={markOf(entry)} />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      {field && <FieldLists field={field} />}
     </DocPage>
   )
 }

@@ -560,3 +560,16 @@ input:disabled{opacity:.55}
 
 /* the raw answer of a route the public contract does not describe yet */
 .raw{margin:var(--s2) 0 0;padding:var(--s3);max-height:420px;overflow:auto;background:var(--win2);border:1px solid var(--line);border-radius:var(--r);font:400 12px/1.5 var(--fm);color:var(--t2);white-space:pre}
+
+/* the roll after the group stage (RollPage, cabinet/field.ts): who went on, who left */
+.fate.gone{color:#ff5c5c}
+.side-kv b.fate.gone{color:#ff5c5c}
+.fate.alive{color:var(--ok)}
+.side-kv b.fate.alive{color:var(--ok)}
+.fate-x{display:inline-block;margin-right:6px;font-weight:700;color:#ff5c5c}
+.fate-tag{display:inline-block;margin-left:6px;padding:0 6px;border:1px solid rgba(159,211,160,.4);border-radius:4px;font:600 11px/1.6 var(--fb);color:var(--ok);vertical-align:1px}
+.sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.field-lists{margin-top:var(--s8);border:1px solid var(--line);border-radius:var(--r);padding:var(--s3) var(--s4)}
+.field-lists summary{cursor:pointer;font:600 14px/1.5 var(--fb);color:var(--t1)}
+.field-lists h3{margin:var(--s4) 0 var(--s2);font:600 14px/1.4 var(--fb);color:var(--t2)}
+.field-names{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0;font:400 14px/1.5 var(--fm)}

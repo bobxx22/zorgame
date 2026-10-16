@@ -29,6 +29,13 @@ export default defineConfig(({ mode }) => {
     // Nothing is copied next to the page: everything lives inside index.html.
     publicDir: single ? false : 'public',
     plugins: single ? [react(), inlineFavicon(), viteSingleFile()] : [react()],
+    // The site's public draw files (who went on, who left) for the roll: zoria.net sends no
+    // CORS headers, so the dev server fetches them for the page (src/pages/use-field.ts).
+    server: {
+      proxy: {
+        '/site': { target: 'https://zoria.net', changeOrigin: true, rewrite: (path: string) => path.replace(/^\/site/, '') },
+      },
+    },
     build: single
       ? { outDir: 'dist-single', assetsInlineLimit: Number.MAX_SAFE_INTEGER, cssCodeSplit: false }
       : {},
